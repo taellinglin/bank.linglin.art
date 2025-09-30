@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ title if title else "灵国国库 [Ling Country Treasury]" }}</title>
+    <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.ico') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+</head>
+<body>
+    <div class="navbar">
+        <a href="{{ url_for('landing') }}" class="nav-brand"><span class="Chinese-text">灵国国库</span><span class="daemon-text"> [Ling Country Treasury]</span></a>
+        <div class="nav-links">
+            <a href="{{ url_for('mempool_viewer')}}">Mempool</a>
+            <a href="{{ url_for('blockchain_viewer')}}">Blockchain</a>
+            {% if current_user.is_authenticated %}
+                            <!-- Add this conditional check -->
+
+                
+                <a href="{{ url_for('profile', username=current_user.username) }}">Profile</a>
+                <a href="{{ url_for('gallery_index') }}">Members</a>
+                <a href="{{ url_for('verify_serial') }}">Verify</a>
+                {% if current_user.is_authenticated and current_user.is_admin %}
+                    <a href="{{ url_for('admin_panel') }}">Admin</a>
+                {% endif %}
+                <a href="{{ url_for('logout') }}">Logout</a>
+            {% else %}
+                <a href="{{ url_for('gallery_index') }}">Members</a>
+                <a href="{{ url_for('verify_serial') }}">Verify</a>
+                <a href="{{ url_for('login') }}">Login</a>
+                <a href="{{ url_for('register') }}">Register</a>
+            {% endif %}
+        </div>
+    </div>
+    
+    {% with messages = get_flashed_messages() %}
+        {% if messages %}
+            <div style="padding: 10px 20px; background: #222; border-bottom: 1px solid #333;font-family: 'Unispace';">
+                {% for message in messages %}
+                    <div>{{ message }}</div>
+                {% endfor %}
+            </div>
+        {% endif %}
+    {% endwith %}
+    
+    {% block content %}{% endblock %}
+</body>
+</html>

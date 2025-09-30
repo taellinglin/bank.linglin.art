@@ -1,0 +1,466 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="verify-container">
+    <div class="verify-box">
+        <h1>Verify Serial Number</h1>
+        
+        <form method="POST" class="verify-form">
+            <input type="text" name="serial" value="{{ serial_input }}" 
+                   placeholder="Enter SN-XXXX-XXXX-XXXX" 
+                   class="verify-input">
+            <button type="submit" class="verify-button">Verify Serial</button>
+        </form>
+
+        {% if result %}
+            <div class="result-box {% if result.valid %}result-valid{% else %}result-invalid{% endif %}">
+                {% if result.valid %}
+                    <strong>✅ Valid Serial</strong>
+                    <div class="result-details">
+                        <!-- Serial Number Breakdown -->
+                        <h3>Serial Number Analysis</h3>
+                        <div class="serial-breakdown">
+                            <p><strong>Full Serial:</strong> {{ serial_input }}</p>
+                            <p><strong>Type:</strong> {{ result.type }}</p>
+                            
+                            {% if result.type == 'combined' %}
+                                <p><strong>Groups:</strong> {{ result.groups|join(' - ') }}</p>
+                                <p><strong>Group Count:</strong> {{ result.groups|length }}</p>
+                            {% elif result.type == 'with_checksum' %}
+                                <p><strong>Body:</strong> {{ result.serial_body }}</p>
+                                <p><strong>Checksum:</strong> {{ result.checksum }}</p>
+                            {% endif %}
+                        </div>
+
+                        <!-- Banknote Information (if available) -->
+                        {% if banknote %}
+                            <h3>Banknote Information</h3>
+                            <div class="banknote-info">
+                                <p><strong>Owner:</strong> {{ banknote.user.username }}</p>
+                                <p><strong>Denomination:</strong> {{ banknote.denomination }}</p>
+                                <p><strong>Side:</strong> {{ banknote.side|title }}</p>
+                                <p><strong>Generated:</strong> {{ banknote.created_at.strftime('%Y-%m-%d %H:%M') }}</p>
+                                <p><strong>Status:</strong> <span class="status-{% if banknote.is_public %}public{% else %}private{% endif %}">
+                                    {{ 'Public' if banknote.is_public else 'Private' }}
+                                </span></p>
+                                {% if signature_valid is not none %}
+                                    <div class="signature-verification">
+                                        <h3>Digital Signature Verification</h3>
+                                        <div class="signature-status {% if signature_valid %}signature-valid{% else %}signature-invalid{% endif %}">
+                                            <strong>Status:</strong> 
+                                            {% if signature_valid %}
+                                                ✅ Valid Signature (Method: {{ signature_details.verification_method }})
+                                            {% else %}
+                                                ❌ Invalid Signature (Method: {{ signature_details.verification_method }})
+                                            {% endif %}
+                                        </div>
+                                        
+                                        <div class="signature-details">
+                                            <h4>Signature Details:</h4>
+                                            <ul>
+                                                <li><strong>Public Key:</strong> {{ signature_details.public_key_short }}</li>
+                                                <li><strong>Signature:</strong> {{ signature_details.signature_short }}</li>
+                                                <li><strong>Timestamp:</strong> {{ signature_details.timestamp_readable }}</li>
+                                                <li><strong>Verification Method:</strong> {{ signature_details.verification_method }}</li>
+                                                <li><strong>Metadata Hash:</strong> {{ signature_details.metadata_hash }}</li>
+                                                <li><strong>Issued To:</strong> {{ signature_details.issued_to }}</li>
+                                                <li><strong>Denomination:</strong> {{ signature_details.denomination }}</li>
+                                                {% if signature_details.calculated_hash %}
+                                                <li><strong>Calculated Hash:</strong> {{ signature_details.calculated_hash }}</li>
+                                                {% endif %}
+                                                {% if signature_details.verification_attempts %}
+                                                <li><strong>Verification Attempts:</strong> 
+                                                    {% for method, valid in signature_details.verification_attempts %}
+                                                    {{ method }}: {% if valid %}✅<br>{% else %}❌<br>{% endif %}{% if not loop.last %}, {% endif %}
+                                                    {% endfor %}
+                                                </li>
+                                                {% endif %}
+                                                {% if signature_details.error %}
+                                                <li><strong>Error:</strong> {{ signature_details.error }}</li>
+                                                {% endif %}
+                                            </ul>
+                                        </div>
+                                    </div>
+                                {% endif %}
+                                {% if banknote.png_path and banknote.is_public %}
+                                <div style="margin-top: 15px; text-align: center;">
+                                    <h4>Banknote Image</h4>
+                                    <img src="{{ url_for('serve_banknote_image', filename=banknote.png_path.replace("./images/"+'/', '')) }}" 
+                                         alt="Banknote" style="max-width: 300px; max-height: 150px; border: 1px solid #333;">
+                                    <div style="margin-top: 10px;">
+                                        <a href="{{ url_for('serve_banknote_image', filename=banknote.png_path.replace("./images/"+'/', '')) }}" 
+                                           download class="download-button">Download PNG</a>
+                                        {% if banknote.pdf_path %}
+                                        <a href="{{ url_for('serve_banknote_image', filename=banknote.pdf_path.replace("./images/"+'/', '')) }}" 
+                                           download class="download-button">Download PDF</a>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                        {% else %}
+                            <div class="no-banknote-info">
+                                <p>⚠️ Serial number is valid but no banknote information is available in the database.</p>
+                                <p>This could mean:</p>
+                                <ul>
+                                    <li>The banknote was generated before database tracking was implemented</li>
+                                    <li>The banknote has been deleted or archived</li>
+                                    <li>The serial number format differs from the database records</li>
+                                </ul>
+                            </div>
+                        {% endif %}
+                    </div>
+                {% else %}
+                    <strong>❌ Invalid Serial</strong>
+                    <div class="result-details">
+                        <p><strong>Reason:</strong> {{ result.reason }}</p>
+                        <p><strong>Input:</strong> {{ serial_input }}</p>
+                        
+                        <div class="serial-help">
+                            <h4>Valid Serial Number Format:</h4>
+                            <p>Serial numbers should start with "SN-" followed by alphanumeric groups separated by hyphens.</p>
+                            <p><strong>Examples:</strong></p>
+                            <ul>
+                                <li>SN-ABC123-DEF456</li>
+                                <li>SN-USERNAME-100FRONT</li>
+                                <li>SN-2023-09-15-ABCDEF</li>
+                            </ul>
+                        </div>
+                    </div>
+                {% endif %}
+            </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+.serial-breakdown {
+    background-color: #222;
+    border: 1px solid #333;
+    border-radius: 5px;
+    padding: 15px;
+    margin-bottom: 20px;
+}
+
+.serial-breakdown p {
+    margin: 5px 0;
+    font-family: monospace;
+}
+
+.banknote-info {
+    background-color: #222;
+    border: 1px solid #333;
+    border-radius: 5px;
+    padding: 15px;
+}
+
+.no-banknote-info {
+    background-color: #322;
+    border: 1px solid #633;
+    border-radius: 5px;
+    padding: 15px;
+    margin-top: 15px;
+}
+
+.no-banknote-info ul {
+    margin: 10px 0;
+    padding-left: 20px;
+}
+
+.no-banknote-info li {
+    margin: 5px 0;
+}
+
+.serial-help {
+    background-color: #222;
+    border: 1px solid #333;
+    border-radius: 5px;
+    padding: 15px;
+    margin-top: 15px;
+}
+
+.serial-help ul {
+    margin: 10px 0;
+    padding-left: 20px;
+}
+
+.serial-help li {
+    font-family: monospace;
+    margin: 5px 0;
+}
+
+.status-public {
+    color: #0f0;
+    font-weight: bold;
+}
+
+.status-private {
+    color: #f00;
+    font-weight: bold;
+}
+
+.download-button {
+    display: inline-block;
+    background-color: #333;
+    color: white;
+    padding: 5px 10px;
+    border-radius: 3px;
+    text-decoration: none;
+    margin: 0 5px;
+    font-size: 0.9em;
+    border: 1px solid #444;
+}
+
+.download-button:hover {
+    background-color: #444;
+}
+
+.signature-verification {
+    background: linear-gradient(135deg, 
+        #ff0000 0%, 
+        #ff7f00 14%, 
+        #ffff00 28%, 
+        #00ff00 42%, 
+        #0000ff 56%, 
+        #4b0082 70%, 
+        #9400d3 84%, 
+        #ff0000 100%);
+    background-size: 400% 400%;
+    animation: rainbowShift 8s ease infinite;
+    padding: 2px;
+    border-radius: 12px;
+    position: relative;
+    box-shadow: 
+        0 0 0 1px rgba(255,255,255,0.1),
+        0 4px 20px rgba(0,0,0,0.3),
+        inset 0 0 20px rgba(255,255,255,0.1);
+}
+
+.signature-verification::before {
+    content: '';
+    position: absolute;
+    top: 1px;
+    left: 1px;
+    right: 1px;
+    bottom: 1px;
+    background: #1a1a1a;
+    border-radius: 10px;
+    z-index: 1;
+}
+
+.signature-verification > * {
+    position: relative;
+    z-index: 2;
+}
+
+@keyframes rainbowShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+.signature-verification h3 {
+    color: #fff;
+    text-align: center;
+    margin: 0;
+    padding: 20px 20px 15px;
+    font-size: 1.4em;
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+    background: linear-gradient(90deg, 
+        #ff0000, #ff7f00, #ffff00, #00ff00, 
+        #0000ff, #4b0082, #9400d3);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+
+.signature-status {
+    padding: 16px 20px;
+    margin: 0 10px 10px;
+    border-radius: 8px;
+    background: rgba(0,0,0,0.6);
+    border: 1px solid rgba(255,255,255,0.1);
+    backdrop-filter: blur(10px);
+    position: relative;
+    overflow: hidden;
+}
+
+.signature-status::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, 
+        transparent, 
+        rgba(255,255,255,0.3), 
+        transparent);
+}
+
+.signature-valid {
+    border-left: 3px solid #00ff00;
+    box-shadow: 
+        inset 0 0 20px rgba(0,255,0,0.1),
+        0 2px 10px rgba(0,0,0,0.2);
+}
+
+.signature-invalid {
+    border-left: 3px solid #ff0000;
+    box-shadow: 
+        inset 0 0 20px rgba(255,0,0,0.1),
+        0 2px 10px rgba(0,0,0,0.2);
+}
+
+.signature-status strong {
+    color: #fff;
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+}
+
+.signature-valid strong::before {
+    content: '🔐 ';
+    filter: drop-shadow(0 0 2px rgba(0,255,0,0.5));
+}
+
+.signature-invalid strong::before {
+    content: '⚠️ ';
+    filter: drop-shadow(0 0 2px rgba(255,0,0,0.5));
+}
+
+.signature-details {
+    background: rgba(0,0,0,0.7);
+    margin: 10px;
+    padding: 20px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.1);
+    backdrop-filter: blur(5px);
+}
+
+.signature-details h4 {
+    color: #fff;
+    margin: 0 0 15px 0;
+    font-size: 1.1em;
+    font-weight: 600;
+    text-shadow: 0 1px 2px rgba(0,0,0,0.8);
+    padding-bottom: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.1);
+    position: relative;
+}
+
+.signature-details h4::before {
+    content: '📋';
+    margin-right: 8px;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,0.5));
+}
+
+.signature-details ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.signature-details li {
+    color: #e0e0e0;
+    padding: 8px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    display: flex;
+    align-items: flex-start;
+    line-height: 1.4;
+    font-size: 0.9em;
+}
+
+.signature-details li:last-child {
+    border-bottom: none;
+}
+
+.signature-details li strong {
+    color: #fff;
+    min-width: 160px;
+    font-weight: 600;
+    text-shadow: 0 1px 1px rgba(0,0,0,0.5);
+    position: relative;
+    padding-left: 20px;
+}
+
+.signature-details li strong::before {
+    position: absolute;
+    left: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.8em;
+    filter: drop-shadow(0 1px 1px rgba(0,0,0,0.5));
+}
+
+.signature-details li:nth-child(1) strong::before { content: '🔑'; }
+.signature-details li:nth-child(2) strong::before { content: '✍️'; }
+.signature-details li:nth-child(3) strong::before { content: '⏰'; }
+.signature-details li:nth-child(4) strong::before { content: '🔍'; }
+.signature-details li:nth-child(5) strong::before { content: '🔢'; }
+.signature-details li:nth-child(6) strong::before { content: '👤'; }
+.signature-details li:nth-child(7) strong::before { content: '💰'; }
+.signature-details li:nth-child(8) strong::before { content: '⚡'; }
+.signature-details li:nth-child(9) strong::before { content: '❌'; }
+
+/* Pixel-thin highlights */
+.signature-verification::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    border-radius: 12px;
+    pointer-events: none;
+    background: linear-gradient(135deg, 
+        rgba(255,255,255,0.1) 0%, 
+        transparent 20%, 
+        transparent 80%, 
+        rgba(255,255,255,0.1) 100%);
+    box-shadow: 
+        inset 0 1px 0 rgba(255,255,255,0.2),
+        inset 0 -1px 0 rgba(255,255,255,0.1);
+}
+
+/* Glow effects for status */
+.signature-valid {
+    animation: validPulse 3s ease-in-out infinite;
+}
+
+@keyframes validPulse {
+    0%, 100% { box-shadow: 
+        inset 0 0 20px rgba(0,255,0,0.1),
+        0 2px 10px rgba(0,0,0,0.2); }
+    50% { box-shadow: 
+        inset 0 0 30px rgba(0,255,0,0.2),
+        0 2px 15px rgba(0,255,0,0.1); }
+}
+
+.signature-invalid {
+    animation: invalidPulse 2s ease-in-out infinite;
+}
+
+@keyframes invalidPulse {
+    0%, 100% { box-shadow: 
+        inset 0 0 20px rgba(255,0,0,0.1),
+        0 2px 10px rgba(0,0,0,0.2); }
+    50% { box-shadow: 
+        inset 0 0 30px rgba(255,0,0,0.2),
+        0 2px 15px rgba(255,0,0,0.1); }
+}
+
+/* Responsive design */
+@media (max-width: 768px) {
+    .signature-details li {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    
+    .signature-details li strong {
+        min-width: auto;
+        margin-bottom: 4px;
+    }
+}
+</style>
+{% endblock %}

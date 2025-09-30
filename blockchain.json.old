@@ -1,0 +1,471 @@
+[
+  {
+    "index": 8,
+    "previous_hash": "000000e9643e663d226d4b5e993e928e9b9f7bf6843ce358e88428a837dcd664",
+    "timestamp": 1758202908.2753687,
+    "transactions": [
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-4LygDBEEf6F4ZQ-q5s",
+        "back_serial": "SN-u-NU-_tyT-So03",
+        "metadata_hash": "7dbb56dd661d534f570f1d7a3c3d29a84aa9e51eccea9118ad32a6af40b5dc80",
+        "timestamp": 1758202244276,
+        "issued_to": "Ling Lin",
+        "denomination": "1"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-ib38PlMp3jqAeA-1Z4",
+        "back_serial": "SN-fCw9-WArw-0WBb",
+        "metadata_hash": "3c9298c37f172018853876dd10cf08f1de4539a5f73020f666f33edb37edbc93",
+        "timestamp": 1758202332614,
+        "issued_to": "Ling Lin",
+        "denomination": "10"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-nbvGdKqXckagTw-6YI",
+        "back_serial": "SN-MoqK-onPA-OLrD",
+        "metadata_hash": "1172752734a67f9e6d9cf04c5d2967719021fff135e31b0db950493e6b7c2b78",
+        "timestamp": 1758202417668,
+        "issued_to": "Ling Lin",
+        "denomination": "100"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-zxf-xz5PBYDX8w-k0E",
+        "back_serial": "SN-enoD-sSkU-qFmZ",
+        "metadata_hash": "bccfb24c0152bb53fa390b81d76a971cc2e3cf9a1442eefdb2950a9dec78eea9",
+        "timestamp": 1758202502914,
+        "issued_to": "Ling Lin",
+        "denomination": "1000"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-RiJxx11N8nuNvg-VZg",
+        "back_serial": "SN-mw14-erb5-_rWJ",
+        "metadata_hash": "2162de8f3c64f9777de660640aa3a125e0492a8e8c28d0368b7aec26b1694b32",
+        "timestamp": 1758202592074,
+        "issued_to": "Ling Lin",
+        "denomination": "10000"
+      }
+    ],
+    "nonce": 30720960,
+    "hash": "0000005064a882a41fa7b24ae4bd511db23a19ca3dd507a987b18e6ab11858f6",
+    "mining_time": 774.0136277675629
+  },
+  {
+    "index": 9,
+    "previous_hash": "0000005064a882a41fa7b24ae4bd511db23a19ca3dd507a987b18e6ab11858f6",
+    "timestamp": 1758219664.399527,
+    "transactions": [
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-tOoW8TES6BRngQ-6XE",
+        "back_serial": "SN-q8Wu-_Nhi--9P3",
+        "metadata_hash": "7dbb56dd661d534f570f1d7a3c3d29a84aa9e51eccea9118ad32a6af40b5dc80",
+        "timestamp": 1758206670636,
+        "issued_to": "Ling Lin",
+        "denomination": "1"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-Rth5Gk5HOSddCA-lsw",
+        "back_serial": "SN-eirv-h83L-IRQn",
+        "metadata_hash": "3c9298c37f172018853876dd10cf08f1de4539a5f73020f666f33edb37edbc93",
+        "timestamp": 1758206755918,
+        "issued_to": "Ling Lin",
+        "denomination": "10"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-32feauZlecR19Q-tlA",
+        "back_serial": "SN-lVFA-oUQ5-lg_l",
+        "metadata_hash": "1172752734a67f9e6d9cf04c5d2967719021fff135e31b0db950493e6b7c2b78",
+        "timestamp": 1758206842628,
+        "issued_to": "Ling Lin",
+        "denomination": "100"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-OiCGRYWsmsnIcA-1EI",
+        "back_serial": "SN-ifkg-CD4c-6mRv",
+        "metadata_hash": "bccfb24c0152bb53fa390b81d76a971cc2e3cf9a1442eefdb2950a9dec78eea9",
+        "timestamp": 1758206929194,
+        "issued_to": "Ling Lin",
+        "denomination": "1000"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-Axdzp-FRc0pHAg-oOg",
+        "back_serial": "SN-Anes-7UAM-Z9ib",
+        "metadata_hash": "2162de8f3c64f9777de660640aa3a125e0492a8e8c28d0368b7aec26b1694b32",
+        "timestamp": 1758207024490,
+        "issued_to": "Ling Lin",
+        "denomination": "10000"
+      }
+    ],
+    "nonce": 8143,
+    "hash": "0000f1201cde465d5951498830d8bec4bf15cb181f79f6527469456fa25eeb1d",
+    "mining_time": 3.5310802459716797
+  },
+  {
+    "index": 10,
+    "previous_hash": "0000f1201cde465d5951498830d8bec4bf15cb181f79f6527469456fa25eeb1d",
+    "timestamp": 1758220512.8916311,
+    "transactions": [
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-tOoW8TES6BRngQ-6XE",
+        "back_serial": "SN-q8Wu-_Nhi--9P3",
+        "metadata_hash": "7dbb56dd661d534f570f1d7a3c3d29a84aa9e51eccea9118ad32a6af40b5dc80",
+        "timestamp": 1758206670636,
+        "issued_to": "Ling Lin",
+        "denomination": "1"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-Rth5Gk5HOSddCA-lsw",
+        "back_serial": "SN-eirv-h83L-IRQn",
+        "metadata_hash": "3c9298c37f172018853876dd10cf08f1de4539a5f73020f666f33edb37edbc93",
+        "timestamp": 1758206755918,
+        "issued_to": "Ling Lin",
+        "denomination": "10"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-32feauZlecR19Q-tlA",
+        "back_serial": "SN-lVFA-oUQ5-lg_l",
+        "metadata_hash": "1172752734a67f9e6d9cf04c5d2967719021fff135e31b0db950493e6b7c2b78",
+        "timestamp": 1758206842628,
+        "issued_to": "Ling Lin",
+        "denomination": "100"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-OiCGRYWsmsnIcA-1EI",
+        "back_serial": "SN-ifkg-CD4c-6mRv",
+        "metadata_hash": "bccfb24c0152bb53fa390b81d76a971cc2e3cf9a1442eefdb2950a9dec78eea9",
+        "timestamp": 1758206929194,
+        "issued_to": "Ling Lin",
+        "denomination": "1000"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-Axdzp-FRc0pHAg-oOg",
+        "back_serial": "SN-Anes-7UAM-Z9ib",
+        "metadata_hash": "2162de8f3c64f9777de660640aa3a125e0492a8e8c28d0368b7aec26b1694b32",
+        "timestamp": 1758207024490,
+        "issued_to": "Ling Lin",
+        "denomination": "10000"
+      }
+    ],
+    "nonce": 67990,
+    "hash": "0000045182635885665c8a84e07a9ab02e68fc2792b8ade2bfea95a509758103",
+    "mining_time": 15.11189079284668
+  },
+  {
+    "index": 11,
+    "previous_hash": "0000045182635885665c8a84e07a9ab02e68fc2792b8ade2bfea95a509758103",
+    "timestamp": 1758221246.2047472,
+    "transactions": [
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-tOoW8TES6BRngQ-6XE",
+        "back_serial": "SN-q8Wu-_Nhi--9P3",
+        "metadata_hash": "7dbb56dd661d534f570f1d7a3c3d29a84aa9e51eccea9118ad32a6af40b5dc80",
+        "timestamp": 1758206670636,
+        "issued_to": "Ling Lin",
+        "denomination": "1"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-Rth5Gk5HOSddCA-lsw",
+        "back_serial": "SN-eirv-h83L-IRQn",
+        "metadata_hash": "3c9298c37f172018853876dd10cf08f1de4539a5f73020f666f33edb37edbc93",
+        "timestamp": 1758206755918,
+        "issued_to": "Ling Lin",
+        "denomination": "10"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-32feauZlecR19Q-tlA",
+        "back_serial": "SN-lVFA-oUQ5-lg_l",
+        "metadata_hash": "1172752734a67f9e6d9cf04c5d2967719021fff135e31b0db950493e6b7c2b78",
+        "timestamp": 1758206842628,
+        "issued_to": "Ling Lin",
+        "denomination": "100"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-OiCGRYWsmsnIcA-1EI",
+        "back_serial": "SN-ifkg-CD4c-6mRv",
+        "metadata_hash": "bccfb24c0152bb53fa390b81d76a971cc2e3cf9a1442eefdb2950a9dec78eea9",
+        "timestamp": 1758206929194,
+        "issued_to": "Ling Lin",
+        "denomination": "1000"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-Axdzp-FRc0pHAg-oOg",
+        "back_serial": "SN-Anes-7UAM-Z9ib",
+        "metadata_hash": "2162de8f3c64f9777de660640aa3a125e0492a8e8c28d0368b7aec26b1694b32",
+        "timestamp": 1758207024490,
+        "issued_to": "Ling Lin",
+        "denomination": "10000"
+      }
+    ],
+    "nonce": 1478861,
+    "hash": "0000002bef2385f6cb093fe0237f585e7baff51d6ddebd664b15834e16cd3682",
+    "mining_time": 334.1025846004486
+  },
+  {
+    "index": 12,
+    "previous_hash": "0000002bef2385f6cb093fe0237f585e7baff51d6ddebd664b15834e16cd3682",
+    "timestamp": 1758232998.4278502,
+    "transactions": [
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-oc4XkR8ZzzGQ3Q-FZU",
+        "back_serial": "SN-LF1F-Dk6k-CDHz",
+        "metadata_hash": "7dbb56dd661d534f570f1d7a3c3d29a84aa9e51eccea9118ad32a6af40b5dc80",
+        "timestamp": 1758229806980,
+        "issued_to": "Ling Lin",
+        "denomination": "1"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-llUcasei4dKCBg-Bi0",
+        "back_serial": "SN-FakX-KRci-r6gU",
+        "metadata_hash": "7dbb56dd661d534f570f1d7a3c3d29a84aa9e51eccea9118ad32a6af40b5dc80",
+        "timestamp": 1758229951606,
+        "issued_to": "Ling Lin",
+        "denomination": "1"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-zHBmEa6yxLLRxA-S-E",
+        "back_serial": "SN-yivr-rmef-4-F-",
+        "metadata_hash": "3d08bebd97b6291c6694b2cbcb9c6fc9408e38f23cbb1d768900583d14ed65e1",
+        "timestamp": 1758229958512,
+        "issued_to": "Jasmine007",
+        "denomination": "1"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-WECZ1JhDLC6rnA-iYY",
+        "back_serial": "SN-a16S-dcOF-lwTR",
+        "metadata_hash": "7e8f99ce0c085bbb3c42bfc2325f24bac4c1ea22daa84a41e6c91061edc933bb",
+        "timestamp": 1758230072750,
+        "issued_to": "viraxor",
+        "denomination": "10"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-35V-dL4sUA1EyA-mVI",
+        "back_serial": "SN-arDW-N4zv-N_Zg",
+        "metadata_hash": "c477aa8045e12dc4651f0323de64a3609cf972d88213fe0fb544f0adbe798bcf",
+        "timestamp": 1758230167520,
+        "issued_to": "Sannylin",
+        "denomination": "100"
+      }
+    ],
+    "nonce": 23404,
+    "hash": "00009aa2315ea2f030cecaa9a1569144b9379db3a4f4f6a7e55b22adb4b853e2",
+    "mining_time": 0.705021858215332
+  },
+  {
+    "index": 13,
+    "previous_hash": "00009aa2315ea2f030cecaa9a1569144b9379db3a4f4f6a7e55b22adb4b853e2",
+    "timestamp": 1758233933.4313145,
+    "transactions": [
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-RqW5Mx94FEIY6w-aTw",
+        "back_serial": "SN-VW-k-2cls-I6es",
+        "metadata_hash": "7dbb56dd661d534f570f1d7a3c3d29a84aa9e51eccea9118ad32a6af40b5dc80",
+        "timestamp": 1758233122766,
+        "issued_to": "Ling Lin",
+        "denomination": "1"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-DN6Ngl-7ehWI6w-etU",
+        "back_serial": "SN-i7cL-wi0s-4M5I",
+        "metadata_hash": "bd643125a16ee862053e1c8fd3aacfc7e25f6c9c5c276aa4d59e90fd5fb281f0",
+        "timestamp": 1758233131168,
+        "issued_to": "Sannylin",
+        "denomination": "1"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-BT3t3WhICTPM7Q-j1g",
+        "back_serial": "SN-uvGt-bKiU-FoqN",
+        "metadata_hash": "7e8f99ce0c085bbb3c42bfc2325f24bac4c1ea22daa84a41e6c91061edc933bb",
+        "timestamp": 1758233239134,
+        "issued_to": "viraxor",
+        "denomination": "10"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-BessDaOWJrwz5A-bPA",
+        "back_serial": "SN-Y0LB-Z1V1-YHgJ",
+        "metadata_hash": "3b4eb0c4e78a984fc15d23b489c83c3b1c5620cece41323cdedbabbe2b483bb9",
+        "timestamp": 1758233364826,
+        "issued_to": "LingLinOfficial",
+        "denomination": "100"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-eG_JGEVRrZ6HEg--Kg",
+        "back_serial": "SN-kr8e-AzU1-J00m",
+        "metadata_hash": "0b834d4b3bffae53bd77681f0387fc8b8cd090b2d144e0d35cb08be4bb63d241",
+        "timestamp": 1758233470530,
+        "issued_to": "Eno143",
+        "denomination": "1000"
+      }
+    ],
+    "nonce": 38960,
+    "hash": "00007503510de882071eb6ddb1c21aa2d83125069d0c52fb0b8aed1856aec0ce",
+    "mining_time": 1.0133583545684814
+  },
+  {
+    "index": 14,
+    "previous_hash": "00007503510de882071eb6ddb1c21aa2d83125069d0c52fb0b8aed1856aec0ce",
+    "timestamp": 1758235046.268452,
+    "transactions": [
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-UL7CqzUxQVjMAw-VSg",
+        "back_serial": "SN-U7Bk-RcVy-lKkl",
+        "metadata_hash": "7dbb56dd661d534f570f1d7a3c3d29a84aa9e51eccea9118ad32a6af40b5dc80",
+        "timestamp": 1758234670652,
+        "issued_to": "Ling Lin",
+        "denomination": "1"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-UTvjCDRslU9lKg-2dU",
+        "back_serial": "SN-eClR-jA3r-m5WB",
+        "metadata_hash": "8c5c75128dff03b229f0616b6f068a4c028237c34528db0e1da63c16b93fd41d",
+        "timestamp": 1758234754868,
+        "issued_to": "Sannylin",
+        "denomination": "10"
+      }
+    ],
+    "nonce": 1215539,
+    "hash": "000000b4dddbc162e275aa8b120df08eac6a46aaba92260ce8ba7cf15e4400d5",
+    "mining_time": 14.481651544570923
+  },
+  {
+    "index": 15,
+    "previous_hash": "000000b4dddbc162e275aa8b120df08eac6a46aaba92260ce8ba7cf15e4400d5",
+    "timestamp": 1758307058.3198705,
+    "transactions": [
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-oYyU7bNowvq-OA-DWA",
+        "back_serial": "SN-rBVG-mc6D-am50",
+        "metadata_hash": "7dbb56dd661d534f570f1d7a3c3d29a84aa9e51eccea9118ad32a6af40b5dc80",
+        "timestamp": 1758258196828,
+        "issued_to": "Ling Lin",
+        "denomination": "1"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-5fn-yHrDW48eng-UFs",
+        "back_serial": "SN-hOO5-omEd-P93P",
+        "metadata_hash": "7dbb56dd661d534f570f1d7a3c3d29a84aa9e51eccea9118ad32a6af40b5dc80",
+        "timestamp": 1758258385584,
+        "issued_to": "Ling Lin",
+        "denomination": "1"
+      }
+    ],
+    "nonce": 7177900,
+    "hash": "00000034276f354ee3cb7f52d3217340ddb85f6799fd42258cd7824b13300bdc",
+    "mining_time": 107.62159514427185
+  },
+  {
+    "index": 16,
+    "previous_hash": "00000034276f354ee3cb7f52d3217340ddb85f6799fd42258cd7824b13300bdc",
+    "timestamp": 1758309884.1408439,
+    "transactions": [
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-yg2loSLKxlpyaw-dP0",
+        "back_serial": "SN-Y2jJ-AJ0g-F3zD",
+        "metadata_hash": "7dbb56dd661d534f570f1d7a3c3d29a84aa9e51eccea9118ad32a6af40b5dc80",
+        "timestamp": 1758307630260,
+        "issued_to": "Ling Lin",
+        "denomination": "1"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-D7gV993Sdt_8-g-2N8",
+        "back_serial": "SN--oC2-mTU3-OuGt",
+        "metadata_hash": "7dbb56dd661d534f570f1d7a3c3d29a84aa9e51eccea9118ad32a6af40b5dc80",
+        "timestamp": 1758308293254,
+        "issued_to": "Ling Lin",
+        "denomination": "1"
+      }
+    ],
+    "nonce": 1572136,
+    "hash": "000000d8bd2a5cb9b1170acb34a9319a527432f8b9b4bca9bb3525abcd46ab7d",
+    "mining_time": 24.072702646255493
+  },
+  {
+    "index": 17,
+    "previous_hash": "000000d8bd2a5cb9b1170acb34a9319a527432f8b9b4bca9bb3525abcd46ab7d",
+    "timestamp": 1758392280.3692677,
+    "transactions": [
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-w-fE3v-24Re-1g-IJQ",
+        "back_serial": "SN-1D77-IOXH-XH2f",
+        "metadata_hash": "7dbb56dd661d534f570f1d7a3c3d29a84aa9e51eccea9118ad32a6af40b5dc80",
+        "timestamp": 1758310403812,
+        "issued_to": "Ling Lin",
+        "denomination": "1"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-laKaXqCXb-I0BA-qKA",
+        "back_serial": "SN-uRqU-biLV-1M5x",
+        "metadata_hash": "7dbb56dd661d534f570f1d7a3c3d29a84aa9e51eccea9118ad32a6af40b5dc80",
+        "timestamp": 1758310897146,
+        "issued_to": "Ling Lin",
+        "denomination": "1"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-WMchkJhGeIsa8Q-f7Q",
+        "back_serial": "SN-Kk1Y-5A12-Sn8R",
+        "metadata_hash": "7dbb56dd661d534f570f1d7a3c3d29a84aa9e51eccea9118ad32a6af40b5dc80",
+        "timestamp": 1758311109942,
+        "issued_to": "Ling Lin",
+        "denomination": "1"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-DevN9PIN-QoLYQ-TGk",
+        "back_serial": "SN-Scgw-x7vo-u07W",
+        "metadata_hash": "7dbb56dd661d534f570f1d7a3c3d29a84aa9e51eccea9118ad32a6af40b5dc80",
+        "timestamp": 1758313009252,
+        "issued_to": "Ling Lin",
+        "denomination": "1"
+      },
+      {
+        "type": "GTX_Genesis",
+        "front_serial": "SN-uxAvsuivf87Uxw-6eI",
+        "back_serial": "SN-Y8z4-xBVp-S8uF",
+        "metadata_hash": "3c9298c37f172018853876dd10cf08f1de4539a5f73020f666f33edb37edbc93",
+        "timestamp": 1758313163344,
+        "issued_to": "Ling Lin",
+        "denomination": "10"
+      }
+    ],
+    "nonce": 8943706,
+    "hash": "00000014eec3f4f9c46111e83a06b15c2a384f87353a7109d978e509071e9604",
+    "mining_time": 365.5800590515137
+  }
+]

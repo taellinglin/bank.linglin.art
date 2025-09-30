@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body { background: black; color: white; margin: 0; font-family: sans-serif; }
+.row { display: flex; gap: 1px; padding: 1px; }
+.tile { background: #111; flex: 1; text-align: center; }
+img { max-width: 100%; display: block; }
+a { color: red; text-decoration: none; }
+a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<h1 style="text-align:center;">{{ name }}</h1>
+{% for denom in denoms %}
+  <div class="row">
+    <div class="tile">
+      <a href="/{{ name }}/{{ denom }}/">{{ denom }}</a>
+    </div>
+  </div>
+{% endfor %}
+</body>
+</html>

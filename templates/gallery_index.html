@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block content %}
+    <div class="gallery-header">
+        <h1>Members</h1>
+        <p>Browse all banknote creators in our community</p>
+    </div>
+    
+    <div class="users-grid">
+    {% for user in users %}
+        <div class="user-card">
+            <a href="/{{ user.username }}" class="user-link">
+                <div class="user-card-content">
+                    <div class="user-avatar">
+                        {% set avatar_url = get_user_avatar_url(user.username) %}
+                        {% if avatar_url %}
+                            <img src="{{ avatar_url }}" alt="{{ user.username }}" class="avatar-image">
+                        {% else %}
+                            <div class="avatar-initials">
+                                {{ get_formatted_initials(user.username) }}
+                            </div>
+                        {% endif %}
+                    </div>
+                    <div class="user-details">
+                        <h3 class="username">{{ user.username }}</h3>
+                        <div class="user-balance">${{ "{:,.0f}".format(user.balance) }}</div>
+                        {% if user.bio %}
+                            <p class="user-bio-preview">{{ user.bio|striptags|truncate(60) }}</p>
+                        {% endif %}
+                        <div class="user-meta">
+                            <span class="stat">{{ user.banknotes|length }} notes</span>
+                            <span class="stat">Since {{ user.created_at.strftime('%Y') }}</span>
+                        </div>
+                    </div>
+                </div>
+            </a>
+        </div>
+    {% endfor %}
+    </div>
+{% endblock %}

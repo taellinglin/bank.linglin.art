@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="auth-container">
+    <div class="auth-box">
+        <h1>Two-Factor Authentication</h1>
+        <p>Please enter the code from your authenticator app:</p>
+        
+        <form method="POST" class="auth-form">
+            <input type="text" name="token" placeholder="6-digit code" class="auth-input" required>
+            <button type="submit" class="auth-button">Verify</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

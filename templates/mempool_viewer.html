@@ -1,0 +1,450 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="gallery-header">
+    <h1>Mempool Viewer</h1>
+    <p>Real-time view of pending transactions waiting to be mined</p>
+</div>
+
+<!-- Statistics Overview -->
+<div class="stats-overview">
+    <div class="stat-card">
+        <div class="stat-icon">
+            <i class="fas fa-layer-group"></i>
+        </div>
+        <div class="stat-info">
+            <div class="stat-number">{{ total_transactions }}</div>
+            <div class="stat-label">Total Transactions</div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-icon active">
+            <i class="fas fa-play-circle"></i>
+        </div>
+        <div class="stat-info">
+            <div class="stat-number">{{ active_transactions }}</div>
+            <div class="stat-label">Active</div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-icon mined">
+            <i class="fas fa-check-circle"></i>
+        </div>
+        <div class="stat-info">
+            <div class="stat-number">{{ mined_transactions }}</div>
+            <div class="stat-label">Mined</div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-icon types">
+            <i class="fas fa-chart-pie"></i>
+        </div>
+        <div class="stat-info">
+            <div class="stat-number">{{ type_counts|length }}</div>
+            <div class="stat-label">Transaction Types</div>
+        </div>
+    </div>
+</div>
+
+<!-- Transaction Type Breakdown -->
+{% if type_counts %}
+<div class="type-breakdown">
+    <h3>Transaction Types</h3>
+    <div class="type-tags">
+        {% for type, count in type_counts.items() %}
+        <span class="type-tag {{ type|lower }}">
+            <span class="type-name">{{ type }}</span>
+            <span class="type-count">{{ count }}</span>
+        </span>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
+<!-- Transactions Grid -->
+<div class="transactions-section">
+    <div class="section-header">
+        <h2>Transactions</h2>
+        <span class="badge">{{ transactions|length }}</span>
+    </div>
+    
+    {% if transactions %}
+    <div class="transactions-grid">
+        {% for tx in transactions %}
+        <div class="transaction-card {{ 'mined' if tx.is_mined else 'pending' }} {{ tx.type|lower }}">
+            <div class="transaction-header">
+                <div class="tx-status">
+                    {% if tx.is_mined %}
+                    <span class="status-badge mined">
+                        <i class="fas fa-check"></i> Mined
+                    </span>
+                    {% else %}
+                    <span class="status-badge pending">
+                        <i class="fas fa-clock"></i> Pending
+                    </span>
+                    {% endif %}
+                </div>
+                <div class="tx-type {{ tx.type|lower }}">
+                    {{ tx.type }}
+                </div>
+            </div>
+            
+            <div class="transaction-body">
+                <div class="tx-hash">
+                    <label>Hash:</label>
+                    <code class="hash" title="{{ tx.hash }}">{{ tx.hash[:20] }}...</code>
+                </div>
+                
+                <div class="tx-timestamp">
+                    <label>Timestamp:</label>
+                    <span>{{ tx.timestamp_readable }}</span>
+                </div>
+                
+                {% if tx.type == 'transfer' %}
+                <div class="tx-details">
+                    <label>Transfer:</label>
+                    <div class="transfer-flow">
+                        <span class="from">{{ tx.from[:12] }}...</span>
+                        <i class="fas fa-arrow-right"></i>
+                        <span class="to">{{ tx.to[:12] }}...</span>
+                    </div>
+                    <div class="amount">Amount: {{ tx.amount }}</div>
+                </div>
+                {% elif tx.type in ['genesis', 'GTX_Genesis'] %}
+                <div class="tx-details">
+                    <label>Genesis:</label>
+                    <div class="genesis-info">
+                        <div>Serial: {{ tx.serial_number[:15] }}...</div>
+                        <div>Issued to: {{ tx.issued_to }}</div>
+                        <div>Denomination: {{ tx.denomination }}</div>
+                    </div>
+                </div>
+                {% endif %}
+                
+                <div class="tx-meta">
+                    <span class="meta-item">
+                        <i class="fas fa-weight-hanging"></i> {{ tx.size }} bytes
+                    </span>
+                    <span class="meta-item">
+                        <i class="fas fa-fingerprint"></i> {{ tx.signature }}
+                    </span>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <i class="fas fa-inbox fa-3x"></i>
+        <h3>No transactions in mempool</h3>
+        <p>The mempool is currently empty. Transactions will appear here when created.</p>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.stats-overview {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin: 2rem 0;
+}
+
+.stat-card {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    transition: transform 0.2s ease;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+}
+
+.stat-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    background: linear-gradient(135deg, #FF0000, #FF7F00);
+    color: white;
+}
+
+.stat-icon.active { background: linear-gradient(135deg, #FFFF00, #00FF00); }
+.stat-icon.mined { background: linear-gradient(135deg, #0000FF, #4B0082); }
+.stat-icon.types { background: linear-gradient(135deg, #8F00FF, #9400D3); }
+
+.stat-number {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #ffffff;
+}
+
+.stat-label {
+    color: #cccccc;
+    font-size: 0.9rem;
+}
+
+.type-breakdown {
+    margin: 2rem 0;
+}
+
+.type-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.type-tag {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 12px;
+    font-size: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid;
+    font-weight: 600;
+}
+
+.type-tag.genesis, 
+.type-tag.gtx_genesis { 
+    background: rgba(75, 0, 130, 0.2); 
+    border-color: #4B0082; 
+    color: #B19CD9; 
+}
+.type-tag.transfer { 
+    background: rgba(0, 255, 0, 0.2); 
+    border-color: #00FF00; 
+    color: #90EE90; 
+}
+.type-tag.reward { 
+    background: rgba(255, 0, 0, 0.2); 
+    border-color: #FF0000; 
+    color: #FFB6C1; 
+}
+
+.transactions-section {
+    margin-top: 2rem;
+}
+
+.section-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.section-header h2 {
+    margin: 0;
+    color: #ffffff;
+}
+
+.badge {
+    background: #FF0000;
+    color: white;
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.transactions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+    gap: 1.5rem;
+}
+
+.transaction-card {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    border-left: 4px solid #FF0000;
+    transition: transform 0.2s ease;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.transaction-card:hover {
+    transform: translateY(-2px);
+}
+
+.transaction-card.mined {
+    border-left-color: #4B0082;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(75, 0, 130, 0.1));
+}
+
+.transaction-card.genesis,
+.transaction-card.gtx_genesis {
+    border-left-color: #4B0082;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(75, 0, 130, 0.1));
+}
+
+.transaction-card.transfer {
+    border-left-color: #00FF00;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(0, 255, 0, 0.1));
+}
+
+.transaction-card.reward {
+    border-left-color: #FF0000;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(255, 0, 0, 0.1));
+}
+
+.transaction-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.status-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.status-badge.pending {
+    background: rgba(255, 255, 0, 0.3);
+    color: #FFFF00;
+    border: 1px solid #FFFF00;
+}
+
+.status-badge.mined {
+    background: rgba(75, 0, 130, 0.3);
+    color: #B19CD9;
+    border: 1px solid #4B0082;
+}
+
+.tx-type {
+    padding: 0.25rem 0.75rem;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    background: rgba(255, 255, 255, 0.1);
+    color: #ffffff;
+}
+
+.tx-type.genesis,
+.tx-type.gtx_genesis {
+    background: rgba(75, 0, 130, 0.3);
+    color: #B19CD9;
+    border: 1px solid #4B0082;
+}
+
+.tx-type.transfer {
+    background: rgba(0, 255, 0, 0.3);
+    color: #90EE90;
+    border: 1px solid #00FF00;
+}
+
+.tx-type.reward {
+    background: rgba(255, 0, 0, 0.3);
+    color: #FFB6C1;
+    border: 1px solid #FF0000;
+}
+
+.transaction-body {
+    space-y: 0.75rem;
+}
+
+.transaction-body label {
+    font-weight: 600;
+    color: #cccccc;
+    font-size: 0.9rem;
+    display: block;
+    margin-bottom: 0.25rem;
+}
+
+.tx-hash code.hash {
+    font-family: 'Courier New', monospace;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    color: #ffffff;
+}
+
+.transfer-flow {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0.5rem 0;
+    color: #cccccc;
+}
+
+.amount {
+    font-weight: 600;
+    color: #00FF00;
+}
+
+.genesis-info {
+    color: #cccccc;
+    font-size: 0.9rem;
+}
+
+.tx-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.meta-item {
+    font-size: 0.8rem;
+    color: #cccccc;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: #cccccc;
+}
+
+.empty-state i {
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+@media (max-width: 768px) {
+    .stats-overview {
+        grid-template-columns: 1fr;
+    }
+    
+    .transactions-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .transaction-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+    
+    .type-tags {
+        flex-direction: column;
+    }
+    
+    .tx-meta {
+        flex-direction: column;
+        gap: 0.5rem;
+    }
+}
+</style>
+{% endblock %}

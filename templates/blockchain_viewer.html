@@ -1,0 +1,657 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="gallery-header">
+    <h1>Blockchain Viewer</h1>
+    <p>Explore the complete blockchain ledger and transaction history</p>
+</div>
+
+<!-- Blockchain Overview -->
+<div class="stats-overview">
+    <div class="stat-card">
+        <div class="stat-icon">
+            <i class="fas fa-cube"></i>
+        </div>
+        <div class="stat-info">
+            <div class="stat-number">{{ total_blocks }}</div>
+            <div class="stat-label">Total Blocks</div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-icon transactions">
+            <i class="fas fa-exchange-alt"></i>
+        </div>
+        <div class="stat-receipt">
+            <div class="stat-number">{{ total_transactions }}</div>
+            <div class="stat-label">Total Transactions</div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-icon genesis">
+            <i class="fas fa-seedling"></i>
+        </div>
+        <div class="stat-info">
+            <div class="stat-number">{{ genesis_count }}</div>
+            <div class="stat-label">Genesis</div>
+        </div>
+    </div>
+    
+    <div class="stat-card">
+        <div class="stat-icon transfer">
+            <i class="fas fa-seedling"></i>
+        </div>
+        <div class="stat-info">
+            <div class="stat-number">{{ transfer_count }}</div>
+            <div class="stat-label">Transfers</div>
+        </div>
+    </div>
+    <div class="stat-card">
+        <div class="stat-icon regular">
+            <i class="fas fa-reward"></i>
+        </div>
+        <div class="stat-info">
+            <div class="stat-number">{{ reward_count }}</div>
+            <div class="stat-label">Rewards</div>
+        </div>
+    </div>
+</div>
+
+<!-- Transaction Type Summary -->
+<div class="type-breakdown">
+    <h3>Transaction Summary</h3>
+    <div class="type-tags">
+        <span class="type-tag genesis">
+            <span class="type-name">Genesis</span>
+            <span class="type-count">{{ genesis_count }}</span>
+        </span>
+        <span class="type-tag transfer">
+            <span class="type-name">Transfers</span>
+            <span class="type-count">{{ transfer_count }}</span>
+        </span>
+        <span class="type-tag reward">
+            <span class="type-name">Rewards</span>
+            <span class="type-count">{{ reward_count }}</span>
+        </span>
+    </div>
+</div>
+
+<!-- Blocks Grid -->
+<div class="blocks-section">
+    <div class="section-header">
+        <h2>Blocks</h2>
+        <span class="badge">{{ blocks|length }}</span>
+    </div>
+    
+    {% if blocks %}
+    <div class="blocks-grid">
+        {% for block in blocks %}
+        <div class="block-card {{ 'genesis' if block.index == 0 else 'regular' }}">
+            <div class="block-header">
+                <div class="block-number">
+                    <span class="block-index">Block #{{ block.index }}</span>
+                    {% if block.index == 0 %}
+                    <span class="genesis-badge">Genesis</span>
+                    {% endif %}
+                </div>
+                <div class="block-hash" title="{{ block.hash }}">
+                    {{ block.hash[:20] }}...
+                </div>
+            </div>
+            
+            <div class="block-body">
+                <div class="block-info">
+                    <div class="info-item">
+                        <label>Timestamp:</label>
+                        <span>
+                            {% if block.timestamp_readable and not block.timestamp_readable.startswith('Invalid') %}
+                                {{ block.timestamp_readable }}
+                            {% else %}
+                                <span class="text-muted" title="Raw timestamp: {{ block.timestamp }}">
+                                    {{ block.timestamp|datetimeformat }}
+                                </span>
+                            {% endif %}
+                        </span>
+                    </div>
+                    
+                    <div class="info-item">
+                        <label>Previous Hash:</label>
+                        <code class="hash" title="{{ block.previous_hash }}">
+                            {% if block.previous_hash != "N/A" %}
+                                {{ block.previous_hash[:20] }}...
+                            {% else %}
+                                —
+                            {% endif %}
+                        </code>
+                    </div>
+                    
+                    <div class="info-item">
+                        <label>Nonce:</label>
+                        <code>{{ block.nonce }}</code>
+                    </div>
+                    
+                    {% if block.difficulty and block.difficulty != "N/A" %}
+                    <div class="info-item">
+                        <label>Difficulty:</label>
+                        <code>{{ block.difficulty }}</code>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <div class="transactions-summary">
+                    <div class="tx-count">
+                        <i class="fas fa-file-invoice"></i>
+                        {{ block.transaction_count }} transactions
+                    </div>
+                    
+                    {% if block.transaction_count > 0 %}
+                    <div class="tx-breakdown">
+                        {% if block.genesis_count > 0 %}
+                        <span class="tx-type-badge genesis">{{ block.genesis_count }} genesis</span>
+                        {% endif %}
+                        {% if block.transfer_count > 0 %}
+                        <span class="tx-type-badge transfer">{{ block.transfer_count }} transfers</span>
+                        {% endif %}
+                        {% if block.reward_count > 0 %}
+                        <span class="tx-type-badge reward">{{ block.reward_count }} rewards</span>
+                        {% endif %}
+                    </div>
+                    {% endif %}
+                </div>
+
+                <!-- Show transaction details for blocks with transactions -->
+                {% if block.transaction_count > 0 and block.transactions %}
+                <div class="transaction-details">
+                    <h4>Transactions:</h4>
+                    <div class="transaction-list">
+                        {% for tx in block.transactions %}
+                        <div class="transaction-item {{ tx.type|lower }}">
+                            <div class="tx-header">
+                                <span class="tx-type {{ tx.type|lower }}">{{ tx.type }}</span>
+                                <span class="tx-hash" title="{{ tx.hash }}">{{ tx.hash[:16] }}...</span>
+                            </div>
+                            
+                            {% if tx.type == "transfer" and tx.from and tx.to %}
+                            <div class="tx-flow">
+                                <span class="tx-from" title="{{ tx.from }}">{{ tx.from[:10] }}...</span>
+                                <i class="fas fa-arrow-right"></i>
+                                <span class="tx-to" title="{{ tx.to }}">{{ tx.to[:10] }}...</span>
+                                <span class="tx-amount">{{ tx.amount }} LC</span>
+                            </div>
+                            {% elif tx.type == "reward" and tx.to %}
+                            <div class="tx-flow">
+                                <i class="fas fa-gift"></i>
+                                <span class="tx-to" title="{{ tx.to }}">{{ tx.to[:10] }}...</span>
+                                <span class="tx-amount">{{ tx.amount }} LC</span>
+                            </div>
+                            {% elif tx.type in ["GTX_Genesis", "genesis"] and tx.serial_number %}
+                            <div class="tx-flow">
+                                <i class="fas fa-money-bill-wave"></i>
+                                <span class="tx-serial">Serial: {{ tx.serial_number[:12] }}...</span>
+                                <span class="tx-amount">{{ tx.denomination }} LC</span>
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+                
+                <div class="block-meta">
+                    <span class="meta-item">
+                        <i class="fas fa-weight-hanging"></i> {{ block.size }} bytes
+                    </span>
+                    {% if block.mining_time and block.mining_time != "N/A" %}
+                    <span class="meta-item">
+                        <i class="fas fa-clock"></i> {{ "%.2f"|format(block.mining_time) }}s
+                    </span>
+                    {% endif %}
+                </div>
+            </div>
+            
+            <div class="block-actions">
+                {% if block.index > 0 %}
+                <a href="/block/{{ int(block.hash) }}" class="btn btn-info action-btn">View Details</a>
+                {% else %}
+                <span class="badge bg-primary">Genesis Block</span>
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <i class="fas fa-cube fa-3x"></i>
+        <h3>No blocks in blockchain</h3>
+        <p>The blockchain is empty. Mine some blocks to get started.</p>
+    </div>
+    {% endif %}
+</div>
+
+<style>
+.stats-overview {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.5rem;
+    margin: 2rem 0;
+}
+
+.stat-card {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    transition: transform 0.2s ease;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.stat-card:hover {
+    transform: translateY(-2px);
+}
+
+.stat-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+    background: linear-gradient(135deg, #0d0062ff, #00aaffff);
+    color: white;
+}
+
+.stat-icon.transactions { background: linear-gradient(135deg, #7a8500ff, #f6ff00ff); }
+.stat-icon.genesis { background: linear-gradient(135deg, #00a118ff, #00ff59ff); }
+.stat-icon.regular { background: linear-gradient(135deg, #740000ff, #ff0000ff); }
+.stat-icon.transfer { background: linear-gradient(135deg, #710080ff, #ff00eeff); }
+
+
+.stat-number {
+    font-size: 2rem;
+    font-weight: bold;
+    color: #ffffff;
+}
+
+.stat-label {
+    color: #cccccc;
+    font-size: 0.9rem;
+}
+
+.type-breakdown {
+    margin: 2rem 0;
+}
+
+.type-tags {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.type-tag {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 12px;
+    font-size: 1rem;
+    background: rgba(255, 255, 255, 0.05);
+    border: 2px solid;
+    font-weight: 600;
+}
+
+.type-tag.genesis { 
+    background: rgba(0, 255, 0, 0.2); 
+    border-color: #00FF00; 
+    color: #90EE90; 
+
+}
+.type-tag.transfer { 
+    background: rgba(75, 0, 130, 0.2); 
+    border-color: #4B0082; 
+    color: #B19CD9; 
+}
+.type-tag.reward { 
+    background: rgba(255, 0, 0, 0.2); 
+    border-color: #FF0000; 
+    color: #FFB6C1; 
+}
+
+.blocks-section {
+    margin-top: 2rem;
+}
+
+.section-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.section-header h2 {
+    margin: 0;
+    color: #ffffff;
+}
+
+.blocks-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+    gap: 1.5rem;
+}
+
+.block-card {
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 12px;
+    padding: 1.5rem;
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
+    border-left: 4px solid #FF0000;
+    transition: transform 0.2s ease;
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.block-card:hover {
+    transform: translateY(-2px);
+}
+
+.block-card.genesis {
+    border-left-color: #00FF00;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(0, 255, 0, 0.1));
+}
+
+.block-card.transaction {
+    border-left-color: #ffe600ff;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(75, 0, 130, 0.1));
+}
+
+.block-header {
+    margin-bottom: 1rem;
+}
+
+.block-number {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.block-index {
+    font-size: 1.25rem;
+    font-weight: bold;
+    color: #ffffff;
+}
+
+.genesis-badge {
+    background: #00FF00;
+    color: #000000;
+    padding: 0.25rem 0.75rem;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    
+}
+
+.transaction-badge {
+    background: #dfbe00ff;
+    color: white;
+    padding: 0.25rem 0.75rem;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.block-hash {
+    font-family: 'Courier New', monospace;
+    font-size: 0.9rem;
+    color: #cccccc;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 0.5rem;
+    border-radius: 4px;
+    word-break: break-all;
+}
+
+.block-body {
+    flex: 1;
+    space-y: 1rem;
+}
+
+.info-item {
+    margin-bottom: 0.75rem;
+}
+
+.info-item label {
+    font-weight: 600;
+    color: #cccccc;
+    font-size: 0.9rem;
+    display: block;
+    margin-bottom: 0.25rem;
+}
+
+.info-item code {
+    font-family: 'Courier New', monospace;
+    background: rgba(0, 0, 0, 0.3);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    color: #ffffff;
+}
+
+.transactions-summary {
+    background: rgba(255, 255, 255, 0.03);
+    padding: 1rem;
+    border-radius: 8px;
+    margin: 1rem 0;
+}
+
+.tx-count {
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: #ffffff;
+}
+
+.tx-breakdown {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.tx-type-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.tx-type-badge.genesis { 
+    background: rgba(0, 255, 0, 0.3); 
+    color: #90EE90; 
+    border: 1px solid #00FF00;
+}
+.tx-type-badge.transfer { 
+    background: rgba(75, 0, 130, 0.3); 
+    color: #B19CD9; 
+    border: 1px solid #4B0082;
+}
+.tx-type-badge.reward { 
+    background: rgba(255, 0, 0, 0.3); 
+    color: #FFB6C1; 
+    border: 1px solid #FF0000;
+}
+
+.transaction-details {
+    margin: 1rem 0;
+    padding: 1rem;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    border-left: 3px solid #00FF00;
+}
+
+.transaction-details h4 {
+    margin: 0 0 0.75rem 0;
+    font-size: 1rem;
+    color: #ffffff;
+}
+
+.transaction-list {
+    space-y: 0.5rem;
+}
+
+.transaction-item {
+    padding: 0.5rem;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    border-left: 2px solid #00FF00;
+}
+
+.tx-type {
+    font-size: 0.8rem;
+    font-weight: 600;
+    padding: 0.2rem 0.5rem;
+    border-radius: 4px;
+    display: inline-block;
+    margin-bottom: 0.25rem;
+}
+
+.tx-type.genesis {
+    background: rgba(0, 255, 0, 0.3);
+    color: #90EE90;
+    border: 1px solid #00FF00;
+}
+
+.tx-type.transfer {
+    background: rgba(75, 0, 130, 0.3);
+    color: #B19CD9;
+    border: 1px solid #4B0082;
+}
+
+.tx-type.reward {
+    background: rgba(255, 0, 0, 0.3);
+    color: #FFB6C1;
+    border: 1px solid #FF0000;
+}
+
+.tx-flow {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+    color: #cccccc;
+}
+
+.tx-amount {
+    font-weight: 600;
+    color: #00FF00;
+}
+
+.tx-serial {
+    font-size: 0.85rem;
+    color: #cccccc;
+    font-family: 'Courier New', monospace;
+}
+
+.tx-more {
+    text-align: center;
+    font-size: 0.8rem;
+    color: #cccccc;
+    font-style: italic;
+    margin-top: 0.5rem;
+}
+
+.block-meta {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.meta-item {
+    font-size: 0.8rem;
+    color: #cccccc;
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.block-actions {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: linear-gradient(135deg, #FF0000, #FF7F00);
+    color: white;
+    text-decoration: none;
+    border-radius: 6px;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+    border: none;
+}
+
+.action-btn:hover {
+    background: linear-gradient(135deg, #FF7F00, #FFFF00);
+    color: #000000;
+    transform: translateY(-1px);
+}
+
+.empty-state {
+    text-align: center;
+    padding: 3rem;
+    color: #cccccc;
+}
+
+.empty-state i {
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+.badge {
+    background: #FF0000;
+    color: white;
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.text-muted {
+    color: #999999 !important;
+}
+@media (max-width: 768px) {
+    .stats-overview {
+        grid-template-columns: 1fr;
+    }
+    
+    .blocks-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .type-tags {
+        flex-direction: column;
+    }
+    
+    .block-meta {
+        flex-direction: column;
+    }
+    
+    .transaction-details {
+        padding: 0.75rem;
+    }
+}
+</style>
+{% endblock %}

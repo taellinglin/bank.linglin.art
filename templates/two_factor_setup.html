@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="auth-container">
+    <div class="auth-box">
+        <h1>Two-Factor Authentication Setup</h1>
+        <p>Scan the QR code below with your authenticator app (like Google Authenticator or Authy):</p>
+        
+        <div class="qr-code">
+            <img src="data:image/png;base64,{{ qr_code }}" alt="QR Code">
+        </div>
+        
+        <p>Then enter the code from your app to verify setup:</p>
+        
+        <form method="POST" class="auth-form">
+            <input type="text" name="token" placeholder="6-digit code" class="auth-input" required>
+            <button type="submit" class="auth-button">Verify & Complete Setup</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

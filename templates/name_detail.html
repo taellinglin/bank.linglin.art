@@ -1,0 +1,337 @@
+
+    <style>
+        /* Global Styles */
+        body {
+            font-family: 'Daemon';
+            background-color: #121212;
+            color: #e0e0e0;
+            margin: 0;
+            padding: 0;
+        }
+        
+        .container {
+            font-family:'Daemon';
+            max-width: 1800px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        /* Header Styles */
+        .directory-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 15px;
+            border-bottom: 1px solid #333;
+        }
+        
+        h1 {
+            font-size: 2.2em;
+            font-weight: 500;
+            color: #ffffff;
+            margin: 0;
+        }
+        
+        .back-link {
+            color: #ff5252;
+            text-decoration: none;
+            font-weight: 500;
+            font-size: 1.1em;
+            transition: color 0.2s ease;
+        }
+        
+        .back-link:hover {
+            color: #ff7b7b;
+            text-decoration: underline;
+        }
+        
+        /* Main Layout */
+        .bill-directory {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin: 20px 0;
+        }
+        
+        /* Denomination Sections */
+        .denomination-section {
+            background: #1e1e1e;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+        
+        .denomination-header {
+            font-size: 1.6em;
+            font-weight: 500;
+            margin-bottom: 20px;
+            color: #ff5252;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+        }
+        
+        /* Half-width grid layout */
+        .half-width-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(100%, 1fr));
+            gap: 20px;
+        }
+        
+        .bill-item {
+            background: #2d2d2d;
+            border-radius: 8px;
+            padding: 15px;
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s ease;
+            border: 1px solid #333;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .bill-item:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 6px 12px rgba(0, 0, 0, 0.4);
+            border-color: #555;
+        }
+        
+        .bill-image-container {
+            width: 100%;
+            height: 300px;
+            background: #121212;
+            border: 1px solid #444;
+            border-radius: 4px;
+            margin-bottom: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+        
+        .bill-image {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        
+        .bill-info {
+            text-align: center;
+            padding: 10px;
+        }
+        
+        .bill-side {
+            font-weight: 500;
+            color: #ff5252;
+            text-transform: uppercase;
+            font-size: 0.95em;
+            margin-bottom: 5px;
+        }
+        
+        .bill-filename {
+            font-family: 'Daemon';
+            font-size: 0.85em;
+            color: #888;
+            word-break: break-all;
+        }
+        
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            color: #888;
+            font-style: italic;
+            padding: 40px;
+            grid-column: 1 / -1;
+        }
+        
+        /* Directory Structure */
+        .directory-structure {
+            margin-top: 40px;
+            padding: 20px;
+            background: #1e1e1e;
+            border-radius: 8px;
+            border: 1px solid #333;
+        }
+        
+        .directory-structure h3 {
+            color: #ff5252;
+            margin-top: 0;
+        }
+        
+        .directory-structure pre {
+            background: #121212;
+            padding: 15px;
+            border-radius: 4px;
+            overflow-x: auto;
+            color: #e0e0e0;
+            border: 1px solid #333;
+            font-family: 'Daemon';
+        }
+        
+        /* Responsive Design */
+        @media (max-width: 1200px) {
+            .half-width-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .bill-directory {
+                grid-template-columns: 1fr;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .directory-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 15px;
+            }
+            
+            h1 {
+                font-size: 1.8em;
+            }
+            
+            .bill-image-container {
+                height: 250px;
+            }
+        }
+    </style>
+    {% extends "base.html" %}
+    
+    {% block content %}
+    <div class="container">
+        <div class="directory-header">
+            <h1>Banknotes for: {{ name }}</h1>
+            <a href="{{ url_for('gallery_index') }}" class="back-link">← Back to Gallery</a>
+        </div>
+
+        {% if not fronts and not backs %}
+            <div class="empty-state">
+                <h3>No banknotes found for {{ name }}</h3>
+                <p>This directory doesn't contain any SVG banknote files yet.</p>
+            </div>
+        {% else %}
+            <div class="bill-directory">
+                {% if fronts %}
+                <div class="denomination-section">
+                    <h2 class="denomination-header">Front Designs</h2>
+                    <div class="half-width-grid">
+                        {% for bill in fronts|sort(attribute='denom') %}
+                        <div class="bill-item">
+                            <div class="bill-image-container">
+                                <!-- Using object tag for better SVG rendering in Firefox -->
+                                <object type="image/svg+xml" data="{{ bill.file }}" class="bill-image" 
+                                        aria-label="{{ bill.denom }} Front">
+                                    Fallback: <img src="{{ bill.file }}" alt="{{ bill.denom }} Front" loading="lazy">
+                                </object>
+                            </div>
+                            <div class="bill-info">
+                                <div class="bill-side">Front - {{ bill.denom }}</div>
+                                <div class="bill-filename">{{ bill.file.split('/')[-1] }}</div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+
+                {% if backs %}
+                <div class="denomination-section">
+                    <h2 class="denomination-header">Back Designs</h2>
+                    <div class="half-width-grid">
+                        {% for bill in backs|sort(attribute='denom') %}
+                        <div class="bill-item">
+                            <div class="bill-image-container">
+                                <!-- Using object tag for better SVG rendering in Firefox -->
+                                <object type="image/svg+xml" data="{{ bill.file }}" class="bill-image"
+                                        aria-label="{{ bill.denom }} Back">
+                                    Fallback: <img src="{{ bill.file }}" alt="{{ bill.denom }} Back" loading="lazy">
+                                </object>
+                            </div>
+                            <div class="bill-info">
+                                <div class="bill-side">Back - {{ bill.denom }}</div>
+                                <div class="bill-filename">{{ bill.file.split('/')[-1] }}</div>
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="directory-structure">
+                <h3>Directory Structure:</h3>
+                <pre>
+images/
+└── {{ name }}/
+    {% for denom in fronts|map(attribute='denom')|unique|sort %}
+    ├── {{ denom }}/
+    │   ├── {{ name }}_{{ denom }}_FRONT.svg
+    │   └── {{ name }}_{{ denom }}_BACK.svg
+    {% endfor %}
+                </pre>
+            </div>
+        {% endif %}
+    </div>
+    {% endblock %}
+
+    <script>
+        // Enhanced SVG rendering for Firefox
+        document.addEventListener('DOMContentLoaded', function() {
+            // Check if browser is Firefox
+            const isFirefox = navigator.userAgent.toLowerCase().includes('firefox');
+            
+            // Use requestAnimationFrame for smoother rendering
+            const optimizeSVGRendering = () => {
+                const svgObjects = document.querySelectorAll('object[type="image/svg+xml"]');
+                
+                svgObjects.forEach(obj => {
+                    // Add will-change for better rendering performance
+                    obj.style.willChange = 'transform';
+                    
+                    // Force reflow for better rendering in Firefox
+                    if (isFirefox) {
+                        obj.addEventListener('load', function() {
+                            // This helps with rendering sharpness in Firefox
+                            const svgDoc = obj.contentDocument;
+                            if (svgDoc) {
+                                const svgElement = svgDoc.querySelector('svg');
+                                if (svgElement) {
+                                    svgElement.setAttribute('shape-rendering', 'geometricPrecision');
+                                }
+                            }
+                        });
+                    }
+                });
+            };
+            
+            // Use requestAnimationFrame for optimal timing
+            requestAnimationFrame(optimizeSVGRendering);
+            
+            // Add hover effect to bill items
+            const billItems = document.querySelectorAll('.bill-item');
+            
+            billItems.forEach(item => {
+                item.addEventListener('mouseenter', function() {
+                    this.style.transform = 'translateY(-4px)';
+                    this.style.boxShadow = '0 6px 12px rgba(0, 0, 0, 0.4)';
+                    this.style.borderColor = '#555';
+                });
+                
+                item.addEventListener('mouseleave', function() {
+                    this.style.transform = 'translateY(0)';
+                    this.style.boxShadow = '0 2px 8px rgba(0, 0, 0, 0.2)';
+                    this.style.borderColor = '#333';
+                });
+            });
+            
+            // Handle SVG loading errors
+            document.querySelectorAll('object[type="image/svg+xml"]').forEach(obj => {
+                obj.addEventListener('error', function() {
+                    // If SVG fails to load, show the fallback image
+                    const fallbackImg = this.querySelector('img');
+                    if (fallbackImg) {
+                        this.parentNode.replaceChild(fallbackImg, this);
+                    }
+                });
+            });
+        });
+    </script>

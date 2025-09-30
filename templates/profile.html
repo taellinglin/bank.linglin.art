@@ -1,0 +1,270 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="profile-container">
+    <div class="profile-header">
+        <div class="avatar-container">
+            {% if get_user_avatar_url(user.username) %}
+                <img src="{{ get_user_avatar_url(user.username) }}" alt="{{ user.username }}" class="avatar-image">
+            {% else %}
+                <div class="avatar-initials">
+                    {{ get_formatted_initials(user.username) }}
+                </div>
+            {% endif %}
+        </div>
+        <div class="profile-info">
+            <h1>{{ user.username }}</h1>
+            <div class="profile-balance">Balance: ${{ "{:,.0f}".format(user.balance) }}</div>
+            <div>Member since: {{ user.created_at.strftime('%B %Y') }}</div>
+        </div>
+    </div>
+    
+    <!-- Tab Navigation -->
+    <div class="tab-navigation">
+        <button class="tab-button active" onclick="openTab('info')">Info</button>
+        <button class="tab-button" onclick="openTab('gallery')">Gallery</button>
+    </div>
+    
+    <!-- Info Tab -->
+    <div id="info" class="tab-content active">
+        <div class="profile-bio">
+            <h2>Bio</h2>
+            {% if user.bio %}
+                <div class="bio-content">{{ user.bio|safe }}</div>
+            {% else %}
+                <p>This user hasn't written a bio yet.</p>
+            {% endif %}
+            
+            {% if current_user.is_authenticated and current_user.id == user.id %}
+                <form method="POST" style="margin-top: 20px;">
+                    <textarea name="bio" placeholder="Write something about yourself... BBCode is supported: [b]bold[/b], [i]italic[/i], [url]https://example.com[/url]" 
+                            class="auth-input" style="min-height: 100px;">{{ user.bio|safe }}</textarea>
+                    <button type="submit" class="auth-button" style="margin-top: 10px;">Update Bio</button>
+                </form>
+            {% endif %}
+        </div>
+        
+        {% if current_user.is_authenticated and current_user.id == user.id %}
+        <div class="generation-status">
+            <h2>Annual Banknote Generation</h2>
+            {% if user.can_generate_money() %}
+                <p>You can generate new banknotes now!</p>
+                <form method="POST" action="/generate-money">
+                    <button type="submit" class="cta-button">Generate New Banknotes</button>
+                </form>
+            {% else %}
+                <p>You can generate new banknotes again in {{ user.days_until_next_generation() }} days.</p>
+                <button class="cta-button" disabled>Generate New Banknotes</button>
+            {% endif %}
+        </div>
+        
+        <div class="task-list">
+            <h2>Recent Generation Tasks</h2>
+            {% for task in generation_tasks %}
+                <div class="task-item status-{{ task.status }}">
+                    <div>
+                        <strong>Task #{{ task.id }}</strong> - 
+                        <span class="status-{{ task.status }}">{{ task.status|title }}</span>
+                    </div>
+                    <div>
+                        {{ task.created_at.strftime('%Y-%m-%d %H:%M') }}
+                        {% if task.completed_at %}
+                            (Completed: {{ task.completed_at.strftime('%Y-%m-%d %H:%M') }})
+                        {% endif %}
+                    </div>
+                    {% if task.message %}
+                    <div class="task-message">{{ task.message }}</div>
+                    {% endif %}
+                </div>
+            {% else %}
+                <p>No generation tasks yet.</p>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+    
+    <!-- Gallery Tab -->
+    <div id="gallery" class="tab-content">
+        <div class="gallery-header">
+            <h2>Banknote Gallery</h2>
+            <p>Showing {{ banknotes|length }} banknotes</p>
+        </div>
+        
+        {% if banknotes %}
+        {# Group banknotes by denomination with proper side handling #}
+        {% set denominations = {} %}
+        {% for banknote in banknotes %}
+            {% if banknote %}
+                {% set denom = banknote.denomination %}
+                {% if denom not in denominations %}
+                    {% set _ = denominations.update({denom: {'front': [], 'back': []}}) %}
+                {% endif %}
+                
+                {# FIX: Handle None values for side and png_path #}
+                {% set side = banknote.side or '' %}
+                {% set png_path = banknote.png_path or '' %}
+                
+                {% if 'front' in side.lower() or 'front' in png_path.lower() %}
+                    {% set _ = denominations[denom].front.append(banknote) %}
+                {% elif 'back' in side.lower() or 'back' in png_path.lower() %}
+                    {% set _ = denominations[denom].back.append(banknote) %}
+                {% endif %}
+            {% endif %}
+        {% endfor %}
+        
+        {# Sort denominations numerically #}
+        {% set sorted_denominations = denominations.items()|sort(attribute='0') %}
+        
+        <div class="gallery-grid">
+            {% for denomination, sides in sorted_denominations %}
+                {# Front sides #}
+                {% for banknote in sides.front %}
+                    {% if banknote %}
+                        {# FIX: Handle None value for png_path #}
+                        {% set clean_path = (banknote.png_path or '')|replace('images/', '')|replace('\\\\', '/')|trim('/') %}
+                        <div class="gallery-item">
+                            <div class="banknote-image">
+                                {% if banknote.png_path %}
+                                <img src="{{ url_for('serve_banknote_image', filename=clean_path) }}"
+                                    alt="{{ banknote.denomination }} Front"
+                                    class="banknote-thumbnail">
+                                {% else %}
+                                <div class="no-image">No image available</div>
+                                {% endif %}
+                            </div>
+                            <div class="banknote-info">
+                                <div class="banknote-denom">{{ banknote.denomination }}</div>
+                                <div class="banknote-side">Front</div>
+                                <div class="banknote-serial">{{ banknote.serial_number }}</div>
+                                <div class="banknote-date">{{ banknote.created_at.strftime('%Y-%m-%d') }}</div>
+                                
+                                {% if current_user.is_authenticated and current_user.id == user.id %}
+                                <div class="banknote-actions">
+                                    {% if banknote.png_path %}
+                                    <a href="{{ url_for('serve_banknote_image', filename=clean_path) }}" 
+                                    download class="download-btn">Download PNG</a>
+                                    
+                                    {% endif %}
+                                    <!--
+                                    {% if banknote.pdf_path %}
+                                        {% set clean_pdf_path = (banknote.pdf_path or '')|replace('images/', '')|replace('\\\\', '/')|trim('/') %}
+                                        <a href="{{ url_for('serve_banknote_image', filename=clean_pdf_path) }}" 
+                                        download class="download-btn">Download PDF</a>
+                                    {% endif %}
+                                    -->
+                                    {% if banknote.svg_path %}
+                                        {% set clean_svg_path = (banknote.svg_path or '')|replace('images/', '')|replace('\\\\', '/')|trim('/') %}
+                                        <a href="{{ url_for('serve_banknote_image', filename=clean_svg_path) }}" 
+                                        download class="download-btn">Download SVG</a>
+                                    {% endif %}
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                    {% endif %}
+                {% endfor %}
+                
+                {# Back sides #}
+                {% for banknote in sides.back %}
+                    {# FIX: Handle None value for png_path #}
+                    {% set clean_path = (banknote.png_path or '')|replace('images/', '')|replace('\\\\', '/')|trim('/') %}
+                    <div class="gallery-item">
+                        <div class="banknote-image">
+                            {% if banknote.png_path %}
+                            <img src="{{ url_for('serve_banknote_image', filename=clean_path) }}"
+                                alt="{{ banknote.denomination }} Back"
+                                class="banknote-thumbnail">
+                            {% else %}
+                            <div class="no-image">No image available</div>
+                            {% endif %}
+                        </div>
+                        <div class="banknote-info">
+                            <div class="banknote-denom">{{ banknote.denomination }}</div>
+                            <div class="banknote-side">Back</div>
+                            <div class="banknote-serial">{{ banknote.serial_number }}</div>
+                            <div class="banknote-date">{{ banknote.created_at.strftime('%Y-%m-%d') }}</div>
+                            
+                            {% if current_user.is_authenticated and current_user.id == user.id %}
+                            <div class="banknote-actions">
+                                {% if banknote.png_path %}
+                                <a href="{{ url_for('serve_banknote_image', filename=clean_path) }}" 
+                                download class="download-btn">Download PNG</a>
+                                {% endif %} 
+                                <!--
+                                {% if banknote.pdf_path %}
+                                    {% set clean_pdf_path = (banknote.pdf_path or '')|replace('images/', '')|replace('\\\\', '/')|trim('/') %}
+                                    <a href="{{ url_for('serve_banknote_image', filename=clean_pdf_path) }}" 
+                                    download class="download-btn">Download PDF</a>
+                                {% endif %}
+                                -->
+                                {% if banknote.svg_path %}
+                                    {% set clean_svg_path = (banknote.svg_path or '')|replace('images/', '')|replace('\\\\', '/')|trim('/') %}
+                                    <a href="{{ url_for('serve_banknote_image', filename=clean_svg_path) }}" 
+                                    download class="download-btn">Download SVG</a>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                {% endfor %}
+            {% endfor %}
+        </div>
+        {% else %}
+        <div class="empty-gallery">
+            <h3>No banknotes yet</h3>
+            <p>This user hasn't generated any banknotes yet.</p>
+            {% if current_user.is_authenticated and current_user.id == user.id %}
+            <p>Use the "Generate New Banknotes" button on the Info tab to create your first banknotes!</p>
+            {% endif %}
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<style>
+.no-image {
+    width: 200px;
+    height: 100px;
+    background: #f0f0f0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #666;
+    font-style: italic;
+}
+</style>
+
+<script>
+function openTab(tabName) {
+    // Hide all tab contents
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    
+    // Show selected tab
+    document.getElementById(tabName).classList.add('active');
+    
+    // Update tab buttons
+    document.querySelectorAll('.tab-button').forEach(button => {
+        button.classList.remove('active');
+    });
+    
+    // Find and activate the clicked button
+    const buttons = document.querySelectorAll('.tab-button');
+    for (let button of buttons) {
+        if (button.textContent.toLowerCase().includes(tabName.toLowerCase())) {
+            button.classList.add('active');
+            break;
+        }
+    }
+    
+    // Store the active tab in sessionStorage
+    sessionStorage.setItem('activeTab', tabName);
+}
+
+// Restore active tab on page load
+document.addEventListener('DOMContentLoaded', function() {
+    const activeTab = sessionStorage.getItem('activeTab') || 'info';
+    openTab(activeTab);
+});
+</script>
+{% endblock %}

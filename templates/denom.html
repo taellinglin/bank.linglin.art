@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+<style>
+body { background: black; color: white; margin: 0; font-family: sans-serif; }
+.grid { display: flex; flex-wrap: wrap; gap: 1px; padding: 1px; }
+.tile { background: #111; flex: 1 0 calc(50% - 1px); text-align: center; }
+img { max-width: 100%; display: block; margin: auto; }
+a { color: red; text-decoration: none; }
+a:hover { text-decoration: underline; }
+</style>
+</head>
+<body>
+<h1 style="text-align:center;">{{ name }} - {{ denom }}</h1>
+<div class="grid">
+{% for note in notes %}
+  <div class="tile">
+    <img src="/images/{{ name }}/{{ denom }}/{{ note }}" alt="{{ note }}">
+    <p>{{ note }}</p>
+  </div>
+{% endfor %}
+</div>
+</body>
+</html>

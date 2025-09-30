@@ -1,0 +1,289 @@
+#!/usr/bin/env python3
+"""
+blockchain.py - Blockchain class for LinKoin
+"""
+import json
+import os
+import uuid
+from typing import List, Dict
+from block import Block
+import hashlib
+import time
+
+class Blockchain:
+    def __init__(self, chain_file="blockchain.json"):
+        self.chain_file = chain_file
+        self.chain = self.load_chain() or [self.create_genesis_block()]
+        self.difficulty = 6
+        self.pending_transactions = []
+        self.base_mining_reward = 50  # Base reward amount
+        self.total_blocks_mined = 0
+        self.total_mining_time = 0
+        
+        # Mining progress tracking
+        self.current_mining_hashes = 0
+        self.current_hash_rate = 0
+        self.current_hash = ""
+        
+        # Bill denominations mapped to difficulty levels
+        self.difficulty_denominations = {
+            1: {"1": 1, "10": 2},                           
+            2: {"1": 1, "10": 2, "100": 3},                 
+            3: {"10": 2, "100": 3, "1000": 4},              
+            4: {"100": 3, "1000": 4, "10000": 5},           
+            5: {"1000": 4, "10000": 5, "100000": 6},        
+            6: {"10000": 5, "100000": 6, "1000000": 7},     
+            7: {"100000": 6, "1000000": 7, "10000000": 8},  
+            8: {"1000000": 7, "10000000": 8, "100000000": 9}
+        }
+
+        # Bill rarity weights
+        self.bill_rarity = {
+            "1": 100,         "10": 90,         "100": 80,        
+            "1000": 70,       "10000": 60,      "100000": 50,     
+            "1000000": 40,    "10000000": 30,   "100000000": 20   
+        }
+        
+        # Base URL for verification
+        self.verification_base_url = "https://bank.linglin.art/verify/"
+
+    def generate_serial_number(self):
+        """Generate a unique serial number in SN-###-###-#### format"""
+        serial_id = str(uuid.uuid4().int)[:10]
+        return f"SN-{serial_id[:3]}-{serial_id[3:6]}-{serial_id[6:10]}"
+
+    def create_genesis_block(self) -> Block:
+        genesis_serial = self.generate_serial_number()
+        return Block(0, "0", time.time(), [{
+            "type": "genesis", 
+            "message": "Luna Coin Genesis Block",
+            "timestamp": time.time(),
+            "reward": 10000,
+            "denomination": "10000",
+            "difficulty": 1,
+            "serial_number": genesis_serial,
+            "verification_url": f"{self.verification_base_url}{genesis_serial}"
+        }])
+
+    def get_latest_block(self) -> Block:
+        return self.chain[-1]
+
+    def add_block(self, new_block: Block):
+        new_block.previous_hash = self.get_latest_block().hash
+        self.chain.append(new_block)
+        self.total_blocks_mined += 1
+        self.total_mining_time += new_block.mining_time
+        self.save_chain()
+
+    def add_transaction(self, transaction: Dict):
+        self.pending_transactions.append(transaction)
+
+    def determine_bill_denomination(self, block_hash):
+        """Determine which bill denomination was found based on block hash and difficulty"""
+        current_difficulty = self.difficulty
+        available_bills = self.difficulty_denominations.get(current_difficulty, {"1": 1})
+        
+        # Use block hash to create deterministic randomness
+        hash_int = int(block_hash[:8], 16)
+        
+        # Create weighted selection based on rarity
+        weighted_choices = []
+        for bill, multiplier in available_bills.items():
+            weight = self.bill_rarity.get(bill, 1)
+            weighted_choices.extend([bill] * weight)
+        
+        # Use hash for deterministic selection
+        selected_bill = weighted_choices[hash_int % len(weighted_choices)]
+        multiplier = available_bills[selected_bill]
+        actual_reward = self.base_mining_reward * multiplier
+        
+        return selected_bill, multiplier, actual_reward
+
+    def mine_pending_transactions(self, mining_reward_address: str):
+        if not self.pending_transactions:
+            print("❌ No transactions to mine!")
+            return False
+        
+        print(f"📦 Preparing block with {len(self.pending_transactions)} transactions...")
+        
+        # Create mining progress display
+        def mining_progress(stats):
+            hashes_per_sec = stats['hash_rate']
+            if hashes_per_sec > 1_000_000:
+                hash_rate_str = f"{hashes_per_sec/1_000_000:.2f} MH/s"
+            elif hashes_per_sec > 1_000:
+                hash_rate_str = f"{hashes_per_sec/1_000:.2f} KH/s"
+            else:
+                hash_rate_str = f"{hashes_per_sec:.2f} H/s"
+            
+            # Update mining progress for external access
+            self.current_mining_hashes = stats['hashes']
+            self.current_hash_rate = stats['hash_rate']
+            self.current_hash = stats['current_hash']
+            
+            print(f"\r⛏️  Mining: {stats['hashes']:,.0f} hashes | {hash_rate_str} | Current: {stats['current_hash'][:self.difficulty+2]}...", 
+                  end="", flush=True)
+
+        # Create and mine the block
+        block = Block(len(self.chain), self.get_latest_block().hash, time.time(), self.pending_transactions.copy())
+        
+        self.is_mining = True
+        print("\n" + "="*60)
+        print("🚀 STARTING MINING OPERATION")
+        print("="*60)
+        print(f"⚙️  Difficulty Level: {self.difficulty}")
+        print(f"💵 Available Bills: {', '.join(self.difficulty_denominations[self.difficulty].keys())}")
+        print("="*60)
+        
+        start_time = time.time()
+        block.mine_block(self.difficulty, mining_progress)
+        end_time = time.time()
+        
+        self.is_mining = False
+        
+        # Reset mining progress
+        self.current_mining_hashes = 0
+        self.current_hash_rate = 0
+        self.current_hash = ""
+        
+        # Determine bill denomination found
+        bill_denomination, multiplier, actual_reward = self.determine_bill_denomination(block.hash)
+        
+        # Generate a unique serial number for this bill
+        serial_number = self.generate_serial_number()
+        verification_url = f"{self.verification_base_url}{serial_number}"
+        
+        print("\n\n" + "="*60)
+        print("✅ BLOCK MINED SUCCESSFULLY!")
+        print("="*60)
+        
+        # Add to chain
+        self.add_block(block)
+        
+        # Add mining reward with bill information
+        reward_tx = {
+            "type": "reward",
+            "to": mining_reward_address,
+            "amount": actual_reward,
+            "base_reward": self.base_mining_reward,
+            "denomination": bill_denomination,
+            "multiplier": multiplier,
+            "timestamp": time.time(),
+            "block_height": len(self.chain) - 1,
+            "signature": f"reward_{len(self.chain)}_{hashlib.sha256(mining_reward_address.encode()).hexdigest()[:16]}",
+            "block_hash": block.hash,
+            "difficulty": self.difficulty,
+            "serial_number": serial_number,
+            "verification_url": verification_url
+        }
+        self.pending_transactions = [reward_tx]
+        
+        # Display mining statistics
+        mining_time = end_time - start_time
+        print(f"📊 Mining Statistics:")
+        print(f"   Block Height: {block.index}")
+        print(f"   Hash: {block.hash[:16]}...")
+        print(f"   Nonce: {block.nonce:,}")
+        print(f"   Mining Time: {mining_time:.2f} seconds")
+        print(f"   Hash Rate: {block.hash_rate:,.2f} H/s")
+        print(f"   Difficulty: {self.difficulty}")
+        print(f"   Transactions: {len(block.transactions)}")
+        print(f"   💰 Bill Found: ${bill_denomination} Bill")
+        print(f"   📈 Multiplier: x{multiplier}")
+        print(f"   ⛏️  Base Reward: {self.base_mining_reward} LC")
+        print(f"   🎯 Total Reward: {actual_reward} LC → {mining_reward_address}")
+        print(f"   🔢 Serial Number: {serial_number}")
+        print(f"   🔗 Verification: {verification_url}")
+        
+        return True
+
+    def get_mining_stats(self):
+        if self.total_blocks_mined == 0:
+            return {
+                'total_blocks': 0,
+                'avg_time': 0,
+                'total_time': 0,
+                'total_rewards': 0
+            }
+        
+        # Calculate total rewards from blockchain
+        total_rewards = 0
+        for block in self.chain:
+            for tx in block.transactions:
+                if tx.get("type") == "reward" or tx.get("type") == "genesis":
+                    total_rewards += tx.get("amount", 0)
+        
+        return {
+            'total_blocks': self.total_blocks_mined,
+            'avg_time': self.total_mining_time / self.total_blocks_mined,
+            'total_time': self.total_mining_time,
+            'total_rewards': total_rewards
+        }
+
+    def is_chain_valid(self) -> bool:
+        for i in range(1, len(self.chain)):
+            current_block = self.chain[i]
+            previous_block = self.chain[i-1]
+            if current_block.hash != current_block.calculate_hash():
+                print(f"❌ Block {i} hash is invalid!")
+                return False
+            if current_block.previous_hash != previous_block.hash:
+                print(f"❌ Block {i} previous hash doesn't match!")
+                return False
+        return True
+
+    def save_chain(self):
+        chain_data = []
+        for block in self.chain:
+            chain_data.append({
+                "index": block.index,
+                "previous_hash": block.previous_hash,
+                "timestamp": block.timestamp,
+                "transactions": block.transactions,
+                "nonce": block.nonce,
+                "hash": block.hash,
+                "mining_time": block.mining_time
+            })
+        with open(self.chain_file, 'w') as f:
+            json.dump(chain_data, f, indent=2)
+
+    def load_chain(self):
+        if os.path.exists(self.chain_file):
+            try:
+                with open(self.chain_file, 'r') as f:
+                    chain_data = json.load(f)
+                    chain = []
+                    for block_data in chain_data:
+                        block = Block(
+                            block_data["index"],
+                            block_data["previous_hash"],
+                            block_data["timestamp"],
+                            block_data["transactions"],
+                            block_data.get("nonce", 0)
+                        )
+                        block.mining_time = block_data.get("mining_time", 0)
+                        chain.append(block)
+                    return chain
+            except:
+                print("⚠️  Corrupted blockchain file, creating new chain...")
+        return None
+
+    def calculate_balance(self, address):
+        """Calculate balance for a specific address"""
+        balance = 0
+        for block in self.chain:
+            for tx in block.transactions:
+                if tx.get("to") == address:
+                    balance += tx.get("amount", 0)
+                if tx.get("from") == address:
+                    balance -= tx.get("amount", 0)
+        
+        # Also check pending transactions
+        for tx in self.pending_transactions:
+            if tx.get("type") != "reward":
+                if tx.get("to") == address:
+                    balance += tx.get("amount", 0)
+                if tx.get("from") == address:
+                    balance -= tx.get("amount", 0)
+        
+        return balance

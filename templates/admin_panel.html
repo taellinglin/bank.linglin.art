@@ -1,0 +1,347 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="admin-container">
+    <div class="admin-sidebar">
+        <h3>Admin Navigation</h3>
+        <ul class="admin-nav">
+            <li><a href="#" class="admin-nav-link {% if active_section == 'users' %}active{% endif %}" data-section="users">Users</a></li>
+            <li><a href="#" class="admin-nav-link {% if active_section == 'banknotes' %}active{% endif %}" data-section="banknotes">Banknotes</a></li>
+            <li><a href="#" class="admin-nav-link {% if active_section == 'serials' %}active{% endif %}" data-section="serials">Serial Numbers</a></li>
+            <li><a href="#" class="admin-nav-link {% if active_section == 'tasks' %}active{% endif %}" data-section="tasks">Tasks</a></li>
+            <li><a href="#" class="admin-nav-link {% if active_section == 'settings' %}active{% endif %}" data-section="settings">Settings</a></li>
+        </ul>
+        {% if active_section == 'tasks' or active_section == 'dashboard' %}
+            <div class="queue-status card mb-4">
+                <div class="card-header">
+                    <h5 class="mb-0">Generation Queue Status</h5>
+                </div>
+                <div class="card-body">
+                    <p><strong>Size:</strong> {{ queue_status.queue_size }} tasks waiting</p>
+                    <p><strong>Active:</strong> 
+                        {% if queue_status.active_tasks %}
+                            {% for user_id in queue_status.active_tasks %}
+                                {% set user = users|selectattr("id", "equalto", user_id)|first %}
+                                {{ user.username if user else 'Unknown User' }}{% if not loop.last %}, {% endif %}
+                            {% endfor %}
+                        {% else %}
+                            None
+                        {% endif %}
+                    </p>
+                    <p><strong>Worker Status:</strong> 
+                        <span class="badge {% if queue_status.is_running %}bg-success{% else %}bg-danger{% endif %}">
+                            {{ 'Running' if queue_status.is_running else 'Stopped' }}
+                        </span>
+                    </p>
+                </div>
+            </div>
+            {% endif %}
+    </div>
+
+    <div class="admin-content">
+
+        <!-- Users Section -->
+        <div class="content-section {% if active_section == 'users' %}active{% endif %}" id="users-section">
+            <h1>User Management</h1>
+            <table class="admin-table">
+                <tr>
+                    <th style="width: 40px;">ID</th>
+                    <th style="width: 120px;">Portrait</th>
+                    <th>Username</th>
+                    <th>Balance</th>
+                    <th style="width: 1%;">Actions</th>
+                </tr>
+                {% for user in users %}
+                <tr>
+                    <td style="width: 40px;">{{ user.id }}</td>
+                    <td style="width: 120px;">
+                        <div class="user-avatar-cell">
+                            {% set avatar_url = get_user_avatar_url(user.username) %}
+                            {% if avatar_url %}
+                                <img src="{{ avatar_url }}" alt="{{ user.username }}" class="user-portrait">
+                            {% else %}
+                                <div class="avatar-initials">
+                                    {{ user.username[:2]|upper }}
+                                </div>
+                            {% endif %}
+                        </div>
+                    </td>
+                    <td>{{ user.username }}</td>
+                    <td>${{ user.balance }}</td>
+                    <td style="width: 1%; white-space: nowrap;">
+                        <form class="admin-form" method="POST" action="{{ url_for('generate_money', user_id=user.id) }}">
+                            <button class="admin-button" type="submit">Generate Money</button>
+                        </form>
+                        <form class="admin-form" method="POST" action="{{ url_for('admin_reset_user', user_id=user.id) }}">
+                            <button class="admin-button" type="submit">Reset User</button>
+                        </form>
+                        <form class="admin-form" method="POST" action="{{ url_for('admin_delete_user', user_id=user.id) }}">
+                            <button class="admin-button" type="submit" onclick="return confirm('Delete user?')">Delete User</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+
+        <!-- Banknotes Section -->
+        <div class="content-section {% if active_section == 'banknotes' %}active{% endif %}" id="banknotes-section">
+            <h1>Banknote Management</h1>
+            <table class="admin-table">
+                <tr>
+                    <th style="width: 40px;">ID</th>
+                    <th>User</th>
+                    <th>Serial</th>
+                    <th>Denomination</th>
+                    <th>Side</th>
+                    <th style="width: 1%;">Actions</th>
+                </tr>
+                {% for bn in banknotes %}
+                <tr>
+                    <td style="width: 40px;">{{ bn.id }}</td>
+                    <td>{{ bn.user.username }}</td>
+                    <td>{{ bn.serial_number }}</td>
+                    <td>{{ bn.denomination }}</td>
+                    <td>{{ bn.side }}</td>
+                    <td style="width: 1%; white-space: nowrap;">
+                        <form class="admin-form" method="POST" action="{{ url_for('admin_delete_banknote', banknote_id=bn.id) }}">
+                            <button class="admin-button" type="submit" onclick="return confirm('Delete this banknote?')">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+
+        <!-- Serial Numbers Section -->
+        <div class="content-section {% if active_section == 'serials' %}active{% endif %}" id="serials-section">
+            <h1>Serial Number Management</h1>
+            <table class="admin-table">
+                <tr>
+                    <th style="width: 40px;">ID</th>
+                    <th>Serial</th>
+                    <th>User</th>
+                    <th>Banknote ID</th>
+                    <th>Active</th>
+                    <th>Created</th>
+                    <th style="width: 1%;">Actions</th>
+                </tr>
+                {% for serial in serials %}
+                <tr>
+                    <td style="width: 40px;">{{ serial.id }}</td>
+                    <td>{{ serial.serial }}</td>
+                    <td>{{ serial.user.username }}</td>
+                    <td>{{ serial.banknote_id if serial.banknote_id else 'N/A' }}</td>
+                    <td>{{ 'Yes' if serial.is_active else 'No' }}</td>
+                    <td>{{ serial.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td style="width: 1%; white-space: nowrap;">
+                        <form class="admin-form" method="POST" action="{{ url_for('admin_delete_serial', serial_id=serial.id) }}">
+                            <button class="admin-button" type="submit" onclick="return confirm('Delete this serial?')">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+
+        <!-- Tasks Section -->
+        <div class="content-section {% if active_section == 'tasks' %}active{% endif %}" id="tasks-section">
+            <h1>Generation Tasks</h1>
+            <table class="admin-table">
+                <tr>
+                    <th style="width: 40px;">ID</th>
+                    <th style="width: 80px;">User</th>
+                    <th>Status</th>
+                    <th>Message</th>
+                    <th>Created</th>
+                    <th>Completed</th>
+                    <th style="width: 1%;">Actions</th>
+                </tr>
+                {% for task in tasks %}
+                <tr>
+                    <td style="width: 40px;">{{ task.id }}</td>
+                    <td style="width: 100px;">
+                        <div class="user-avatar-cell">
+                            {% set avatar_url = get_user_avatar_url(task.user.username) %}
+                            {% if avatar_url %}
+                                <img src="{{ avatar_url }}" alt="{{ task.user.username }}" class="user-portrait">
+                            {% else %}
+                                <div class="avatar-initials-small">
+                                    {{ task.user.username[:2]|upper }}
+                                </div>
+                            {% endif %}
+                            <span class="username-tooltip">{{ task.user.username }}</span>
+                        </div>
+                    </td>
+                    <td>
+                        <span class="status-badge status-{{ task.status }}">{{ task.status }}</span>
+                    </td>
+                    <td>{{ task.message|truncate(50) if task.message else 'No message' }}</td>
+                    <td>{{ task.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>{{ task.completed_at.strftime('%Y-%m-%d %H:%M') if task.completed_at else 'Pending' }}</td>
+                    <td style="width: 1%; white-space: nowrap;">
+                        <form class="admin-form" method="POST" action="{{ url_for('admin_cancel_task', task_id=task.id) }}">
+                            <button class="admin-button" type="submit" onclick="return confirm('Cancel this task?')" {% if task.status != 'pending' and task.status != 'processing' %}disabled{% endif %}>Cancel</button>
+                        </form>
+                        <form class="admin-form" method="POST" action="{{ url_for('admin_delete_task', task_id=task.id) }}">
+                            <button class="admin-button" type="submit" onclick="return confirm('Delete this task?')">Delete</button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+
+        <!-- Settings Section -->
+        <div class="content-section {% if active_section == 'settings' %}active{% endif %}" id="settings-section">
+            <h1>System Settings</h1>
+            <div class="settings-panel">
+                <form class="admin-form" method="POST" action="{{ url_for('admin_settings') }}">
+                    <div class="setting-item">
+                        <label>System Name:</label>
+                        <input type="text" name="system_name" value="{{ settings.system_name }}">
+                    </div>
+                    <div class="setting-item">
+                        <label>Max Banknotes Per User:</label>
+                        <input type="number" name="max_banknotes" value="{{ settings.max_banknotes }}">
+                    </div>
+                    <div class="setting-item">
+                        <label>Cooldown Period (days):</label>
+                        <input type="number" name="cooldown_days" value="{{ settings.cooldown_days }}">
+                    </div>
+                    <div class="setting-item">
+                        <label>Max File Size (MB):</label>
+                        <input type="number" name="max_file_size" value="{{ settings.max_file_size }}">
+                    </div>
+                    <div class="setting-item">
+                        <label>
+                            <input type="checkbox" name="maintenance_mode" {% if settings.maintenance_mode %}checked{% endif %}>
+                            Maintenance Mode
+                        </label>
+                    </div>
+                    <div class="setting-item">
+                        <label>
+                            <input type="checkbox" name="allow_registrations" {% if settings.allow_registrations %}checked{% endif %}>
+                            Allow New Registrations
+                        </label>
+                    </div>
+                    <button class="admin-button" type="submit">Save Settings</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Add these new styles */
+.user-portrait-small {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid #555;
+}
+
+.avatar-initials-small {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #666, #444);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: bold;
+    font-size: 12px;
+    border: 2px solid #555;
+}
+
+.status-badge {
+    padding: 4px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    font-weight: bold;
+    text-transform: uppercase;
+}
+
+.status-pending {
+    background-color: #ff9800;
+    color: #000;
+}
+
+.status-processing {
+    background-color: #2196f3;
+    color: #fff;
+}
+
+.status-completed {
+    background-color: #4caf50;
+    color: #fff;
+}
+
+.status-failed {
+    background-color: #f44336;
+    color: #fff;
+}
+
+.status-cancelled {
+    background-color: #9e9e9e;
+    color: #fff;
+}
+
+.username-tooltip {
+    display: none;
+    position: absolute;
+    background: #333;
+    color: white;
+    padding: 5px;
+    border-radius: 3px;
+    font-size: 12px;
+    z-index: 100;
+    margin-top: 5px;
+}
+
+.user-avatar-cell:hover .username-tooltip {
+    display: block;
+}
+
+/* Keep all your existing styles below */
+html, body {
+    margin: 0;
+    padding: 0;
+    height: 100%;
+    font-family:"Unispace";
+}
+
+.admin-container {
+    font-family:"Unispace";
+    display: flex;
+    height: 100vh;
+}
+
+/* ... rest of your existing CSS styles ... */
+</style>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const navLinks = document.querySelectorAll('.admin-nav-link');
+    const contentSections = document.querySelectorAll('.content-section');
+    
+    navLinks.forEach(link => {
+        link.addEventListener('click', function(e) {
+            e.preventDefault();
+            
+            // Remove active class from all links and sections
+            navLinks.forEach(l => l.classList.remove('active'));
+            contentSections.forEach(s => s.classList.remove('active'));
+            
+            // Add active class to clicked link
+            this.classList.add('active');
+            
+            // Show corresponding section
+            const sectionId = this.getAttribute('data-section') + '-section';
+            document.getElementById(sectionId).classList.add('active');
+        });
+    });
+});
+</script>
+{% endblock %}
