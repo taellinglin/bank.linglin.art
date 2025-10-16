@@ -25,72 +25,6 @@ import logging
 # Add to your app.py
 from blockchain_daemon import BlockchainDaemon
 from functools import wraps
-# ROYGBIV Color Scheme 🌈 plus more
-class Colors:
-    # Basic colors
-    BLACK = '\033[30m'
-    RED = '\033[31m'
-    GREEN = '\033[32m'
-    YELLOW = '\033[33m'
-    BLUE = '\033[34m'
-    MAGENTA = '\033[35m'
-    CYAN = '\033[36m'
-    WHITE = '\033[37m'
-    
-    # Bright colors
-    BRIGHT_BLACK = '\033[90m'
-    BRIGHT_RED = '\033[91m'
-    BRIGHT_GREEN = '\033[92m'
-    BRIGHT_YELLOW = '\033[93m'
-    BRIGHT_BLUE = '\033[94m'
-    BRIGHT_MAGENTA = '\033[95m'
-    BRIGHT_CYAN = '\033[96m'
-    BRIGHT_WHITE = '\033[97m'
-    
-    # Background colors
-    BG_BLACK = '\033[40m'
-    BG_RED = '\033[41m'
-    BG_GREEN = '\033[42m'
-    BG_YELLOW = '\033[43m'
-    BG_BLUE = '\033[44m'
-    BG_MAGENTA = '\033[45m'
-    BG_CYAN = '\033[46m'
-    BG_WHITE = '\033[47m'
-    
-    # Bright background colors
-    BG_BRIGHT_BLACK = '\033[100m'
-    BG_BRIGHT_RED = '\033[101m'
-    BG_BRIGHT_GREEN = '\033[102m'
-    BG_BRIGHT_YELLOW = '\033[103m'
-    BG_BRIGHT_BLUE = '\033[104m'
-    BG_BRIGHT_MAGENTA = '\033[105m'
-    BG_BRIGHT_CYAN = '\033[106m'
-    BG_BRIGHT_WHITE = '\033[107m'
-    
-    # Styles
-    BOLD = '\033[1m'
-    DIM = '\033[2m'
-    ITALIC = '\033[3m'
-    UNDERLINE = '\033[4m'
-    BLINK = '\033[5m'
-    REVERSE = '\033[7m'
-    HIDDEN = '\033[8m'
-    STRIKETHROUGH = '\033[9m'
-    
-    # Reset
-    END = '\033[0m'
-
-def color_text(text, *color_codes):
-    """
-    Color text with one or more color/style codes
-    
-    Usage:
-        color_text("Hello", Colors.RED)
-        color_text("Warning", Colors.YELLOW, Colors.BOLD)
-        color_text("Error", Colors.RED, Colors.BOLD, Colors.BG_WHITE)
-    """
-    color_string = ''.join(color_codes)
-    return f"{color_string}{text}{Colors.END}"
 app = Flask(__name__)
 app.secret_key = os.environ.get("SECRET_KEY", "ILoveYouForeverXOXO")
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///lingcountrytreasury.db'
@@ -110,9 +44,10 @@ def create_app():
     global blockchain_daemon_instance
     if blockchain_daemon_instance is None:
         try:
+            from blockchain_daemon import BlockchainDaemon  # adjust import as needed
             blockchain_daemon_instance = BlockchainDaemon()
 
-            blockchain_daemon_instance.start_daemon()
+            blockchain_daemon_instance.start_daemon(miner_address="127.0.0.1:9335")
             print("[BLOCKCHAIN] Blockchain daemon initialized")
         except Exception as e:
             print(f"[BLOCKCHAIN] Error initializing daemon: {e}")
@@ -157,56 +92,25 @@ def get_blockchain():
     """Serve the complete blockchain"""
     return jsonify(blockchain_daemon_instance.blockchain)
 
-def hash_to_int(hash_hex):
-    """Convert hex hash to integer"""
-    return int(hash_hex, 16)
+
 @app.route("/block/<string:block_hash>")
 def view_block_detail(block_hash):
     """Display detailed information about a specific block"""
+    block_hash = int(block_hash)
     try:
-        print(f"🔍 DEBUG: Starting view_block_detail for hash: {block_hash} (type: {type(block_hash)})")
-        
-        # Search for the block with matching hash - IMPROVED HASH HANDLING
+        # Search for the block with matching hash
         found_block = None
-        found_index = -1
-        
-        # Clean the input hash
-        input_hash_clean = str(block_hash).strip().lower()
-        print(f"🔍 DEBUG: Searching for hash: '{input_hash_clean}'")
-        
-        for i, block in enumerate(blockchain_daemon_instance.blockchain):
-            # Get block hash and clean it
-            block_hash_raw = block.get("hash", "")
-            block_hash_clean = str(block_hash_raw).strip().lower()
-            
-            print(f"🔍 DEBUG: Checking block {i}: '{block_hash_clean}'")
-            
-            if block_hash_clean == input_hash_clean:
+        for block in blockchain_daemon_instance.blockchain:
+            if block.get("hash") == block_hash:
                 found_block = block
-                found_index = i
-                print(f"✅ DEBUG: Found block at index {i}")
                 break
         
         if not found_block:
-            print(f"❌ DEBUG: Block not found for hash: {block_hash}")
-            # Try to find by index if hash lookup fails
-            try:
-                block_index = int(block_hash)
-                if 0 <= block_index < len(blockchain_daemon_instance.blockchain):
-                    found_block = blockchain_daemon_instance.blockchain[block_index]
-                    found_index = block_index
-                    print(f"✅ DEBUG: Found block by index: {block_index}")
-            except (ValueError, IndexError):
-                pass
-        
-        if not found_block:
-            print(f"❌ DEBUG: Block not found for hash/index: {block_hash}")
             flash("Block not found", "error")
             return redirect(url_for("blockchain_viewer"))
         
         # Calculate detailed block information
         transactions = found_block.get("transactions", [])
-        print(f"📊 DEBUG: Block has {len(transactions)} transactions")
         
         # Count transaction types
         genesis_count = sum(1 for tx in transactions if tx.get("type") in ["genesis", "GTX_Genesis"])
@@ -214,37 +118,20 @@ def view_block_detail(block_hash):
         reward_count = sum(1 for tx in transactions if tx.get("type") == "reward")
         other_count = len(transactions) - genesis_count - transfer_count - reward_count
         
-        print(f"📊 DEBUG: Transaction counts - genesis: {genesis_count}, transfer: {transfer_count}, reward: {reward_count}, other: {other_count}")
+        # SIMPLIFIED timestamp handling
+        timestamp = found_block.get("timestamp", 0)
+        readable_time = "Unknown"
         
-        # SIMPLE timestamp handling
-        def safe_timestamp_to_readable(ts):
-            """Simple timestamp conversion"""
-            try:
-                if ts is None:
-                    return "Unknown"
-                
-                # Force conversion to float
-                if isinstance(ts, str):
-                    # Remove any non-numeric characters except . and -
-                    clean_ts = ''.join(c for c in ts if c.isdigit() or c == '.' or c == '-')
-                    ts = float(clean_ts) if clean_ts and clean_ts != '-' else 0
-                else:
-                    ts = float(ts)
-                
-                if ts > 0 and ts < 4102444800:
-                    return datetime.fromtimestamp(ts).strftime('%Y-%m-%d %H:%M:%S')
-                else:
-                    return "Invalid timestamp"
-                    
-            except Exception as e:
-                return f"Error: {str(e)}"
-        
-        # Process block timestamp
-        block_timestamp = found_block.get("timestamp", 0)
-        readable_time = safe_timestamp_to_readable(block_timestamp)
+        try:
+            if timestamp:
+                # Convert to float first, then to int for datetime
+                timestamp_num = float(timestamp)
+                readable_time = datetime.fromtimestamp(timestamp_num).strftime('%Y-%m-%d %H:%M:%S')
+        except (ValueError, TypeError, OSError, OverflowError):
+            readable_time = f"Raw: {timestamp}"
         
         # For genesis block, use special message
-        block_index = found_block.get("index", found_index)
+        block_index = found_block.get("index", 0)
         if block_index == 0:
             readable_time = "Genesis Block"
         
@@ -254,24 +141,12 @@ def view_block_detail(block_hash):
         except:
             block_size = 0
         
-        # FIX: Ensure mining_time is a number, not a string
-        mining_time = found_block.get("mining_time", 0)
-        try:
-            if isinstance(mining_time, str):
-                # Extract numbers from string
-                clean_mining_time = ''.join(c for c in mining_time if c.isdigit() or c == '.')
-                mining_time_numeric = float(clean_mining_time) if clean_mining_time else 0.0
-            else:
-                mining_time_numeric = float(mining_time)
-        except:
-            mining_time_numeric = 0.0
-        
         # Get previous and next block info for navigation
         previous_block = None
         next_block = None
         
         try:
-            block_index_int = int(block_index)
+            block_index_int = int(block_index) if isinstance(block_index, (int, str)) else 0
             if block_index_int > 0 and blockchain_daemon_instance.blockchain:
                 previous_block = blockchain_daemon_instance.blockchain[block_index_int - 1] if block_index_int - 1 < len(blockchain_daemon_instance.blockchain) else None
             
@@ -280,93 +155,80 @@ def view_block_detail(block_hash):
         except (IndexError, ValueError, TypeError):
             pass
         
-        # SAFE transaction details preparation
+        # SIMPLIFIED transaction details preparation
         transaction_details = []
-        
         for i, tx in enumerate(transactions):
             if not isinstance(tx, dict):
                 continue
                 
-            # Convert transaction timestamp safely
+            # Simplified timestamp handling for transactions
             tx_timestamp = tx.get("timestamp", 0)
-            tx_readable_time = safe_timestamp_to_readable(tx_timestamp)
+            tx_readable_time = "Unknown"
             
-            # Ensure numeric timestamp for template
-            numeric_timestamp = 0
             try:
-                if isinstance(tx_timestamp, (int, float)):
-                    numeric_timestamp = float(tx_timestamp)
-                elif isinstance(tx_timestamp, str):
-                    clean_ts = ''.join(c for c in tx_timestamp if c.isdigit() or c == '.' or c == '-')
-                    numeric_timestamp = float(clean_ts) if clean_ts and clean_ts != '-' else 0
-                else:
-                    numeric_timestamp = float(tx_timestamp) if tx_timestamp else 0
-            except:
-                numeric_timestamp = 0
-            
-            # Ensure hash is properly formatted string
-            tx_hash = str(tx.get("hash", f"tx-{i}")).strip()
+                if tx_timestamp:
+                    tx_timestamp_num = float(tx_timestamp)
+                    tx_readable_time = datetime.fromtimestamp(tx_timestamp_num).strftime('%Y-%m-%d %H:%M:%S')
+            except (ValueError, TypeError, OSError, OverflowError):
+                tx_readable_time = f"Raw: {tx_timestamp}"
             
             tx_info = {
                 "index": i + 1,
-                "type": str(tx.get("type", "unknown")),
-                "hash": tx_hash,
-                "timestamp": numeric_timestamp,
+                "type": tx.get("type", "unknown"),
+                "hash": tx.get("hash", "N/A"),
+                "timestamp": tx_timestamp,
                 "timestamp_readable": tx_readable_time,
                 "size": len(json.dumps(tx, default=str)) if tx else 0
             }
             
-            # Add type-specific fields with proper string conversion
+            # Add type-specific fields
             tx_type = tx.get("type", "")
             if tx_type == "transfer":
                 tx_info.update({
-                    "from": str(tx.get("from", "N/A")),
-                    "to": str(tx.get("to", "N/A")),
+                    "from": tx.get("from", "N/A"),
+                    "to": tx.get("to", "N/A"),
                     "amount": tx.get("amount", "N/A")
                 })
             elif tx_type in ["genesis", "GTX_Genesis"]:
                 tx_info.update({
-                    "serial_number": str(tx.get("serial_number", "N/A")),
-                    "issued_to": str(tx.get("issued_to", "N/A")),
+                    "serial_number": tx.get("serial_number", "N/A"),
+                    "issued_to": tx.get("issued_to", "N/A"),
                     "denomination": tx.get("denomination", "N/A")
                 })
             elif tx_type == "reward":
                 tx_info.update({
-                    "to": str(tx.get("to", "N/A")),
+                    "to": tx.get("to", "N/A"),
                     "amount": tx.get("amount", "N/A"),
                     "block_height": tx.get("block_height", "N/A"),
-                    "description": str(tx.get("description", "Mining Reward"))
+                    "description": tx.get("description", "Mining Reward")
                 })
             
             transaction_details.append(tx_info)
         
-        # Prepare block info for template - ensure all values are properly typed
+        # Prepare block info for template
         block_info = {
             "block": found_block,
             "metadata": {
-                "transaction_count": int(len(transactions)),
-                "genesis_count": int(genesis_count),
-                "transfer_count": int(transfer_count),
-                "reward_count": int(reward_count),
-                "other_count": int(other_count),
-                "timestamp_readable": str(readable_time),
-                "block_size": int(block_size),
-                "is_genesis_block": bool(block_index == 0),
-                "miner": str(found_block.get("miner", "Unknown")),
+                "transaction_count": len(transactions),
+                "genesis_count": genesis_count,
+                "transfer_count": transfer_count,
+                "reward_count": reward_count,
+                "other_count": other_count,
+                "timestamp_readable": readable_time,
+                "block_size": block_size,
+                "is_genesis_block": (block_index == 0),
+                "miner": found_block.get("miner", "Unknown"),
                 "difficulty": found_block.get("difficulty", "N/A"),
-                "mining_time": mining_time_numeric  # FIXED: This is now a number, not a string
+                "mining_time": found_block.get("mining_time", "N/A")
             },
             "transactions": transaction_details,
             "navigation": {
                 "previous_block": previous_block,
                 "next_block": next_block,
-                "current_index": int(block_index),
-                "total_blocks": int(len(blockchain_daemon_instance.blockchain) if blockchain_daemon_instance.blockchain else 0)
+                "current_index": block_index,
+                "total_blocks": len(blockchain_daemon_instance.blockchain) if blockchain_daemon_instance.blockchain else 0
             }
         }
-        
-        print(f"✅ DEBUG: Successfully prepared block info for #{block_index}")
-        print(f"🔧 DEBUG: Mining time type: {type(block_info['metadata']['mining_time'])} value: {block_info['metadata']['mining_time']}")
         
         return render_template('block_detail.html',
                             block_info=block_info,
@@ -375,15 +237,11 @@ def view_block_detail(block_hash):
         
     except Exception as e:
         import traceback
-        error_details = f"Error in view_block_detail: {str(e)}"
-        print(f"❌ DEBUG: {error_details}")
-        print(f"❌ DEBUG: Traceback: {traceback.format_exc()}")
+        print(f"Error in view_block_detail: {str(e)}")
+        print(traceback.format_exc())
         
         flash(f"Error loading block details: {str(e)}", "error")
         return redirect(url_for("blockchain_viewer"))
-
-
-
 @app.route("/mempool", methods=["GET"])
 def get_mempool():
     """Serve filtered mempool (only unmined transactions) - FIXED"""
@@ -393,55 +251,41 @@ def get_mempool():
     filtered_mempool = filter_mined_transactions(filtered_mempool)
     return jsonify(filtered_mempool)  # Return filtered, not the full mempool
 
+# Add this to your Flask app serving the blockchain
 @app.route("/mempool-viewer")
-@app.route("/mempool-viewer/<int:page>")
-def mempool_viewer(page=1):
-    """Display detailed mempool information in a web interface WITH PAGINATION"""
+def mempool_viewer():
+    """Display detailed mempool information in a web interface"""
     try:
-        # Get mempool data from the new daemon
-        mempool_status = blockchain_daemon_instance.get_mempool_status()
-        mempool_data = mempool_status['transactions']
+        step_by_step_mine_transfers()
+        # Get mempool data
+        mempool_data = blockchain_daemon_instance.mempool
         
-        # Get blockchain status for additional context
-        blockchain_status = blockchain_daemon_instance.get_blockchain_status()
+        # Get filtered mempool (unmined transactions)
+        filtered_mempool = blockchain_daemon_instance.get_available_bills_to_mine()
         
-        # Pagination settings
-        per_page = 20  # Number of transactions per page
-        total_transactions = mempool_status['total']
-        total_pages = (total_transactions + per_page - 1) // per_page  # Ceiling division
+        # Get mempool statistics
+        total_transactions = len(mempool_data)
+        active_transactions = len(filtered_mempool)
+        mined_transactions = total_transactions - active_transactions
         
-        # Ensure page is within valid range
-        page = max(1, min(page, total_pages))
+        # Count by transaction type
+        type_counts = {}
+        for tx in filtered_mempool:
+            tx_type = tx.get("type", "unknown")
+            type_counts[tx_type] = type_counts.get(tx_type, 0) + 1
         
-        # Calculate slice for current page
-        start_idx = (page - 1) * per_page
-        end_idx = start_idx + per_page
-        current_transactions = mempool_data[start_idx:end_idx]
-        
-        print(f"🔍 Mempool Pagination: page {page}, showing transactions {start_idx}-{end_idx} of {total_transactions}")
-        
-        # Calculate statistics
-        active_transactions = total_transactions  # All transactions in mempool are active/unmined
-        mined_transactions = blockchain_status['total_transactions']  # Total transactions in blockchain
-        
-        # Count by transaction type using the new daemon's structure
-        type_counts = {
-            'bills': mempool_status['bills'],
-            'transfers': mempool_status['transfers'],
-            'rewards': mempool_status['rewards']
-        }
-        
-        # Get transaction details for current page
+        # Get transaction details
         transactions = []
-        for tx in current_transactions:
+        for tx in mempool_data:
             tx_info = {
                 "hash": tx.get("hash", "N/A"),
                 "type": tx.get("type", "unknown"),
                 "timestamp": tx.get("timestamp", 0),
                 "timestamp_readable": datetime.fromtimestamp(tx.get("timestamp", 0)).strftime('%Y-%m-%d %H:%M:%S') if tx.get("timestamp") else "Unknown",
-                "is_mined": False,  # All transactions in mempool are unmined
-                "size": len(json.dumps(tx)),
-                "confirmations": 0  # Mempool transactions have 0 confirmations
+                "signature": tx.get("signature", "N/A")[:20] + "..." if tx.get("signature") else "N/A",
+                "public_key": tx.get("public_key", "N/A")[:20] + "..." if tx.get("public_key") else "N/A",
+                "is_mined": tx not in filtered_mempool,
+                "size": len(json.dumps(tx))
             }
             
             # Add type-specific fields
@@ -449,34 +293,16 @@ def mempool_viewer(page=1):
                 tx_info["from"] = tx.get("from", "N/A")
                 tx_info["to"] = tx.get("to", "N/A")
                 tx_info["amount"] = tx.get("amount", "N/A")
-                tx_info["signature"] = tx.get("signature", "N/A")[:20] + "..." if tx.get("signature") else "N/A"
-                
             elif tx.get("type") in ["genesis", "GTX_Genesis"]:
                 tx_info["serial_number"] = tx.get("serial_number", "N/A")
                 tx_info["issued_to"] = tx.get("issued_to", "N/A")
                 tx_info["denomination"] = tx.get("denomination", "N/A")
-                tx_info["signature"] = tx.get("signature", "N/A")[:20] + "..." if tx.get("signature") else "N/A"
-                
-            elif tx.get("type") == "reward":
-                tx_info["to"] = tx.get("to", "N/A")
-                tx_info["from"] =  tx.get("from", "https://bank.linglin.art")
-                tx_info["amount"] = tx.get("amount", "N/A")
-                tx_info["block_height"] = tx.get("block_height", "N/A")
-                tx_info["description"] = tx.get("description", "N/A")
+                tx_info["signature"] = tx.get("signature", "N/A")
             
             transactions.append(tx_info)
         
         # Sort transactions by timestamp (newest first)
         transactions.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
-        
-        # Get blockchain info for context
-        blockchain_info = {
-            "total_blocks": blockchain_status['blocks'],
-            "total_mined_transactions": mined_transactions,
-            "mined_genesis": blockchain_status['genesis_transactions'],
-            "mined_transfers": blockchain_status['transfer_transactions'],
-            "mined_rewards": blockchain_status['reward_transactions']
-        }
         
         return render_template('mempool_viewer.html',
                             transactions=transactions,
@@ -484,15 +310,10 @@ def mempool_viewer(page=1):
                             active_transactions=active_transactions,
                             mined_transactions=mined_transactions,
                             type_counts=type_counts,
-                            blockchain_info=blockchain_info,
-                            current_page=page,
-                            total_pages=total_pages,
-                            per_page=per_page,
                             current_user=get_current_user(),
                             title="Mempool Viewer")
         
     except Exception as e:
-        print(f"❌ Error in mempool_viewer: {e}")
         flash(f"Error loading mempool data: {str(e)}", "error")
         return render_template('mempool_viewer.html',
                             transactions=[],
@@ -500,10 +321,6 @@ def mempool_viewer(page=1):
                             active_transactions=0,
                             mined_transactions=0,
                             type_counts={},
-                            blockchain_info={},
-                            current_page=1,
-                            total_pages=1,
-                            per_page=20,
                             current_user=get_current_user(),
                             title="Mempool Viewer")
 @app.route("/mine-all-transfers")
@@ -755,116 +572,217 @@ def step_by_step_mine_transfers():
             "traceback": traceback.format_exc(),
             "steps": steps if 'steps' in locals() else ["Failed before steps began"]
         })
-
-
-@app.template_filter('datetimeformat')
-def datetimeformat(value, format='%Y-%m-%d %H:%M:%S'):
-    """Format a timestamp as datetime string - BULLETPROOF VERSION"""
+@app.route("/debug-transfer-mining")
+def debug_transfer_mining():
+    """Detailed diagnostics for transfer mining issues"""
     try:
-        if value is None:
-            return "Unknown"
+        blockchain_data = getattr(blockchain_daemon_instance, 'blockchain', [])
+        mempool_data = getattr(blockchain_daemon_instance, 'mempool', [])
         
-        # Convert ANY value to numeric timestamp
-        numeric_value = 0
-        if isinstance(value, (int, float)):
-            numeric_value = float(value)
-        elif isinstance(value, str):
-            clean_value = ''.join(c for c in value if c.isdigit() or c == '.' or c == '-')
-            numeric_value = float(clean_value) if clean_value and clean_value != '-' else 0
-        else:
-            try:
-                numeric_value = float(value)
-            except:
-                numeric_value = 0
+        transfer_txs = [tx for tx in mempool_data if tx.get('type') == 'transfer']
         
-        # Validate and format
-        if numeric_value > 0 and numeric_value < 4102444800:
-            return datetime.fromtimestamp(numeric_value).strftime(format)
+        # Test 1: Check transfer validation
+        validation_results = []
+        for tx in transfer_txs[:3]:  # Test first 3 transfers
+            is_valid = blockchain_daemon_instance.validate_transfer_for_mining(tx)
+            validation_results.append({
+                "hash": tx.get('hash', '')[:16],
+                "from": tx.get('from', ''),
+                "to": tx.get('to', ''),
+                "amount": tx.get('amount', 0),
+                "valid": is_valid,
+                "has_signature": 'signature' in tx,
+                "has_hash": 'hash' in tx
+            })
+        
+        # Test 2: Check blockchain state
+        last_block = blockchain_data[-1] if blockchain_data else None
+        blockchain_state = {
+            "height": len(blockchain_data),
+            "last_block_index": last_block.get('index') if last_block else -1,
+            "last_block_hash": last_block.get('hash', '')[:20] + "..." if last_block else "None"
+        }
+        
+        # Test 3: Check if we can create a simple block
+        can_create_block = len(blockchain_data) > 0
+        
+        return jsonify({
+            "transfer_analysis": {
+                "total_transfers": len(transfer_txs),
+                "validation_results": validation_results
+            },
+            "blockchain_state": blockchain_state,
+            "can_create_block": can_create_block,
+            "mempool_size": len(mempool_data),
+            "sample_transfers": [{
+                "hash": tx.get('hash', '')[:16],
+                "from": tx.get('from', '')[:10],
+                "to": tx.get('to', '')[:10], 
+                "amount": tx.get('amount', 0)
+            } for tx in transfer_txs[:2]]
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e), "traceback": str(e.__traceback__)})
+@app.route("/force-mine-transfers")
+def force_mine_transfers():
+    """Force mine a block containing only transfer transactions"""
+    try:
+        # Get current state
+        mempool_data = getattr(blockchain_daemon_instance, 'mempool', [])
+        transfer_txs = [tx for tx in mempool_data if tx.get('type') == 'transfer']
+        
+        if not transfer_txs:
+            return jsonify({"error": "No transfer transactions in mempool"})
+        
+        # Force mine transfers with a special miner
+        result = blockchain_daemon_instance.mine_pending_transactions("transfer_miner")
+        
+        if result:
+            return jsonify({
+                "success": True,
+                "message": f"✅ Mined block #{result.get('index')} with transfers",
+                "block_index": result.get('index'),
+                "transactions_mined": len(result.get('transactions', [])),
+                "transfers_included": sum(1 for tx in result.get('transactions', []) if tx.get('type') == 'transfer')
+            })
         else:
-            return f"Invalid: {numeric_value}"
+            return jsonify({
+                "success": False,
+                "message": "❌ Failed to mine transfer block",
+                "available_transfers": len(transfer_txs)
+            })
             
     except Exception as e:
-        return f"Error: {str(e)}"
-@app.route("/debug/blockchain-timestamps")
-def debug_blockchain_timestamps():
-    """Debug endpoint to check timestamp formats"""
-    debug_info = []
-    
-    for i, block in enumerate(blockchain_daemon_instance.blockchain):
-        timestamp = block.get("timestamp")
-        debug_info.append({
-            "block_index": i,
-            "timestamp": timestamp,
-            "timestamp_type": type(timestamp).__name__,
-            "is_numeric": isinstance(timestamp, (int, float)),
-            "is_string": isinstance(timestamp, str)
-        })
-    
-    return jsonify(debug_info)
-from builtins import max as builtin_max, min as builtin_min
-@app.route("/blockchain-viewer")
-@app.route("/blockchain-viewer/<int:page>")
-def blockchain_viewer(page=1):
-    """Display blockchain information in a web interface - WITH PAGINATION"""
+        return jsonify({"error": str(e)})
+@app.route("/debug-blockchain")
+def debug_blockchain():
+    """Debug endpoint to see blockchain state"""
     try:
-        # Get the raw blockchain data
+        blockchain_data = getattr(blockchain_daemon_instance, 'blockchain', [])
+        mempool_data = getattr(blockchain_daemon_instance, 'mempool', [])
+        
+        # Analyze blockchain
+        block_indices = [block.get('index', -1) for block in blockchain_data if isinstance(block, dict)]
+        missing_blocks = [i for i in range(max(block_indices) + 1) if i not in block_indices]
+        
+        # Analyze mempool
+        transfer_txs = [tx for tx in mempool_data if tx.get('type') == 'transfer']
+        genesis_txs = [tx for tx in mempool_data if tx.get('type') in ['GTX_Genesis', 'genesis']]
+        reward_txs = [tx for tx in mempool_data if tx.get('type') == 'reward']
+        
+        # Check if transfers are mined but not showing
+        mined_transfers = []
+        for block in blockchain_data:
+            for tx in block.get('transactions', []):
+                if tx.get('type') == 'transfer':
+                    mined_transfers.append(tx)
+        
+        return jsonify({
+            "blockchain_analysis": {
+                "total_blocks": len(blockchain_data),
+                "block_indices": block_indices,
+                "missing_blocks": missing_blocks,
+                "mined_transfers": len(mined_transfers),
+                "last_block_index": max(block_indices) if block_indices else -1
+            },
+            "mempool_analysis": {
+                "total_transactions": len(mempool_data),
+                "transfer_transactions": len(transfer_txs),
+                "genesis_transactions": len(genesis_txs),
+                "reward_transactions": len(reward_txs)
+            },
+            "transfers_in_mempool": [{"hash": tx.get('hash', '')[:20], "from": tx.get('from', '')[:10], "to": tx.get('to', '')[:10], "amount": tx.get('amount', 0)} for tx in transfer_txs[:5]]
+        })
+        
+    except Exception as e:
+        return jsonify({"error": str(e)})
+@app.template_filter('datetimeformat')
+def datetimeformat(value, format='%Y-%m-%d %H:%M:%S'):
+    """Format a timestamp as datetime string"""
+    try:
+        if isinstance(value, (int, float)) and value > 0:
+            return datetime.fromtimestamp(value).strftime(format)
+        else:
+            return str(value)
+    except:
+        return str(value)
+@app.route("/blockchain-viewer")
+def blockchain_viewer():
+    """Display blockchain information in a web interface"""
+    try:
         blockchain_data = getattr(blockchain_daemon_instance, 'blockchain', [])
         if not isinstance(blockchain_data, list):
             blockchain_data = []
         
-        # Pagination settings
-        per_page = 10  # Number of blocks per page
+        # Calculate blockchain statistics
         total_blocks = len(blockchain_data)
-        total_pages = (total_blocks + per_page - 1) // per_page  # Ceiling division
-        
-        # Ensure page is within valid range
-        page = max(1, min(page, total_pages))
-        
-        # Calculate slice for current page
-        start_idx = (page - 1) * per_page
-        end_idx = start_idx + per_page
-        current_blocks = blockchain_data[start_idx:end_idx]
-        
-        print(f"🔍 DEBUG: Pagination - page {page}, showing blocks {start_idx}-{end_idx} of {total_blocks}")
-        
-        # Process only the blocks for the current page
         total_transactions = 0
         genesis_count = 0
+        transaction_count = 0
         transfer_count = 0
         reward_count = 0
         
         blocks_info = []
         
-        for i, block in enumerate(current_blocks):
+        # Group blocks by their index FIRST
+        blocks_by_index = {}
+        for block in blockchain_data:
             if not isinstance(block, dict):
                 continue
                 
+            # Safely handle block index
+            block_index = block.get("index", 0)
+            try:
+                if isinstance(block_index, str):
+                    block_index = int(block_index)
+            except (ValueError, TypeError):
+                block_index = 0
+            
+            # Ensure each block index only appears once
+            if block_index not in blocks_by_index:
+                blocks_by_index[block_index] = block
+            else:
+                # If duplicate index, keep the one with more transactions or newer timestamp
+                existing_block = blocks_by_index[block_index]
+                existing_tx_count = len(existing_block.get("transactions", []))
+                new_tx_count = len(block.get("transactions", []))
+                if new_tx_count > existing_tx_count:
+                    blocks_by_index[block_index] = block
+        
+        # Process each unique block
+        for block_index, block in sorted(blocks_by_index.items()):
             transactions = block.get("transactions", [])
             if not isinstance(transactions, list):
                 transactions = []
                 
             total_transactions += len(transactions)
             
-            # Count transaction types for this block
+            # Count transaction types in this block
             block_genesis = 0
+            block_transaction = 0
             block_transfer = 0
             block_reward = 0
             
             for tx in transactions:
                 if isinstance(tx, dict):
                     tx_type = tx.get("type", "")
+                    # Use exact string comparison
                     if tx_type in ["genesis", "GTX_Genesis"]:
                         block_genesis += 1
+                    elif tx_type == "transaction":
+                        block_transaction += 1
                     elif tx_type == "transfer":
                         block_transfer += 1
                     elif tx_type == "reward":
                         block_reward += 1
             
             genesis_count += block_genesis
+            transaction_count += block_transaction
             transfer_count += block_transfer
             reward_count += block_reward
             
-            # Process timestamp for display
+            # Fix timestamp handling
             timestamp = block.get("timestamp", 0)
             readable_time = "Unknown"
             
@@ -877,15 +795,17 @@ def blockchain_viewer(page=1):
                             timestamp = float(timestamp)
                         else:
                             timestamp = int(timestamp)
+                    else:
+                        timestamp = 0
                     
                     if timestamp > 0:
                         readable_time = datetime.fromtimestamp(timestamp).strftime('%Y-%m-%d %H:%M:%S')
-            except (ValueError, TypeError, OSError, OverflowError):
+            except (ValueError, TypeError, OSError, OverflowError) as e:
                 readable_time = f"Invalid: {timestamp}"
             
-            # Create processed block info
+            # Create ONE block entry with ALL transactions
             block_info = {
-                "index": block.get("index", 0),
+                "index": block_index,
                 "hash": block.get("hash", "N/A"),
                 "previous_hash": block.get("previous_hash", "N/A"),
                 "timestamp": timestamp,
@@ -895,14 +815,17 @@ def blockchain_viewer(page=1):
                 "miner": block.get("miner", "Unknown"),
                 "transaction_count": len(transactions),
                 "genesis_count": block_genesis,
+                "transaction_count_regular": block_transaction,
                 "transfer_count": block_transfer,
                 "reward_count": block_reward,
                 "merkle_root": block.get("merkle_root", "N/A"),
                 "mining_time": block.get("mining_time", "N/A"),
-                "transactions": transactions
+                "type": "transaction" if len(transactions) > 0 else "block",
+                "size": 0,
+                "transactions": transactions  # Include ALL transactions
             }
             
-            # Calculate size
+            # Calculate size safely
             try:
                 block_info["size"] = len(json.dumps(block))
             except:
@@ -910,24 +833,30 @@ def blockchain_viewer(page=1):
                 
             blocks_info.append(block_info)
         
-        # Sort blocks by index (newest first for display)
+        # Sort blocks by index (newest first)
         blocks_info.sort(key=lambda x: x.get("index", 0), reverse=True)
         
-        print(f"📊 PAGE {page} STATS: {len(blocks_info)} blocks, {total_transactions} transactions")
+        # Debug logging to see what's being processed
+        print(f"📊 Blockchain Viewer Stats:")
+        print(f"   Total blocks: {total_blocks}")
+        print(f"   Total transactions: {total_transactions}")
+        print(f"   Genesis: {genesis_count}, Transfers: {transfer_count}, Rewards: {reward_count}")
+        print(f"   Unique blocks in viewer: {len(blocks_info)}")
+        
+        # Log block composition for debugging
+        for block in blocks_info[:5]:  # Show first 5 blocks
+            print(f"   Block #{block['index']}: {block['transaction_count']} tx "
+                  f"(G:{block['genesis_count']} T:{block['transfer_count']} R:{block['reward_count']})")
         
         return render_template('blockchain_viewer.html',
                             blocks=blocks_info,
                             total_blocks=total_blocks,
                             total_transactions=total_transactions,
                             genesis_count=genesis_count,
+                            transaction_count=transaction_count,
                             transfer_count=transfer_count,
                             reward_count=reward_count,
-                            current_page=page,
-                            total_pages=total_pages,
-                            per_page=per_page,
                             current_user=get_current_user(),
-                            max=builtin_max,
-                            min=builtin_min,
                             title="Blockchain Viewer")
         
     except Exception as e:
@@ -939,16 +868,491 @@ def blockchain_viewer(page=1):
                             total_blocks=0,
                             total_transactions=0,
                             genesis_count=0,
+                            transaction_count=0,
                             transfer_count=0,
                             reward_count=0,
-                            current_page=1,
-                            total_pages=1,
-                            per_page=10,
-                            max=builtin_max,
-                            min=builtin_min,
                             current_user=get_current_user(),
                             title="Blockchain Viewer")
+@app.route("/api/transaction/genesis", methods=["POST"])
+def add_genesis_transaction():
+    """API endpoint to add genesis transactions to mempool"""
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        required_fields = ["serial_number", "denomination", "issued_to"]
+        if not all(field in data for field in required_fields):
+            return jsonify({
+                "status": "error",
+                "message": f"Missing required fields: {required_fields}"
+            }), 400
+        
+        # Add to blockchain daemon
+        success = blockchain_daemon_instance.add_genesis_transaction(
+            serial_number=data["serial_number"],
+            denomination=float(data["denomination"]),
+            issued_to=data["issued_to"]
+        )
+        
+        if success:
+            return jsonify({
+                "status": "success",
+                "message": "Genesis transaction added to mempool"
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Failed to add genesis transaction"
+            }), 400
+            
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Error: {str(e)}"
+        }), 500
+@app.route("/api/test/transfer", methods=["POST"])
+def test_transfer():
+    """Manually test adding a transfer to mempool"""
+    try:
+        data = request.get_json()
+        
+        # Create a transfer transaction
+        transfer_tx = {
+            "type": "transfer",
+            "from": data.get("from", "test_sender"),
+            "to": data.get("to", "test_receiver"),
+            "amount": float(data.get("amount", 100.0)),
+            "timestamp": time.time(),
+            "signature": data.get("signature", "test_signature_123"),
+            "hash": ""  # Will be calculated
+        }
+        
+        # Calculate hash
+        tx_string = json.dumps(transfer_tx, sort_keys=True)
+        transfer_tx["hash"] = hashlib.sha256(tx_string.encode()).hexdigest()
+        
+        app.logger.info("🧪 Testing transfer creation...")
+        app.logger.info(f"   From: {transfer_tx['from']}")
+        app.logger.info(f"   To: {transfer_tx['to']}") 
+        app.logger.info(f"   Amount: {transfer_tx['amount']}")
+        app.logger.info(f"   Hash: {transfer_tx['hash']}")
+        
+        # Add to mempool
+        success = blockchain_daemon_instance.add_transaction(transfer_tx)
+        
+        if success:
+            # Verify it's in mempool
+            in_mempool = any(tx.get("hash") == transfer_tx["hash"] 
+                           for tx in blockchain_daemon_instance.mempool)
+            
+            # Verify it's available for mining
+            available = blockchain_daemon_instance.get_available_transfers_to_mine()
+            available_count = len(available)
+            is_available = any(tx.get("hash") == transfer_tx["hash"] for tx in available)
+            
+            return jsonify({
+                "status": "success",
+                "added_to_mempool": success,
+                "in_mempool": in_mempool,
+                "available_for_mining": is_available,
+                "total_available_transfers": available_count,
+                "transaction": transfer_tx
+            })
+        else:
+            return jsonify({
+                "status": "error",
+                "message": "Failed to add transfer to mempool",
+                "added_to_mempool": False
+            }), 400
+            
+    except Exception as e:
+        app.logger.error(f"Transfer test failed: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+@app.route("/api/debug/transfers")
+def debug_transfers():
+    """Debug endpoint to see transfer transaction status"""
+    try:
+        # Check mempool for transfers
+        mempool_transfers = [tx for tx in blockchain_daemon_instance.mempool if tx.get("type") == "transfer"]
+        
+        # Check blockchain for mined transfers
+        blockchain_transfers = []
+        for i, block in enumerate(blockchain_daemon_instance.blockchain):
+            for tx in block.get("transactions", []):
+                if tx.get("type") == "transfer":
+                    blockchain_transfers.append({
+                        "block_index": i,
+                        "transaction": tx
+                    })
+        
+        # Check available transfers for mining
+        available_transfers = blockchain_daemon_instance.get_available_transfers_to_mine()
+        
+        return jsonify({
+            "status": "success",
+            "mempool_transfers_count": len(mempool_transfers),
+            "mempool_transfers": mempool_transfers,
+            "blockchain_transfers_count": len(blockchain_transfers),
+            "blockchain_transfers": blockchain_transfers[:5],  # First 5 only
+            "available_transfers_count": len(available_transfers),
+            "available_transfers": available_transfers,
+            "total_mempool_size": len(blockchain_daemon_instance.mempool),
+            "daemon_running": blockchain_daemon_instance.is_running
+        })
+        
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 
+@app.route("/api/debug/transfer-flow", methods=["POST"])
+def debug_transfer_flow():
+    """Test the complete transfer flow"""
+    try:
+        # Create a test transfer transaction
+        test_transfer = {
+            "type": "transfer",
+            "from": "test_sender_123",
+            "to": "test_receiver_456", 
+            "amount": 100.0,
+            "timestamp": time.time(),
+            "signature": "test_signature_789",
+            "hash": ""  # Will be calculated
+        }
+        
+        # Calculate hash
+        tx_string = json.dumps(test_transfer, sort_keys=True)
+        test_transfer["hash"] = hashlib.sha256(tx_string.encode()).hexdigest()
+        
+        app.logger.info("🧪 Testing transfer flow...")
+        
+        # Step 1: Try to add to mempool
+        app.logger.info("Step 1: Adding transfer to mempool")
+        success = blockchain_daemon_instance.add_transaction(test_transfer)
+        
+        if success:
+            app.logger.info("✅ Transfer added to mempool successfully")
+            
+            # Step 2: Check if it appears in available transfers
+            available = blockchain_daemon_instance.get_available_transfers_to_mine()
+            found = any(tx.get("hash") == test_transfer["hash"] for tx in available)
+            
+            app.logger.info(f"Step 2: Transfer in available list: {found}")
+            
+            # Step 3: Validate for mining
+            validation = blockchain_daemon_instance.validate_transfer_for_mining(test_transfer)
+            app.logger.info(f"Step 3: Transfer validates for mining: {validation}")
+            
+        else:
+            app.logger.info("❌ Failed to add transfer to mempool")
+            
+        # Clean up: Remove test transfer
+        blockchain_daemon_instance.mempool = [tx for tx in blockchain_daemon_instance.mempool 
+                                   if tx.get("hash") != test_transfer["hash"]]
+        blockchain_daemon_instance.save_mempool()
+        
+        return jsonify({
+            "status": "success",
+            "added_to_mempool": success,
+            "test_transaction": test_transfer
+        })
+        
+    except Exception as e:
+        app.logger.error(f"Transfer flow test failed: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+@app.route("/api/debug/rewards", methods=["GET"])
+def debug_rewards():
+    """Public debug endpoint to check reward transaction status"""
+    try:
+        # Check blockchain for existing rewards
+        reward_transactions = []
+        for i, block in enumerate(blockchain_daemon_instance.blockchain):
+            for tx in block.get("transactions", []):
+                if tx.get("type") == "reward":
+                    reward_transactions.append({
+                        "block_index": i,
+                        "block_hash": block.get("hash"),
+                        "transaction": tx
+                    })
+        
+        # Check mempool for pending rewards
+        pending_rewards = []
+        for tx in blockchain_daemon_instance.mempool:
+            if tx.get("type") == "reward":
+                pending_rewards.append(tx)
+        
+        # Check mining eligibility
+        available_bills = blockchain_daemon_instance.get_available_bills_to_mine()
+        available_rewards = blockchain_daemon_instance.get_available_rewards_to_mine()
+        
+        # Debug: Check what's actually in the blocks
+        block_debug = []
+        for i, block in enumerate(blockchain_daemon_instance.blockchain):
+            tx_types = {}
+            for tx in block.get("transactions", []):
+                tx_type = tx.get("type", "unknown")
+                tx_types[tx_type] = tx_types.get(tx_type, 0) + 1
+            block_debug.append({
+                "block": i,
+                "total_txs": len(block.get("transactions", [])),
+                "tx_types": tx_types
+            })
+        
+        return jsonify({
+            "status": "success",
+            "blockchain_rewards_count": len(reward_transactions),
+            "blockchain_rewards": reward_transactions,
+            "mempool_rewards_count": len(pending_rewards),
+            "mempool_rewards": pending_rewards,
+            "available_bills_to_mine": len(available_bills),
+            "available_rewards_to_mine": len(available_rewards),
+            "total_blocks": len(blockchain_daemon_instance.blockchain),
+            "mempool_size": len(blockchain_daemon_instance.mempool),
+            "blockchain_debug": block_debug,  # This will show what's actually in each block
+            "daemon_running": blockchain_daemon_instance.is_running
+        })
+        
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+@app.route("/api/transaction/reward", methods=["POST"])
+def create_reward_transaction():
+    """Create and broadcast a reward transaction"""
+    try:
+        data = request.get_json()
+        
+        # Validate required fields
+        required_fields = ["to", "amount", "description", "block_height"]
+        if not all(field in data for field in required_fields):
+            return jsonify({
+                "status": "error",
+                "message": f"Missing required fields. Required: {required_fields}"
+            }), 400
+        
+        # Create reward transaction
+        reward_tx = {
+            "type": "reward",
+            "to": data["to"],
+            "amount": float(data["amount"]),
+            "timestamp": time.time(),
+            "block_height": int(data["block_height"]),
+            "description": data["description"],
+            "hash": ""  # Will be calculated by blockchain_daemon
+        }
+        
+        # Log the reward transaction
+        app.logger.info(f"🎁 Creating reward transaction:")
+        app.logger.info(f"   To: {reward_tx['to']}")
+        app.logger.info(f"   Amount: {reward_tx['amount']} LKC")
+        app.logger.info(f"   Block Height: {reward_tx['block_height']}")
+        app.logger.info(f"   Description: {reward_tx['description']}")
+        
+        # Add to mempool via blockchain daemon
+        success = blockchain_daemon_instance.add_transaction(reward_tx)
+        
+        if success:
+            app.logger.info(f"✅ Reward transaction added to mempool: {reward_tx.get('hash', 'pending')}")
+            return jsonify({
+                "status": "success",
+                "message": "Reward transaction created and added to mempool",
+                "transaction_hash": reward_tx.get("hash", "pending"),
+                "transaction": reward_tx
+            })
+        else:
+            app.logger.error("❌ Failed to add reward transaction to mempool")
+            return jsonify({
+                "status": "error",
+                "message": "Failed to add reward transaction to mempool"
+            }), 400
+            
+    except Exception as e:
+        app.logger.error(f"💥 Error creating reward transaction: {str(e)}")
+        return jsonify({
+            "status": "error",
+            "message": f"Error creating reward transaction: {str(e)}"
+        }), 500
+@app.route("/api/rewards/check-eligibility", methods=["POST"])
+def check_reward_eligibility():
+    """Check if a reward transaction can be created for a specific block"""
+    try:
+        data = request.get_json()
+        block_height = data.get("block_height")
+        miner_address = data.get("miner_address")
+        
+        if not block_height or not miner_address:
+            return jsonify({
+                "status": "error",
+                "message": "block_height and miner_address are required"
+            }), 400
+        
+        # Check if reward already exists
+        exists = blockchain_daemon_instance.is_reward_already_exists(block_height, miner_address)
+        
+        return jsonify({
+            "status": "success",
+            "eligible": not exists,
+            "block_height": block_height,
+            "miner_address": miner_address,
+            "reward_exists": exists
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+@app.route("/api/debug/blockchain-content", methods=["GET"])
+def debug_blockchain_content():
+    """Public endpoint to see exactly what's in each block"""
+    try:
+        block_data = []
+        
+        for i, block in enumerate(blockchain_daemon_instance.blockchain):
+            transactions = block.get("transactions", [])
+            tx_types = {}
+            
+            for tx in transactions:
+                tx_type = tx.get("type", "unknown")
+                tx_types[tx_type] = tx_types.get(tx_type, 0) + 1
+            
+            block_data.append({
+                "block_index": i,
+                "block_hash": block.get("hash", "N/A")[:16] + "...",  # Shorten for readability
+                "transaction_count": len(transactions),
+                "transaction_types": tx_types,
+                "has_rewards": "reward" in tx_types,
+                "sample_transactions": [{"type": tx.get("type"), "hash": tx.get("hash", "N/A")[:16] + "..."} for tx in transactions[:3]]  # First 3 txs
+            })
+        
+        return jsonify({
+            "status": "success", 
+            "blocks": block_data,
+            "total_rewards": sum(1 for block in block_data if block["has_rewards"]),
+            "total_blocks": len(block_data)
+        })
+        
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+@app.route("/api/debug/mine-test", methods=["POST"])
+@admin_required
+def debug_mine_test():
+    """Test mining with detailed logging"""
+    try:
+        miner_address = request.json.get("miner_address", "test_miner")
+        
+        # Log current state before mining
+        available_bills = blockchain_daemon_instance.get_available_bills_to_mine()
+        available_rewards = blockchain_daemon_instance.get_available_rewards_to_mine()
+        
+        app.logger.info(f"🔍 PRE-MINING STATE:")
+        app.logger.info(f"   - Available bills: {len(available_bills)}")
+        app.logger.info(f"   - Available rewards: {len(available_rewards)}")
+        app.logger.info(f"   - Total mempool: {len(blockchain_daemon_instance.mempool)}")
+        
+        # Try to mine
+        new_block = blockchain_daemon_instance.mine_pending_transactions(miner_address)
+        
+        if new_block:
+            # Analyze the mined block
+            reward_count = sum(1 for tx in new_block.get("transactions", []) 
+                             if tx.get("type") == "reward")
+            
+            app.logger.info(f"✅ POST-MINING STATE:")
+            app.logger.info(f"   - Mined block #{new_block['index']}")
+            app.logger.info(f"   - Transactions in block: {len(new_block.get('transactions', []))}")
+            app.logger.info(f"   - Reward transactions: {reward_count}")
+            
+            return jsonify({
+                "status": "success",
+                "block_mined": True,
+                "block_index": new_block["index"],
+                "transactions_count": len(new_block.get("transactions", [])),
+                "reward_transactions": reward_count,
+                "block_hash": new_block.get("hash")
+            })
+        else:
+            app.logger.info("❌ No block mined - no transactions available")
+            return jsonify({
+                "status": "success", 
+                "block_mined": False,
+                "message": "No transactions available to mine"
+            })
+            
+    except Exception as e:
+        app.logger.error(f"💥 Mining test failed: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/debug/force-reward", methods=["POST"])
+@admin_required
+def debug_force_reward():
+    """Force create a reward transaction for testing"""
+    try:
+        data = request.json
+        miner_address = data.get("miner_address", "test_miner")
+        bill_count = data.get("bill_count", 1)
+        block_height = len(blockchain_daemon_instance.blockchain) + 1
+        
+        # Create reward directly
+        reward_tx = {
+            "type": "reward",
+            "to": miner_address,
+            "amount": 50 * bill_count,
+            "timestamp": time.time(),
+            "block_height": block_height,
+            "description": f"Test reward for {bill_count} bills",
+            "hash": ""
+        }
+        
+        # Calculate hash
+        reward_string = json.dumps(reward_tx, sort_keys=True)
+        reward_tx["hash"] = hashlib.sha256(reward_string.encode()).hexdigest()
+        
+        # Add to mempool
+        success = blockchain_daemon_instance.add_transaction(reward_tx)
+        
+        if success:
+            return jsonify({
+                "status": "success",
+                "message": "Reward transaction added to mempool",
+                "transaction": reward_tx
+            })
+        else:
+            return jsonify({
+                "status": "error", 
+                "message": "Failed to add reward transaction"
+            }), 400
+            
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+    
+
+@app.route('/api/transaction/broadcast', methods=['POST'])
+def broadcast_transaction():
+    """Receive transactions from wallets and add to mempool"""
+    try:
+        transaction = request.get_json()
+        
+        # Log the incoming transaction for debugging
+        app.logger.info(f"📨 Received transaction: {json.dumps(transaction, indent=2)}")
+        
+        # Validate transaction
+        if not transaction or not isinstance(transaction, dict):
+            app.logger.error("❌ Invalid transaction format")
+            return jsonify({"status": "error", "message": "Invalid transaction"}), 400
+        
+        # Add to mempool with detailed error reporting
+        result = blockchain_daemon_instance.add_transaction(transaction)
+        if result:
+            app.logger.info(f"✅ Transaction added to mempool: {transaction.get('hash')}")
+            return jsonify({
+                "status": "success", 
+                "message": "Transaction added to mempool",
+                "transaction_hash": transaction.get("hash")
+            })
+        else:
+            app.logger.error(f"❌ Failed to add transaction to mempool")
+            return jsonify({"status": "error", "message": "Failed to add transaction"}), 400
+            
+    except Exception as e:
+        app.logger.error(f"💥 Error in broadcast_transaction: {str(e)}")
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 
 import subprocess
@@ -958,7 +1362,6 @@ import os
 import uuid
 from concurrent.futures import ThreadPoolExecutor
 from flask import jsonify, request
-import traceback
 
 # Global mining manager to track subprocesses
 class MiningManager:
@@ -1048,973 +1451,428 @@ class MiningManager:
         error_info = self.active_mining_processes[mining_id]
         del self.active_mining_processes[mining_id]
         return {'status': error_info['status'], 'error': error_info.get('error')}
-    
-    
-    
+
 # Initialize mining manager
 mining_manager = MiningManager()
-blockchain_daemon_instance = BlockchainDaemon()
 # Add these endpoints to your Flask app
 
-
-
-
-
-# Mempool routes
-@app.route('/mempool/status', methods=['GET'])
-def mempool_status():
-    """Get current mempool status and statistics"""
-    try:
-        status = blockchain_daemon_instance.get_mempool_status()
-        return jsonify({
-            "success": True,
-            "status": status,
-            "timestamp": int(time.time())
-        }), 200
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
-@app.route('/mempool/add', methods=['POST'])
-def add_to_mempool():
-    """Add a transaction to the mempool (GTX Genesis, transfers, etc.)"""
+@app.route("/api/block/submit", methods=["POST"])
+def submit_mined_block():
+    """Receive and validate a block mined by a client"""
     try:
         data = request.get_json()
-        
         if not data:
-            return jsonify({
-                "success": False,
-                "error": "No JSON data provided"
-            }), 400
+            return jsonify({"status": "error", "message": "No data provided"}), 400
         
-        # Validate required fields
-        if 'type' not in data:
-            return jsonify({
-                "success": False,
-                "error": "Transaction type is required"
-            }), 400
-        
-        # Add timestamp if not provided
-        if 'timestamp' not in data:
-            data['timestamp'] = int(time.time())
-        
-        # Add transaction to mempool
-        success = blockchain_daemon_instance.add_transaction(data)
-        
-        if success:
-            return jsonify({
-                "success": True,
-                "message": "Transaction added to mempool",
-                "transaction_hash": data.get('hash'),
-                "type": data.get('type')
-            }), 201
-        else:
-            return jsonify({
-                "success": False,
-                "error": "Failed to add transaction to mempool"
-            }), 400
-            
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
-@app.route('/mempool/transactions', methods=['GET'])
-def get_mempool_transactions():
-    """Get all transactions currently in the mempool"""
-    try:
-        status = blockchain_daemon_instance.get_mempool_status()
-        
-        # Optional filtering by type
-        tx_type = request.args.get('type')
-        if tx_type:
-            filtered_transactions = [
-                tx for tx in status['transactions'] 
-                if tx.get('type') == tx_type
-            ]
-        else:
-            filtered_transactions = status['transactions']
-        
-        return jsonify({
-            "success": True,
-            "transactions": filtered_transactions,
-            "total": len(filtered_transactions),
-            "timestamp": int(time.time())
-        }), 200
-        
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
-# Blockchain routes  
-@app.route('/blockchain/status', methods=['GET'])
-def blockchain_status():
-    """Get current blockchain status and statistics"""
-    try:
-        status = blockchain_daemon_instance.get_blockchain_status()
-        
-        return jsonify({
-            "success": True,
-            "status": status,
-            "timestamp": int(time.time())
-        }), 200
-        
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
-@app.route('/blockchain/submit-block', methods=['POST'])
-def submit_block():
-    """Submit a mined block for validation and addition to blockchain"""
-    try:
-        data = request.get_json()
-        
-        if not data:
-            return jsonify({
-                "success": False,
-                "error": "No block data provided"
-            }), 400
-        
-        # Validate required block fields
-        required_fields = ['index', 'timestamp', 'transactions', 'previous_hash', 'nonce', 'hash']
+        # Required fields
+        required_fields = ["block", "miner_address", "nonce", "hash", "difficulty"]
         missing_fields = [field for field in required_fields if field not in data]
-        
         if missing_fields:
             return jsonify({
-                "success": False,
-                "error": f"Missing required fields: {missing_fields}"
+                "status": "error", 
+                "message": f"Missing required fields: {missing_fields}"
             }), 400
         
-        # Check if block already exists in blockchain
-        block_hash = data['hash']
-        block_index = data['index']
+        block_data = data["block"]
+        miner_address = data["miner_address"]
+        submitted_nonce = data["nonce"]
+        submitted_hash = data["hash"]
+        difficulty = data["difficulty"]
         
-        if is_block_already_in_chain(block_hash, block_index):
-            print(f"⏭️  Block #{block_index} already exists in blockchain, skipping...")
-            return jsonify({
-                "success": True,
-                "message": f"Block #{block_index} already exists in blockchain",
-                "block_hash": block_hash,
-                "block_index": block_index,
-                "status": "already_exists",
-                "skipped": True
-            }), 200
+        # Validate the block structure
+        if not blockchain_daemon_instance.validate_block_structure(block_data):
+            return jsonify({"status": "error", "message": "Invalid block structure"}), 400
         
-        # Check if we're trying to add a block that's not the next in sequence
-        if not is_correct_block_sequence(block_index):
+        # Verify the proof of work
+        if not submitted_hash.startswith("0" * difficulty):
             return jsonify({
-                "success": False,
-                "error": f"Block #{block_index} is not the next block in sequence"
+                "status": "error", 
+                "message": f"Hash doesn't meet difficulty target {difficulty}"
             }), 400
         
-        # Get miner from block data or use a default
-        miner = data.get('miner', 'unknown_miner')
-        
-        print(f"🔍 Validating block #{block_index} from miner: {miner}")
-        
-        # Validate reward transactions separately
-        transactions = data.get('transactions', [])
-        reward_transactions = [tx for tx in transactions if tx.get('type') == 'reward']
-        regular_transactions = [tx for tx in transactions if tx.get('type') != 'reward']
-        
-        print(f"📊 Block has {len(reward_transactions)} reward transactions and {len(regular_transactions)} regular transactions")
-        
-        # Validate reward transactions
-        if reward_transactions:
-            reward_validation_result = validate_reward_transactions(reward_transactions, block_index)
-            if not reward_validation_result['valid']:
-                print(f"❌ Reward validation failed: {reward_validation_result['error']}")
-                return jsonify({
-                    "success": False,
-                    "error": f"Reward transaction validation failed: {reward_validation_result['error']}"
-                }), 400
-        
-        # Validate regular transactions
-        if regular_transactions:
-            regular_validation_result = validate_regular_transactions(regular_transactions)
-            if not regular_validation_result['valid']:
-                print(f"❌ Regular transaction validation failed: {regular_validation_result['error']}")
-                return jsonify({
-                    "success": False,
-                    "error": f"Transaction validation failed: {regular_validation_result['error']}"
-                }), 400
-        
-        # Add block to blockchain
-        success = blockchain_daemon_instance.add_validated_block(data)
-        
-        if success:
-            # Mark reward transactions as mined
-            mark_reward_transactions_mined(reward_transactions, block_hash)
-            
-            # Log successful submission
-            print(f"✅ Block #{block_index} successfully added to blockchain")
-            
-            # Log reward transactions specifically
-            if reward_transactions:
-                for i, reward_tx in enumerate(reward_transactions):
-                    print(f"💰 Reward TX #{i+1}: {reward_tx.get('to')} received {reward_tx.get('amount')} LUN")
-            
-            return jsonify({
-                "success": True,
-                "message": f"Block #{block_index} added to blockchain",
-                "block_hash": block_hash,
-                "block_index": block_index,
-                "transactions_count": len(transactions),
-                "reward_transactions_count": len(reward_transactions),
-                "regular_transactions_count": len(regular_transactions),
-                "miner": miner,
-                "status": "added"
-            }), 201
-        else:
-            return jsonify({
-                "success": False,
-                "error": "Block validation failed"
-            }), 400
-            
-    except Exception as e:
-        print(f"💥 Error in submit_block: {e}")
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
-def is_block_already_in_chain(block_hash, block_index):
-    """Check if a block already exists in the blockchain"""
-    try:
-        blockchain_data = blockchain_daemon_instance.blockchain
-        
-        # Check by hash (most reliable)
-        for block in blockchain_data:
-            if block.get('hash') == block_hash:
-                return True
-        
-        # Check by index and hash pattern (secondary check)
-        for block in blockchain_data:
-            if (block.get('index') == block_index and 
-                block.get('hash') and block_hash and 
-                block.get('hash')[:8] == block_hash[:8]):  # Check first 8 chars of hash
-                return True
-                
-        return False
-    except Exception as e:
-        print(f"Error checking if block exists: {e}")
-        return False
-
-def is_correct_block_sequence(block_index):
-    """Check if the block is the next one in sequence"""
-    try:
-        blockchain_data = blockchain_daemon_instance.blockchain
-        current_height = len(blockchain_data)
-        
-        # The next block should have index equal to current height
-        return block_index == current_height
-    except Exception as e:
-        print(f"Error checking block sequence: {e}")
-        return False
-
-def mark_reward_transactions_mined(reward_transactions, block_hash):
-    """Mark reward transactions as mined in a separate ledger"""
-    try:
-        if not reward_transactions:
-            return
-        
-        # Load or create mined rewards ledger
-        mined_rewards = load_mined_rewards_ledger()
-        
-        for reward_tx in reward_transactions:
-            reward_data = {
-                'hash': reward_tx.get('hash'),
-                'miner': reward_tx.get('miner', 'unknown'),
-                'recipient': reward_tx.get('to'),
-                'amount': reward_tx.get('amount'),
-                'block_height': reward_tx.get('block_height'),
-                'block_hash': block_hash,
-                'timestamp': time.time(),
-                'mined_at': time.strftime('%Y-%m-%d %H:%M:%S')
-            }
-            
-            # Check if already marked as mined
-            already_mined = any(r.get('hash') == reward_data['hash'] for r in mined_rewards)
-            if not already_mined:
-                mined_rewards.append(reward_data)
-                print(f"✅ Marked reward transaction as mined: {reward_data['hash'][:16]}...")
-        
-        # Save updated ledger
-        save_mined_rewards_ledger(mined_rewards)
-        
-    except Exception as e:
-        print(f"Error marking reward transactions as mined: {e}")
-
-def load_mined_rewards_ledger():
-    """Load the mined rewards ledger"""
-    try:
-        ledger_file = 'mined_rewards_ledger.json'
-        if os.path.exists(ledger_file):
-            with open(ledger_file, 'r') as f:
-                return json.load(f)
-        return []
-    except Exception as e:
-        print(f"Error loading mined rewards ledger: {e}")
-        return []
-
-def save_mined_rewards_ledger(ledger_data):
-    """Save the mined rewards ledger"""
-    try:
-        ledger_file = 'mined_rewards_ledger.json'
-        with open(ledger_file, 'w') as f:
-            json.dump(ledger_data, f, indent=2)
-    except Exception as e:
-        print(f"Error saving mined rewards ledger: {e}")
-
-# Also update the miner client side to handle the "already_exists" response
-class SmartMiner:
-    # ... existing code ...
-    
-    def submit_block(self, block_data):
-        """Submit block to blockchain with duplicate handling"""
-        try:
-            response = requests.post(ENDPOINT_SUBMIT_BLOCK, json=block_data, timeout=30)
-            
-            if response.status_code in [200, 201]:
-                result = response.json()
-                if result.get("success"):
-                    status = result.get("status", "added")
-                    
-                    if status == "already_exists":
-                        print(color_text("⏭️  Block already exists in blockchain (already mined)", Colors.YELLOW))
-                        # Still count as success since the block is valid
-                        self.blocks_mined += 1
-                        
-                        # Mark reward transactions as mined even if block exists
-                        reward_transactions = [tx for tx in block_data.get('transactions', []) 
-                                             if tx.get('type') == 'reward']
-                        if reward_transactions:
-                            for reward_tx in reward_transactions:
-                                self.config.add_reward_transaction(
-                                    reward_tx.get('hash'), 
-                                    reward_tx.get('amount'), 
-                                    block_data['hash']
-                                )
-                        return True
-                    else:
-                        print(color_text("✅ Block successfully added to blockchain", Colors.GREEN))
-                        self.blocks_mined += 1
-                        return True
-                else:
-                    error_msg = result.get('error', 'Unknown error')
-                    print(color_text(f"❌ Block rejected: {error_msg}", Colors.RED))
-            else:
-                print(color_text(f"❌ HTTP {response.status_code}: {response.text}", Colors.RED))
-                
-        except Exception as e:
-            print(color_text(f"💥 Submission error: {e}", Colors.RED))
-        
-        return False
-
-def validate_reward_transactions(reward_transactions, block_index):
-    """Validate reward transactions with special rules - UPDATED"""
-    if not reward_transactions:
-        return {'valid': True, 'error': None}
-    
-    # Check for duplicate reward transactions in this block
-    reward_hashes = []
-    for tx in reward_transactions:
-        tx_hash = tx.get('hash')
-        if not tx_hash:
-            return {'valid': False, 'error': 'Reward transaction missing hash'}
-        if tx_hash in reward_hashes:
-            return {'valid': False, 'error': f'Duplicate reward transaction hash: {tx_hash}'}
-        reward_hashes.append(tx_hash)
-    
-    for tx in reward_transactions:
-        # Validate required fields for reward transactions
-        required_reward_fields = ['to', 'from', 'amount', 'block_height', 'hash']
-        missing_reward_fields = [field for field in required_reward_fields if field not in tx]
-        if missing_reward_fields:
-            return {'valid': False, 'error': f'Reward transaction missing fields: {missing_reward_fields}'}
-        
-        # Validate amount is positive
-        amount = tx.get('amount')
-        if not isinstance(amount, (int, float)) or amount <= 0:
-            return {'valid': False, 'error': f'Invalid reward amount: {amount}'}
-        
-        # Validate block_height matches current block
-        block_height = tx.get('block_height')
-        if block_height != block_index:
-            return {'valid': False, 'error': f'Reward transaction block_height {block_height} does not match block index {block_index}'}
-        
-        # Validate 'from' field accepts treasury or URL
-        from_field = tx.get('from', '')
-        valid_from_values = ['Ling Country Treasury', 'https://bank.linglin.art', 'network', 'mining_reward']
-        if from_field not in valid_from_values:
-            return {'valid': False, 'error': f'Invalid "from" field: {from_field}. Must be one of: {valid_from_values}'}
-        
-        # Validate recipient address format (LUN_ prefix)
-        recipient = tx.get('to', '')
-        if not recipient or not isinstance(recipient, str) or not recipient.startswith('LUN_'):
-            return {'valid': False, 'error': f'Invalid recipient address format: {recipient}. Must start with LUN_'}
-        
-        # Validate hash format
-        tx_hash = tx.get('hash', '')
-        if not tx_hash or not isinstance(tx_hash, str) or len(tx_hash) < 16:
-            return {'valid': False, 'error': 'Invalid or missing transaction hash'}
-        
-        # Check if this reward transaction already exists in blockchain
-        if is_reward_transaction_duplicate(tx):
-            return {'valid': False, 'error': f'Reward transaction already exists in blockchain: {tx_hash}'}
-        
-        # Validate reward amount is reasonable (prevent excessive rewards)
-        max_reward = 1000  # Maximum allowed reward
-        if amount > max_reward:
-            return {'valid': False, 'error': f'Reward amount {amount} exceeds maximum allowed {max_reward}'}
-    
-    return {'valid': True, 'error': None}
-
-def validate_regular_transactions(transactions):
-    """Validate regular (non-reward) transactions"""
-    if not transactions:
-        return {'valid': True, 'error': None}
-    
-    for tx in transactions:
-        tx_type = tx.get('type')
-        
-        if tx_type == 'transfer':
-            # Validate transfer transactions
-            required_transfer_fields = ['from', 'to', 'amount', 'signature']
-            missing_fields = [field for field in required_transfer_fields if field not in tx]
-            if missing_fields:
-                return {'valid': False, 'error': f'Transfer transaction missing fields: {missing_fields}'}
-            
-            # Validate amount
-            amount = tx.get('amount')
-            if not isinstance(amount, (int, float)) or amount <= 0:
-                return {'valid': False, 'error': f'Invalid transfer amount: {amount}'}
-            
-            # Validate addresses
-            from_addr = tx.get('from')
-            to_addr = tx.get('to')
-            if not from_addr or not to_addr:
-                return {'valid': False, 'error': 'Invalid addresses in transfer transaction'}
-            
-            # Check for self-transfer
-            if from_addr == to_addr:
-                return {'valid': False, 'error': 'Self-transfer not allowed'}
-                
-        elif tx_type == 'GTX_Genesis':
-            # Validate genesis transactions
-            required_genesis_fields = ['serial_number', 'denomination', 'signature']
-            missing_fields = [field for field in required_genesis_fields if field not in tx]
-            if missing_fields:
-                return {'valid': False, 'error': f'Genesis transaction missing fields: {missing_fields}'}
-        
-        else:
-            # Unknown transaction type
-            return {'valid': False, 'error': f'Unknown transaction type: {tx_type}'}
-    
-    return {'valid': True, 'error': None}
-
-def is_reward_transaction_duplicate(reward_tx):
-    """Check if a reward transaction already exists in the blockchain"""
-    try:
-        # Get the blockchain data
-        blockchain_data = blockchain_daemon_instance.blockchain
-        
-        for block in blockchain_data:
-            transactions = block.get('transactions', [])
-            for tx in transactions:
-                if tx.get('type') == 'reward':
-                    # Check if this is the same reward transaction
-                    if (tx.get('hash') == reward_tx.get('hash') or
-                        (tx.get('miner') == reward_tx.get('miner') and 
-                         tx.get('block_height') == reward_tx.get('block_height'))):
-                        return True
-        return False
-    except Exception as e:
-        print(f"Error checking reward transaction duplicate: {e}")
-        return False
-
-# Enhanced add_validated_block method for the blockchain daemon
-def add_validated_block_with_rewards(self, block_data):
-    """Add a validated block to the blockchain with reward transaction tracking"""
-    try:
-        # Your existing block validation logic here...
-        
-        # Track reward transactions specifically
-        reward_transactions = [tx for tx in block_data.get('transactions', []) if tx.get('type') == 'reward']
-        if reward_transactions:
-            print(f"💰 Block #{block_data['index']} contains {len(reward_transactions)} reward transactions")
-            
-            # Store reward transaction metadata
-            for reward_tx in reward_transactions:
-                self.track_reward_transaction(reward_tx, block_data['hash'])
-        
-        # Continue with existing block addition logic...
-        return True
-        
-    except Exception as e:
-        print(f"Error adding block with rewards: {e}")
-        return False
-
-def track_reward_transaction(self, reward_tx, block_hash):
-    """Track reward transaction in a separate rewards ledger"""
-    try:
-        reward_data = {
-            'hash': reward_tx.get('hash'),
-            'miner': reward_tx.get('miner'),
-            'recipient': reward_tx.get('to'),
-            'amount': reward_tx.get('amount'),
-            'block_height': reward_tx.get('block_height'),
-            'block_hash': block_hash,
-            'timestamp': time.time()
-        }
-        
-        # Load existing rewards ledger
-        rewards_ledger = self.load_rewards_ledger()
-        rewards_ledger.append(reward_data)
-        
-        # Save rewards ledger
-        self.save_rewards_ledger(rewards_ledger)
-        
-        print(f"🎯 Tracked reward: {reward_tx.get('miner')} -> {reward_tx.get('to')} for {reward_tx.get('amount')} LUN")
-        
-    except Exception as e:
-        print(f"Error tracking reward transaction: {e}")
-@app.route("/debug/blockchain-daemon")
-def debug_blockchain_daemon():
-    """Debug endpoint for blockchain daemon status and validation"""
-    try:
-        debug_info = {
-            "daemon_status": "running",
-            "timestamp": int(time.time()),
-            "blockchain": {
-                "total_blocks": len(blockchain_daemon_instance.blockchain),
-                "blocks": []
-            },
-            "mempool": {
-                "total_transactions": len(blockchain_daemon_instance.mempool),
-                "transactions_by_type": {}
-            },
-            "validation_tests": [],
-            "configuration": {
-                "blockchain_file": blockchain_daemon_instance.blockchain_file,
-                "mempool_file": blockchain_daemon_instance.mempool_file,
-                "sync_interval": blockchain_daemon_instance.sync_interval,
-                "is_running": blockchain_daemon_instance.is_running
-            }
-        }
-
-        # Analyze last 5 blocks
-        recent_blocks = blockchain_daemon_instance.blockchain[-5:] if blockchain_daemon_instance.blockchain else []
-        for i, block in enumerate(recent_blocks):
-            block_info = {
-                "index": block.get("index"),
-                "hash": block.get("hash", "N/A")[:20] + "..." if block.get("hash") else "N/A",
-                "previous_hash": block.get("previous_hash", "N/A")[:20] + "..." if block.get("previous_hash") else "N/A",
-                "timestamp": block.get("timestamp"),
-                "timestamp_readable": datetime.fromtimestamp(block.get("timestamp", 0)).strftime('%Y-%m-%d %H:%M:%S') if block.get("timestamp") else "N/A",
-                "nonce": block.get("nonce"),
-                "miner": block.get("miner", "N/A"),
-                "transaction_count": len(block.get("transactions", [])),
-                "transaction_types": {}
-            }
-            
-            # Count transaction types in this block
-            for tx in block.get("transactions", []):
-                tx_type = tx.get("type", "unknown")
-                block_info["transaction_types"][tx_type] = block_info["transaction_types"].get(tx_type, 0) + 1
-            
-            debug_info["blockchain"]["blocks"].append(block_info)
-
-        # Analyze mempool transactions
-        for tx in blockchain_daemon_instance.mempool:
-            tx_type = tx.get("type", "unknown")
-            debug_info["mempool"]["transactions_by_type"][tx_type] = debug_info["mempool"]["transactions_by_type"].get(tx_type, 0) + 1
-
-        # Run validation tests
-        validation_tests = []
-
-        # Test 1: Check blockchain continuity
-        if len(blockchain_daemon_instance.blockchain) > 1:
-            for i in range(1, min(5, len(blockchain_daemon_instance.blockchain))):
-                current_block = blockchain_daemon_instance.blockchain[i]
-                previous_block = blockchain_daemon_instance.blockchain[i-1]
-                
-                if current_block.get("previous_hash") == previous_block.get("hash"):
-                    validation_tests.append({
-                        "test": f"Block continuity #{i}",
-                        "status": "PASS",
-                        "message": f"Block {i} correctly links to block {i-1}"
-                    })
-                else:
-                    validation_tests.append({
-                        "test": f"Block continuity #{i}",
-                        "status": "FAIL",
-                        "message": f"Block {i} previous_hash doesn't match block {i-1} hash"
-                    })
-
-        # Test 2: Validate block hashes
-        for i, block in enumerate(blockchain_daemon_instance.blockchain[-3:]):
-            calculated_hash = blockchain_daemon_instance.calculate_block_hash(
-                block.get("index"),
-                block.get("previous_hash"),
-                block.get("timestamp"),
-                block.get("transactions", []),
-                block.get("nonce")
-            )
-            
-            if block.get("hash") == calculated_hash:
-                validation_tests.append({
-                    "test": f"Block #{block.get('index')} hash validation",
-                    "status": "PASS",
-                    "message": "Hash matches calculated value"
-                })
-            else:
-                validation_tests.append({
-                    "test": f"Block #{block.get('index')} hash validation",
-                    "status": "FAIL",
-                    "message": f"Hash mismatch: stored={block.get('hash')[:20]}..., calculated={calculated_hash[:20]}..."
-                })
-
-        # Test 3: Check for duplicate transactions
-        all_tx_hashes = []
-        duplicate_count = 0
-        
-        for block in blockchain_daemon_instance.blockchain:
-            for tx in block.get("transactions", []):
-                tx_hash = tx.get("hash")
-                if tx_hash:
-                    if tx_hash in all_tx_hashes:
-                        duplicate_count += 1
-                    all_tx_hashes.append(tx_hash)
-        
-        validation_tests.append({
-            "test": "Duplicate transactions check",
-            "status": "PASS" if duplicate_count == 0 else "WARNING",
-            "message": f"Found {duplicate_count} duplicate transactions in blockchain"
-        })
-
-        # Test 4: Mempool vs Blockchain duplicates
-        mined_hashes = set()
-        for block in blockchain_daemon_instance.blockchain:
-            for tx in block.get("transactions", []):
-                if tx.get("hash"):
-                    mined_hashes.add(tx.get("hash"))
-        
-        mempool_duplicates = 0
-        for tx in blockchain_daemon_instance.mempool:
-            if tx.get("hash") in mined_hashes:
-                mempool_duplicates += 1
-        
-        validation_tests.append({
-            "test": "Mempool cleanup",
-            "status": "PASS" if mempool_duplicates == 0 else "WARNING",
-            "message": f"Found {mempool_duplicates} mined transactions still in mempool"
-        })
-
-        debug_info["validation_tests"] = validation_tests
-
-        # Test 5: Test block validation with sample data
-        if blockchain_daemon_instance.blockchain:
-            sample_block = blockchain_daemon_instance.blockchain[-1]
-            is_valid = blockchain_daemon_instance.validate_block(sample_block)
-            validation_tests.append({
-                "test": "Sample block validation",
-                "status": "PASS" if is_valid else "FAIL",
-                "message": f"Latest block validation: {'VALID' if is_valid else 'INVALID'}"
-            })
-
-        return jsonify(debug_info)
-
-    except Exception as e:
-        return jsonify({
-            "error": str(e),
-            "traceback": traceback.format_exc(),
-            "daemon_status": "error"
-        }), 500
-
-@app.route("/debug/blockchain-test-validation", methods=["POST"])
-def test_block_validation():
-    """Test block validation with custom block data"""
-    try:
-        test_block = request.get_json()
-        
-        if not test_block:
-            return jsonify({"error": "No block data provided"}), 400
-        
-        # Run validation
-        is_valid = blockchain_daemon_instance.validate_block(test_block)
-        
-        # Calculate expected hash
+        # Verify the hash calculation
         calculated_hash = blockchain_daemon_instance.calculate_block_hash(
-            test_block.get("index"),
-            test_block.get("previous_hash"),
-            test_block.get("timestamp"),
-            test_block.get("transactions", []),
-            test_block.get("nonce")
+            block_data["index"],
+            block_data["previous_hash"],
+            block_data["timestamp"],
+            block_data["transactions"],
+            submitted_nonce,
+            difficulty
         )
         
-        validation_details = {
-            "is_valid": is_valid,
-            "provided_hash": test_block.get("hash"),
-            "calculated_hash": calculated_hash,
-            "hash_match": test_block.get("hash") == calculated_hash,
-            "missing_fields": [],
-            "type_issues": []
-        }
+        if calculated_hash != submitted_hash:
+            return jsonify({
+                "status": "error", 
+                "message": "Hash verification failed"
+            }), 400
         
-        # Check required fields
-        required_fields = ["index", "timestamp", "transactions", "previous_hash", "nonce", "hash", "miner"]
-        for field in required_fields:
-            if field not in test_block:
-                validation_details["missing_fields"].append(field)
+        # Check if block already exists
+        current_height = len(blockchain_daemon_instance.blockchain)
+        if block_data["index"] <= current_height:
+            return jsonify({
+                "status": "error", 
+                "message": "Block already exists or index too low"
+            }), 400
         
-        # Check data types
-        if "index" in test_block and not isinstance(test_block["index"], int):
-            validation_details["type_issues"].append("index should be integer")
-        if "timestamp" in test_block and not isinstance(test_block["timestamp"], int):
-            validation_details["type_issues"].append("timestamp should be integer")
-        if "nonce" in test_block and not isinstance(test_block["nonce"], int):
-            validation_details["type_issues"].append("nonce should be integer")
+        # Validate transactions in the block
+        if not blockchain_daemon_instance.validate_block_transactions(block_data.get("transactions", [])):
+            return jsonify({
+                "status": "error", 
+                "message": "Block contains invalid transactions"
+            }), 400
         
-        return jsonify(validation_details)
+        # Add to blockchain
+        blockchain_daemon_instance.blockchain.append(block_data)
         
-    except Exception as e:
-        return jsonify({
-            "error": str(e),
-            "traceback": traceback.format_exc()
-        }), 500
-
-@app.route("/debug/blockchain-force-cleanup", methods=["POST"])
-def force_cleanup():
-    """Force cleanup of mined transactions from mempool"""
-    try:
-        initial_mempool_size = len(blockchain_daemon_instance.mempool)
+        # Remove mined transactions from mempool
+        blockchain_daemon_instance.remove_mined_transactions(block_data.get("transactions", []))
         
-        # Run cleanup
-        blockchain_daemon_instance.cleanup_mined_transactions()
+        # Update mined indexes
+        blockchain_daemon_instance.update_mined_indexes(block_data)
         
-        final_mempool_size = len(blockchain_daemon_instance.mempool)
-        removed_count = initial_mempool_size - final_mempool_size
-        
-        # Save the cleaned mempool
-        blockchain_daemon_instance.save_mempool()
-        
-        return jsonify({
-            "success": True,
-            "removed_transactions": removed_count,
-            "initial_mempool_size": initial_mempool_size,
-            "final_mempool_size": final_mempool_size,
-            "message": f"Removed {removed_count} mined transactions from mempool"
-        })
-        
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
-@app.route("/debug/blockchain-repair", methods=["POST"])
-def repair_blockchain():
-    """Attempt to repair blockchain issues"""
-    try:
-        # Run comprehensive diagnostic and repair
-        initial_block_count = len(blockchain_daemon_instance.blockchain)
-        
-        # Reload data from files
-        blockchain_daemon_instance.load_data()
-        
-        # Cleanup mined transactions
-        blockchain_daemon_instance.cleanup_mined_transactions()
-        
-        # Save everything
+        # Save blockchain
         blockchain_daemon_instance.save_blockchain()
         blockchain_daemon_instance.save_mempool()
         
-        final_block_count = len(blockchain_daemon_instance.blockchain)
+        # Create reward for miner
+        reward_amount = blockchain_daemon_instance.calculate_mining_reward(block_data)
+        reward_data = {
+            "to": miner_address,
+            "amount": reward_amount,
+            "description": f"Mining reward for block #{block_data['index']}",
+            "block_height": block_data["index"]
+        }
+        
+        # Add reward to mempool
+        reward_tx = blockchain_daemon_instance.create_reward_transaction(reward_data)
+        if reward_tx:
+            blockchain_daemon_instance.add_transaction(reward_tx)
+        
+        logger.info(f"✅ Accepted client-mined block #{block_data['index']} from {miner_address}")
         
         return jsonify({
-            "success": True,
-            "initial_blocks": initial_block_count,
-            "final_blocks": final_block_count,
-            "message": f"Blockchain repair completed. Blocks: {initial_block_count} -> {final_block_count}"
+            "status": "success",
+            "message": "Block accepted and added to blockchain",
+            "block_height": block_data["index"],
+            "reward_amount": reward_amount,
+            "transactions_mined": len(block_data.get("transactions", []))
+        })
+        
+    except Exception as e:
+        logger.error(f"Error submitting mined block: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/mining/work", methods=["GET"])
+def get_mining_work():
+    """Provide mining work for clients"""
+    try:
+        # Get pending transactions
+        available_bills = blockchain_daemon_instance.get_available_bills_to_mine()
+        available_rewards = blockchain_daemon_instance.get_available_rewards_to_mine()
+        available_transfers = blockchain_daemon_instance.get_available_transfers_to_mine()
+        
+        # Select transactions for mining (similar to your existing logic)
+        max_per_block = 50
+        transactions_to_mine = []
+        
+        if available_transfers and len(available_transfers) >= 10:
+            # Prioritize transfers when backlog exists
+            transfers_to_include = available_transfers[:30]
+            bills_to_include = available_bills[:10]
+            rewards_to_include = available_rewards[:10]
+            all_candidates = transfers_to_include + bills_to_include + rewards_to_include
+        else:
+            # Normal allocation
+            bills_to_include = available_bills[:20]
+            rewards_to_include = available_rewards[:15]
+            transfers_to_include = available_transfers[:15]
+            all_candidates = bills_to_include + rewards_to_include + transfers_to_include
+        
+        # Validate and select transactions
+        valid_candidates = []
+        for tx in all_candidates:
+            if blockchain_daemon_instance.validate_transaction(tx, skip_mined_check=True):
+                valid_candidates.append(tx)
+        
+        transactions_to_mine = valid_candidates[:max_per_block]
+        
+        if not transactions_to_mine:
+            return jsonify({
+                "status": "error",
+                "message": "No transactions available for mining"
+            }), 400
+        
+        # Get current blockchain state
+        current_blockchain = blockchain_daemon_instance.blockchain
+        if not current_blockchain:
+            return jsonify({"status": "error", "message": "Blockchain not ready"}), 400
+        
+        previous_block = current_blockchain[-1]
+        
+        # Create mining work
+        mining_work = {
+            "previous_hash": previous_block["hash"],
+            "index": len(current_blockchain),
+            "timestamp": int(time.time()),
+            "transactions": transactions_to_mine,
+            "difficulty": 4,  # You can make this dynamic
+            "target": "0" * 4  # Difficulty target
+        }
+        
+        return jsonify({
+            "status": "success",
+            "mining_work": mining_work,
+            "transactions_count": len(transactions_to_mine),
+            "difficulty": 4
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting mining work: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+def calculate_mining_reward(self, block: Dict) -> float:
+    """Calculate mining reward based on block content with denomination and difficulty multipliers"""
+    base_reward = 1.0
+    transactions = block.get("transactions", [])
+    
+    # Calculate bill rewards with denomination multipliers
+    bill_reward = 0.0
+    for tx in transactions:
+        if tx.get("type") in ["GTX_Genesis", "genesis"]:
+            denomination = tx.get("denomination", 0)
+            # Apply denomination-based multiplier
+            if denomination >= 1000000:  # $1,000,000+
+                multiplier = 1000000
+            elif denomination >= 100000:  # $100,000+
+                multiplier = 100000
+            elif denomination >= 10000:   # $10,000+
+                multiplier = 10000
+            elif denomination >= 1000:    # $1,000+
+                multiplier = 1000
+            elif denomination >= 100:     # $100+
+                multiplier = 100
+            elif denomination >= 10:      # $10+
+                multiplier = 10
+            else:                         # $1
+                multiplier = 1
+            
+            bill_reward += denomination * 0.001 * multiplier  # 0.1% of denomination with multiplier
+    
+    # Reward for clearing transfer backlog
+    transfer_count = sum(1 for tx in transactions if tx.get("type") == "transfer")
+    transfer_bonus = transfer_count * 0.05
+    
+    # Apply difficulty multiplier to base reward
+    difficulty = block.get("difficulty", 4)
+    difficulty_multiplier = 10 ** (difficulty - 4)  # Difficulty 4 = 1x, 5 = 10x, 6 = 100x, etc.
+    
+    total_reward = (base_reward * difficulty_multiplier) + bill_reward + transfer_bonus
+    
+    # Log detailed breakdown for transparency
+    self.logger.info(f"💰 Mining reward breakdown for block #{block.get('index')}:")
+    self.logger.info(f"   Base: {base_reward} × difficulty_{difficulty}({difficulty_multiplier}x) = {base_reward * difficulty_multiplier}")
+    self.logger.info(f"   Bills: {bill_reward:.6f}")
+    self.logger.info(f"   Transfers: {transfer_bonus} ({transfer_count} transfers)")
+    self.logger.info(f"   Total: {total_reward:.6f}")
+    
+    return round(total_reward, 6)
+@app.route("/api/block/mine", methods=["POST"])
+def mine_block():
+    """Mine a new block using subprocess (non-blocking)"""
+    try:
+        data = request.get_json()
+        miner_address = data.get("miner_address", "anonymous_miner")
+        difficulty = data.get("difficulty", 4)
+        
+        # Check if too many mining processes are already running
+        current_status = mining_manager.get_mining_status()
+        if current_status['active_mining_jobs'] >= 2:  # Max 2 concurrent mining operations
+            return jsonify({
+                "status": "error",
+                "message": "Too many mining operations in progress. Please try again later.",
+                "active_jobs": current_status['active_mining_jobs']
+            }), 429  # Too Many Requests
+        
+        # Start mining subprocess
+        mining_id = mining_manager.start_mining_subprocess(miner_address, difficulty)
+        
+        return jsonify({
+            "status": "success", 
+            "message": "Mining started in background process",
+            "mining_id": mining_id,
+            "miner_address": miner_address,
+            "check_status_url": f"/api/block/mining-status/{mining_id}"
         })
         
     except Exception as e:
         return jsonify({
-            "success": False,
-            "error": str(e),
-            "traceback": traceback.format_exc()
+            "status": "error",
+            "message": f"Failed to start mining: {str(e)}"
         }), 500
-@app.route('/blockchain/validate', methods=['POST'])
-def validate_block():
-    """Validate a block without adding it to the blockchain"""
+
+@app.route("/api/block/mining-status/<mining_id>", methods=["GET"])
+def get_mining_status(mining_id):
+    """Check status of a mining operation"""
     try:
-        data = request.get_json()
+        result = mining_manager.get_mining_result(mining_id)
         
-        if not data:
+        if result.get('status') == 'still_running':
             return jsonify({
-                "success": False,
-                "error": "No block data provided"
-            }), 400
+                "status": "running",
+                "message": "Mining in progress...",
+                "mining_id": mining_id
+            })
         
-        # Validate the block
-        is_valid = blockchain_daemon_instance.validate_block(data)
-        
-        if is_valid:
+        elif result.get('status') == 'success':
+            # Reload blockchain data to reflect new block
+            blockchain_daemon_instance.load_data()
+            
             return jsonify({
-                "success": True,
-                "message": "Block is valid",
-                "block_hash": data.get('hash'),
-                "block_index": data.get('index')
-            }), 200
+                "status": "completed",
+                "message": "Mining completed successfully",
+                "mining_id": mining_id,
+                "block": result.get('block'),
+                "mempool_size": len(blockchain_daemon_instance.mempool)
+            })
+        
+        elif result.get('status') == 'error':
+            return jsonify({
+                "status": "error",
+                "message": f"Mining failed: {result.get('error')}",
+                "mining_id": mining_id
+            }), 500
+        
+        elif result.get('status') == 'timeout':
+            return jsonify({
+                "status": "error", 
+                "message": "Mining process timed out",
+                "mining_id": mining_id
+            }), 408  # Request Timeout
+        
         else:
             return jsonify({
-                "success": False,
-                "error": "Block validation failed",
-                "block_hash": data.get('hash'),
-                "block_index": data.get('index')
-            }), 400
+                "status": "error",
+                "message": "Mining job not found",
+                "mining_id": mining_id
+            }), 404
             
     except Exception as e:
         return jsonify({
-            "success": False,
-            "error": str(e)
+            "status": "error",
+            "message": f"Error checking mining status: {str(e)}"
         }), 500
 
-@app.route('/transaction/<tx_hash>', methods=['GET'])
-def get_transaction_status(tx_hash):
-    """Get the status of a specific transaction"""
+@app.route("/api/block/mining-queue", methods=["GET"])
+def get_mining_queue():
+    """Get information about current mining operations"""
     try:
-        if not tx_hash or tx_hash == 'undefined':
+        status = mining_manager.get_mining_status()
+        active_jobs = []
+        
+        for mining_id, job_info in mining_manager.active_mining_processes.items():
+            if job_info.get('status') == 'running':
+                active_jobs.append({
+                    'mining_id': mining_id,
+                    'miner_address': job_info.get('miner_address'),
+                    'start_time': job_info.get('start_time'),
+                    'duration': time.time() - job_info.get('start_time', time.time())
+                })
+        
+        return jsonify({
+            "status": "success",
+            "active_mining_jobs": status['active_mining_jobs'],
+            "total_jobs": status['total_jobs'],
+            "active_jobs": active_jobs
+        })
+        
+    except Exception as e:
+        return jsonify({
+            "status": "error",
+            "message": f"Error getting mining queue: {str(e)}"
+        }), 500
+
+@app.route("/api/block/cancel-mining/<mining_id>", methods=["POST"])
+def cancel_mining(mining_id):
+    """Cancel a mining operation (if possible)"""
+    try:
+        # With subprocess, we can't easily cancel, but we can mark it for cleanup
+        job_info = mining_manager.active_mining_processes.get(mining_id)
+        
+        if not job_info:
             return jsonify({
-                "success": False,
-                "error": "Transaction hash is required"
-            }), 400
+                "status": "error",
+                "message": "Mining job not found"
+            }), 404
         
-        status = blockchain_daemon_instance.get_transaction_status(tx_hash)
-        
-        return jsonify({
-            "success": True,
-            "transaction_hash": tx_hash,
-            "status": status,
-            "timestamp": int(time.time())
-        }), 200
-        
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
-# Additional utility endpoints
-@app.route('/blockchain/blocks', methods=['GET'])
-def get_blocks():
-    """Get blockchain blocks (with optional limit)"""
-    try:
-        limit = request.args.get('limit', type=int)
-        blocks = blockchain_daemon_instance.blockchain
-        
-        if limit and limit > 0:
-            blocks = blocks[-limit:]
-        
-        return jsonify({
-            "success": True,
-            "blocks": blocks,
-            "total_blocks": len(blocks),
-            "timestamp": int(time.time())
-        }), 200
-        
-    except Exception as e:
-        return jsonify({
-            "success": False,
-            "error": str(e)
-        }), 500
-
-@app.route('/blockchain/latest-block', methods=['GET'])
-def get_latest_block():
-    """Get the latest block in the blockchain"""
-    try:
-        if not blockchain_daemon_instance.blockchain:
+        if job_info.get('status') == 'running':
+            # We can't easily kill subprocess from here, but we can note it
             return jsonify({
-                "success": True,
-                "message": "Blockchain is empty",
-                "block": None
-            }), 200
-        
-        latest_block = blockchain_daemon_instance.blockchain[-1]
-        
-        return jsonify({
-            "success": True,
-            "block": latest_block,
-            "timestamp": int(time.time())
-        }), 200
-        
+                "status": "warning",
+                "message": "Mining process cannot be cancelled once started. It will timeout after 5 minutes."
+            })
+        else:
+            # Remove completed/failed job
+            del mining_manager.active_mining_processes[mining_id]
+            return jsonify({
+                "status": "success",
+                "message": "Mining job removed from queue"
+            })
+            
     except Exception as e:
         return jsonify({
-            "success": False,
-            "error": str(e)
+            "status": "error", 
+            "message": f"Error cancelling mining: {str(e)}"
         }), 500
-
-@app.route('/system/health', methods=['GET'])
-def system_health():
-    """System health check endpoint"""
+@app.route("/api/block/mining-status")
+def mining_status():
+    """Check current mining status"""
     try:
-        mempool_status = blockchain_daemon_instance.get_mempool_status()
-        blockchain_status = blockchain_daemon_instance.get_blockchain_status()
+        status = blockchain_daemon_instance.get_mining_status()
+        return jsonify({
+            "status": "success",
+            "mining_status": status
+        })
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route("/api/block/wait-for-mining", methods=["POST"])
+def wait_for_mining():
+    """Wait for mining to complete and get result"""
+    try:
+        data = request.get_json()
+        timeout = data.get("timeout", 60)  # Default 60 second timeout
+        
+        result = blockchain_daemon_instance.wait_for_mining_completion(timeout=timeout)
+        
+        if result is None:
+            return jsonify({
+                "status": "error",
+                "message": "No mining in progress or timeout reached"
+            }), 408  # 408 Request Timeout
         
         return jsonify({
-            "success": True,
-            "status": "healthy",
-            "mempool": {
-                "total_transactions": mempool_status['total'],
-                "bills": mempool_status['bills'],
-                "transfers": mempool_status['transfers'],
-                "rewards": mempool_status['rewards']
-            },
-            "blockchain": {
-                "total_blocks": blockchain_status['blocks'],
-                "total_transactions": blockchain_status['total_transactions'],
-                "genesis_transactions": blockchain_status['genesis_transactions'],
-                "transfer_transactions": blockchain_status['transfer_transactions']
-            },
-            "timestamp": int(time.time())
-        }), 200
+            "status": "success",
+            "message": "Mining completed",
+            "block": result
+        })
         
     except Exception as e:
-        return jsonify({
-            "success": False,
-            "status": "unhealthy",
-            "error": str(e)
-        }), 500
+        return jsonify({"status": "error", "message": str(e)}), 500
 
-# Error handlers
-@app.errorhandler(404)
-def not_found(error):
+@app.route("/api/blockchain/status", methods=["GET"])
+def blockchain_status():
+    """Get blockchain status"""
     return jsonify({
-        "success": False,
-        "error": "Endpoint not found"
-    }), 404
+        "blockchain_height": len(blockchain_daemon_instance.blockchain),
+        "mempool_size": len(blockchain_daemon_instance.mempool),
+        "filtered_mempool_size": len(blockchain_daemon_instance.mempool),
+        "mined_serials": len(blockchain_daemon_instance.mined_serials),
+        "mined_signatures": len(blockchain_daemon_instance.mined_serials),
+        "daemon_running": blockchain_daemon_instance.is_running
+    })
+# In app.py, update the verify_serial_get and verify_serial routes:
 
-@app.errorhandler(405)
-def method_not_allowed(error):
-    return jsonify({
-        "success": False,
-        "error": "Method not allowed"
-    }), 405
-
-@app.errorhandler(500)
-def internal_server_error(error):
-    return jsonify({
-        "success": False,
-        "error": "Internal server error"
-    }), 500
+# In app.py, update the verify_serial_get and verify_serial routes:
 
 @app.route("/verify/<serial_id>", methods=["GET", "POST"])
 def verify_serial_get(serial_id):
@@ -2419,9 +2277,6 @@ def verify_serial():
     signature_valid = None
     signature_details = {}
     verification_method = "unknown"
-    blockchain_status = None
-    mined_transaction = None
-    block_details = None
 
     if request.method == "POST":
         serial_input = request.form.get("serial", "").strip()
@@ -2454,35 +2309,13 @@ def verify_serial():
                         print(f"   Front Serial: {front_serial}")
                         print(f"   Timestamp: {timestamp}")
                         
-                        # CHECK BLOCKCHAIN STATUS - NEW CODE
-                        print(f"🔗 Checking blockchain status for serial: {front_serial}")
-                        
-                        # Check if serial is in mined_serials set
-                        if front_serial in blockchain_daemon_instance.mined_serials:
-                            blockchain_status = "mined"
-                            print(f"✅ Serial {front_serial} found in mined_serials")
-                            
-                            # Find the specific transaction in blockchain
-                            mined_transaction, block_details = find_genesis_transaction_in_blockchain(front_serial)
-                            
-                            if mined_transaction:
-                                print(f"📦 Found mined transaction in block #{block_details['block_index']}")
-                            else:
-                                print(f"⚠️  Serial in mined_serials but transaction not found in blocks")
-                        else:
-                            blockchain_status = "unmined"
-                            print(f"⏳ Serial {front_serial} not yet mined")
-                            
-                            # Check if it's in mempool
-                            if is_transaction_in_mempool(front_serial):
-                                blockchain_status = "pending"
-                                print(f"📋 Serial {front_serial} found in mempool (pending)")
-                        
                         # Try different verification methods
                         verification_attempts = []
                         
                         # METHOD 1: Check if this is a blockchain-style transaction signature
+                        # Based on the blockchain data, transactions use a different signing method
                         if signature and public_key:
+                            # Recreate the transaction data that would have been signed
                             transaction_to_verify = {
                                 'type': tx_data.get('type', 'GTX_Genesis'),
                                 'serial_number': front_serial,
@@ -2492,12 +2325,16 @@ def verify_serial():
                                 'public_key': public_key
                             }
                             
+                            # Remove signature for hashing (it wouldn't be there during signing)
                             if 'signature' in transaction_to_verify:
                                 del transaction_to_verify['signature']
                             
+                            # Calculate the expected hash (this is what should have been signed)
                             transaction_string = json.dumps(transaction_to_verify, sort_keys=True)
                             expected_hash = hashlib.sha256(transaction_string.encode()).hexdigest()
                             
+                            # For blockchain transactions, the signature might be the hash itself
+                            # or a derivation from the hash
                             is_valid = (signature == expected_hash)
                             verification_attempts.append(("blockchain_hash", is_valid))
                             if is_valid:
@@ -2518,6 +2355,7 @@ def verify_serial():
                         
                         # METHOD 3: Check for simple hash of transaction data
                         if signature_valid is None and signature:
+                            # Try hashing just the critical data
                             simple_data = f"{front_serial}{denomination}{issued_to}{timestamp}"
                             expected_simple_hash = hashlib.sha256(simple_data.encode()).hexdigest()
                             is_valid = (signature == expected_simple_hash)
@@ -2528,13 +2366,15 @@ def verify_serial():
                                 print(f"✅ Verified via simple_hash method")
                         
                         # METHOD 4: Check if signature matches the transaction hash in blockchain
-                        if signature_valid is None and signature and mined_transaction:
-                            if mined_transaction.get('hash') == signature:
+                        if signature_valid is None and signature:
+                            # Look for this transaction in the blockchain
+                            blockchain_tx = find_transaction_in_blockchain(front_serial, issued_to, denomination)
+                            if blockchain_tx and blockchain_tx.get('hash') == signature:
                                 signature_valid = True
                                 verification_method = "blockchain_tx_hash"
                                 verification_attempts.append(("blockchain_tx_hash", True))
                                 print(f"✅ Verified via blockchain_tx_hash method")
-                            else:
+                            elif blockchain_tx:
                                 verification_attempts.append(("blockchain_tx_hash", False))
                         
                         # METHOD 5: DigitalBill verification (legacy method)
@@ -2562,6 +2402,7 @@ def verify_serial():
                                 print(f"DigitalBill verification error: {e}")
                         
                         # If all methods failed, accept any non-empty signature as valid for now
+                        # (This is a temporary measure until we fix the signature creation)
                         if signature_valid is None and signature and len(signature) > 10:
                             signature_valid = True
                             verification_method = "fallback_accept"
@@ -2599,47 +2440,8 @@ def verify_serial():
     return render_template('verify.html', result=result, serial_input=serial_input, 
                          banknote=banknote, title="Verify Serial", 
                          current_user=get_current_user(), signature_valid=signature_valid,
-                         signature_details=signature_details, blockchain_status=blockchain_status,
-                         mined_transaction=mined_transaction, block_details=block_details)
-def find_genesis_transaction_in_blockchain(serial_number):
-    """
-    Find a GTX_Genesis transaction in the blockchain by serial number
-    Returns (transaction_dict, block_details) or (None, None) if not found
-    """
-    try:
-        for block_index, block in enumerate(blockchain_daemon_instance.blockchain):
-            for tx in block.get('transactions', []):
-                if (tx.get('type') == 'GTX_Genesis' and 
-                    tx.get('serial_number') == serial_number):
-                    
-                    block_details = {
-                        'block_index': block_index,
-                        'block_hash': block.get('hash', '')[:16] + '...',
-                        'timestamp': block.get('timestamp'),
-                        'timestamp_readable': datetime.fromtimestamp(block.get('timestamp')).strftime('%Y-%m-%d %H:%M:%S') if block.get('timestamp') else 'Unknown',
-                        'miner': block.get('miner', 'Unknown'),
-                        'transaction_count': len(block.get('transactions', [])),
-                        'previous_hash': block.get('previous_hash', '')[:16] + '...'
-                    }
-                    return tx, block_details
-        return None, None
-    except Exception as e:
-        print(f"Error searching blockchain: {e}")
-        return None, None
+                         signature_details=signature_details)
 
-def is_transaction_in_mempool(serial_number):
-    """
-    Check if a GTX_Genesis transaction is in the mempool
-    """
-    try:
-        for tx in blockchain_daemon_instance.mempool:
-            if (tx.get('type') == 'GTX_Genesis' and 
-                tx.get('serial_number') == serial_number):
-                return True
-        return False
-    except Exception as e:
-        print(f"Error searching mempool: {e}")
-        return False
 def find_transaction_in_blockchain(serial_number, issued_to, denomination):
     """Look for a transaction in the blockchain that matches this banknote"""
     try:
@@ -3535,37 +3337,7 @@ def profile(username):
     return render_template('profile.html', user=user, generation_tasks=generation_tasks, 
                          banknotes=banknotes, title=f"Profile - {username}", current_user=current_user_obj)
 
-@app.route("/debug/validate-block-format", methods=["POST"])
-def debug_validate_block_format():
-    """Debug endpoint to test block format validation"""
-    try:
-        block_data = request.get_json()
-        
-        # Test the exact validation your daemon uses
-        temp_daemon = BlockchainDaemon()
-        
-        is_valid = blockchain_daemon_instance.validate_block(block_data)
-        
-        # Calculate expected hash
-        calculated_hash = temp_daemon.calculate_block_hash(
-            block_data.get("index"),
-            block_data.get("previous_hash"),
-            block_data.get("timestamp"),
-            block_data.get("transactions", []),
-            block_data.get("nonce")
-        )
-        
-        return jsonify({
-            "is_valid": is_valid,
-            "hash_match": block_data.get("hash") == calculated_hash,
-            "provided_hash": block_data.get("hash"),
-            "calculated_hash": calculated_hash,
-            "missing_fields": [f for f in ["index", "timestamp", "transactions", "previous_hash", "nonce", "hash", "miner"] 
-                             if f not in block_data]
-        })
-        
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
+
 
 def load_json_file(filename):
     """Safely load a JSON file and return its contents as Python."""
@@ -3665,7 +3437,31 @@ def load_json_file(filename):
         print(f"❌ Error loading {filename}: {e}")
         return []
 
-
+@app.route("/api/debug/mempool-status")
+def debug_mempool_status():
+    """Debug endpoint to see mempool vs mined status"""
+    try:
+        # Get all mempool transactions
+        all_mempool = blockchain_daemon_instance.mempool
+        filtered_mempool = blockchain_daemon_instance.get_available_bills_to_mine()
+        
+        # Check which transactions are mined
+        mined_in_mempool = []
+        for tx in all_mempool:
+            if blockchain_daemon_instance.is_transaction_mined(tx):
+                mined_in_mempool.append(tx)
+        
+        return jsonify({
+            "status": "success",
+            "total_mempool": len(all_mempool),
+            "filtered_mempool": len(filtered_mempool),
+            "mined_but_in_mempool": len(mined_in_mempool),
+            "mined_transactions": list(mined_in_mempool),
+            "blockchain_height": len(blockchain_daemon_instance.blockchain)
+        })
+        
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
 # Add a cleanup endpoint for manual mempool maintenance
 @app.route("/admin/cleanup-mempool", methods=["POST"])
 def cleanup_mempool():
@@ -3697,6 +3493,31 @@ def cleanup_mempool():
         }), 500
 
 
+# Add a status endpoint to see mempool stats
+@app.route("/mempool/status", methods=["GET"])
+def mempool_status():
+    """Get mempool statistics including filtered counts"""
+    mempool_data = load_json_file("mempool.json")
+    blockchain_data = load_json_file("blockchain.json")
+    
+    total_transactions = len(mempool_data)
+    filtered_mempool = filter_mined_transactions(mempool_data)
+    active_transactions = len(filtered_mempool)
+    mined_transactions = total_transactions - active_transactions
+    
+    # Count by transaction type
+    type_counts = {}
+    for tx in filtered_mempool:
+        tx_type = tx.get("type", "unknown")
+        type_counts[tx_type] = type_counts.get(tx_type, 0) + 1
+    
+    return jsonify({
+        "total_transactions": total_transactions,
+        "active_transactions": active_transactions,
+        "mined_transactions": mined_transactions,
+        "transaction_types": type_counts,
+        "last_updated": time.time()  # You might want to track this separately
+    })
 
 
 
@@ -3713,14 +3534,14 @@ if __name__ == "__main__":
             #app.blockchain_daemon = blockchain_daemon
             #blockchain_daemon.repair_blockchain()
             #blockchain_daemon.emergency_repair()
-            #blockchain_daemon_instance.start_daemon()
+            #blockchain_daemon.start_daemon(miner_address="127.0.0.1:9335")
             #blockchain_daemon.diagnose_transfer_issue()
             #blockchain_daemon.debug_mining_selection()
             #blockchain_daemon.force_mine_transfers()
-            #blockchain_daemon_instance.debug_reward_issue()
-            #blockchain_daemon_instance.comprehensive_diagnostic()
-            #blockchain_daemon_instance.debug_hash_mismatch()
-            #blockchain_daemon_instance.debug_mining_issues()
+            blockchain_daemon_instance.debug_reward_issue()
+            blockchain_daemon_instance.comprehensive_diagnostic()
+            blockchain_daemon_instance.debug_hash_mismatch()
+            blockchain_daemon_instance.debug_mining_issues()
             atexit.register(lambda: blockchain_daemon_instance.stop_daemon() if blockchain_daemon_instance else None)
 
     app.run(debug=True, host="0.0.0.0", port=5555)

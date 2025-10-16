@@ -684,7 +684,14 @@ def process_name(name, user_id, force_regenerate=False, specific_denom=None, sin
 
     safe_print(f"[+] Using portrait for all bills: {img_path}")
 
-    name_folder = os.path.join(OUTPUT_ROOT, name)
+    # CLEAN THE NAME - Remove trailing/leading whitespace and invalid characters
+    clean_name = name.strip()
+    # Replace any remaining problematic characters
+    clean_name = re.sub(r'[<>:"/\\|?*]', '_', clean_name)
+    # Remove multiple consecutive spaces
+    clean_name = re.sub(r'\s+', ' ', clean_name)
+    
+    name_folder = os.path.join(OUTPUT_ROOT, clean_name)
     os.makedirs(name_folder, exist_ok=True)
 
     # Determine which denominations to generate

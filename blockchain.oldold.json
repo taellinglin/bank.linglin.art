@@ -1,0 +1,18 @@
+[
+  {
+    "index": 0,
+    "timestamp": 1759183573.070114,
+    "transactions": [
+      {
+        "type": "genesis",
+        "message": "Luna Coin Genesis Block",
+        "timestamp": 1759183573.070114,
+        "hash": "genesis_0000000000000000",
+        "confirmations": 0
+      }
+    ],
+    "previous_hash": "0",
+    "nonce": 0,
+    "hash": "54455c2db8115abb1873e2419b2f489e7dcfe55c4c511daf0ca7bbc4aa0362ff"
+  }
+]

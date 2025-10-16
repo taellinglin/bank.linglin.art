@@ -105,16 +105,20 @@
                     <div class="info-item">
                         <label>Timestamp:</label>
                         <span>
-                            {% if block.timestamp_readable and not block.timestamp_readable.startswith('Invalid') %}
+                            {% if block.timestamp_readable and not block.timestamp_readable.startswith('Invalid') and not block.timestamp_readable.startswith('Error') and not block.timestamp_readable.startswith('Conversion') %}
                                 {{ block.timestamp_readable }}
                             {% else %}
                                 <span class="text-muted" title="Raw timestamp: {{ block.timestamp }}">
-                                    {{ block.timestamp|datetimeformat }}
+                                    {% if block.timestamp is number %}
+                                        {{ block.timestamp|datetimeformat }}
+                                    {% else %}
+                                        Raw: {{ block.timestamp }}
+                                    {% endif %}
                                 </span>
                             {% endif %}
                         </span>
                     </div>
-                    
+                                        
                     <div class="info-item">
                         <label>Previous Hash:</label>
                         <code class="hash" title="{{ block.previous_hash }}">
@@ -169,7 +173,11 @@
                         <div class="transaction-item {{ tx.type|lower }}">
                             <div class="tx-header">
                                 <span class="tx-type {{ tx.type|lower }}">{{ tx.type }}</span>
+                                {% if tx.hash %}
                                 <span class="tx-hash" title="{{ tx.hash }}">{{ tx.hash[:16] }}...</span>
+                                {% else %}
+                                <span class="tx-hash no-hash">No hash</span>
+                                {% endif %}
                             </div>
                             
                             {% if tx.type == "transfer" and tx.from and tx.to %}
@@ -184,12 +192,26 @@
                                 <i class="fas fa-gift"></i>
                                 <span class="tx-to" title="{{ tx.to }}">{{ tx.to[:10] }}...</span>
                                 <span class="tx-amount">{{ tx.amount }} LC</span>
+                                {% if tx.block_height %}
+                                <span class="tx-block">Block {{ tx.block_height }}</span>
+                                {% endif %}
                             </div>
-                            {% elif tx.type in ["GTX_Genesis", "genesis"] and tx.serial_number %}
+                            {% elif tx.type in ["GTX_Genesis", "genesis"] %}
                             <div class="tx-flow">
                                 <i class="fas fa-money-bill-wave"></i>
+                                {% if tx.serial_number %}
                                 <span class="tx-serial">Serial: {{ tx.serial_number[:12] }}...</span>
+                                {% endif %}
+                                {% if tx.denomination %}
                                 <span class="tx-amount">{{ tx.denomination }} LC</span>
+                                {% endif %}
+                                {% if tx.message %}
+                                <span class="tx-message">{{ tx.message }}</span>
+                                {% endif %}
+                            </div>
+                            {% else %}
+                            <div class="tx-flow">
+                                <span class="tx-raw">{{ tx|tojson }}</span>
                             </div>
                             {% endif %}
                         </div>
@@ -212,7 +234,7 @@
             
             <div class="block-actions">
                 {% if block.index > 0 %}
-                <a href="/block/{{ int(block.hash) }}" class="btn btn-info action-btn">View Details</a>
+                <a href="/block/{{ block.hash }}" class="btn btn-info action-btn">View Details</a>
                 {% else %}
                 <span class="badge bg-primary">Genesis Block</span>
                 {% endif %}
@@ -225,6 +247,76 @@
         <i class="fas fa-cube fa-3x"></i>
         <h3>No blocks in blockchain</h3>
         <p>The blockchain is empty. Mine some blocks to get started.</p>
+    </div>
+    {% endif %}
+    <!-- Pagination Controls -->
+    {% if total_pages > 1 %}
+    <div class="pagination-section">
+        <div class="pagination-info">
+            Showing blocks {{ ((current_page - 1) * per_page) + 1 }} to {{ [current_page * per_page, total_blocks]|min }} of {{ total_blocks }} total blocks
+        </div>
+        
+        <div class="pagination-controls">
+            <!-- First Page -->
+            {% if current_page > 1 %}
+            <a href="{{ url_for('blockchain_viewer', page=1) }}" class="pagination-btn first">
+                <i class="fas fa-angle-double-left"></i>
+            </a>
+            {% else %}
+            <span class="pagination-btn first disabled">
+                <i class="fas fa-angle-double-left"></i>
+            </span>
+            {% endif %}
+            
+            <!-- Previous Page -->
+            {% if current_page > 1 %}
+            <a href="{{ url_for('blockchain_viewer', page=current_page-1) }}" class="pagination-btn prev">
+                <i class="fas fa-angle-left"></i>
+            </a>
+            {% else %}
+            <span class="pagination-btn prev disabled">
+                <i class="fas fa-angle-left"></i>
+            </span>
+            {% endif %}
+            
+            <!-- Page Numbers -->
+            <div class="page-numbers">
+                {% for p in range(max(1, current_page-2), min(total_pages+1, current_page+3)) %}
+                    {% if p == current_page %}
+                    <span class="page-number current">{{ p }}</span>
+                    {% else %}
+                    <a href="{{ url_for('blockchain_viewer', page=p) }}" class="page-number">{{ p }}</a>
+                    {% endif %}
+                {% endfor %}
+                
+                {% if total_pages > current_page + 2 %}
+                <span class="page-ellipsis">...</span>
+                <a href="{{ url_for('blockchain_viewer', page=total_pages) }}" class="page-number">{{ total_pages }}</a>
+                {% endif %}
+            </div>
+            
+            <!-- Next Page -->
+            {% if current_page < total_pages %}
+            <a href="{{ url_for('blockchain_viewer', page=current_page+1) }}" class="pagination-btn next">
+                <i class="fas fa-angle-right"></i>
+            </a>
+            {% else %}
+            <span class="pagination-btn next disabled">
+                <i class="fas fa-angle-right"></i>
+            </span>
+            {% endif %}
+            
+            <!-- Last Page -->
+            {% if current_page < total_pages %}
+            <a href="{{ url_for('blockchain_viewer', page=total_pages) }}" class="pagination-btn last">
+                <i class="fas fa-angle-double-right"></i>
+            </a>
+            {% else %}
+            <span class="pagination-btn last disabled">
+                <i class="fas fa-angle-double-right"></i>
+            </span>
+            {% endif %}
+        </div>
     </div>
     {% endif %}
 </div>
@@ -651,6 +743,110 @@
     
     .transaction-details {
         padding: 0.75rem;
+    }
+}
+/* Pagination Styles */
+.pagination-section {
+    margin-top: 2rem;
+    padding: 1.5rem;
+    background: var(--card-bg);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+}
+
+.pagination-info {
+    text-align: center;
+    margin-bottom: 1rem;
+    color: var(--text-muted);
+    font-size: 0.9rem;
+}
+
+.pagination-controls {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.pagination-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-color);
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+.pagination-btn:hover:not(.disabled) {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+}
+
+.pagination-btn.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    color: var(--text-muted);
+}
+
+.page-numbers {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0 1rem;
+}
+
+.page-number {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    color: var(--text-color);
+    text-decoration: none;
+    transition: all 0.2s ease;
+}
+
+.page-number:hover {
+    background: var(--hover-color);
+    border-color: var(--primary-color);
+}
+
+.page-number.current {
+    background: var(--primary-color);
+    color: white;
+    border-color: var(--primary-color);
+}
+
+.page-ellipsis {
+    padding: 0 0.5rem;
+    color: var(--text-muted);
+}
+
+/* Responsive pagination */
+@media (max-width: 768px) {
+    .pagination-controls {
+        flex-wrap: wrap;
+        gap: 0.25rem;
+    }
+    
+    .page-numbers {
+        order: -1;
+        width: 100%;
+        justify-content: center;
+        margin: 0.5rem 0;
+    }
+    
+    .pagination-btn, .page-number {
+        width: 36px;
+        height: 36px;
+        font-size: 0.9rem;
     }
 }
 </style>
