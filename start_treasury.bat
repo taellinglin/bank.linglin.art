@@ -1,0 +1,6 @@
+@echo off
+echo Activating virtual environment...
+call win-venv\Scripts\activate.bat
+echo Running app.py...
+python app.py
+pause

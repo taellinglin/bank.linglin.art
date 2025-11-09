@@ -1151,7 +1151,86 @@ def get_mempool_transactions():
             "error": str(e)
         }), 500
 
-# Blockchain routes  
+# Global variables
+_blockchain_height = 0
+_blockchain_update_time = 0
+
+def update_blockchain_height():
+    """Update the cached blockchain height"""
+    global _blockchain_height, _blockchain_update_time
+    try:
+        blockchain_data = blockchain_daemon_instance.blockchain
+        _blockchain_height = len(blockchain_data) if blockchain_data else 0
+        _blockchain_update_time = time.time()
+    except Exception as e:
+        print(f"Error updating blockchain height: {e}")
+
+@app.route('/blockchain/height', methods=['GET'])
+def get_blockchain_height():
+    """Get the current height - ULTRA FAST"""
+    return jsonify({
+        "success": True,
+        "height": _blockchain_height,
+        "latest_block_index": _blockchain_height - 1 if _blockchain_height > 0 else -1,
+        "timestamp": int(time.time())
+    }), 200
+
+# Call this whenever blockchain changes
+def on_blockchain_updated():
+    update_blockchain_height()
+@app.route('/blockchain/range', methods=['GET'])
+def get_blockchain_range():
+    """Get a range of blocks from the blockchain"""
+    try:
+        # Get query parameters with defaults
+        start = request.args.get('start', type=int, default=0)
+        end = request.args.get('end', type=int)
+        
+        blockchain_data = blockchain_daemon_instance.blockchain
+        
+        if not blockchain_data:
+            return jsonify({
+                "success": True,
+                "blocks": [],
+                "total_blocks": 0,
+                "range_start": start,
+                "range_end": 0
+            }), 200
+        
+        total_blocks = len(blockchain_data)
+        
+        # Validate and adjust range parameters
+        start = max(0, start)
+        if end is None:
+            end = total_blocks - 1
+        else:
+            end = min(end, total_blocks - 1)
+        
+        # Ensure start <= end
+        if start > end:
+            return jsonify({
+                "success": False,
+                "error": "Start index cannot be greater than end index"
+            }), 400
+        
+        # Extract the requested range
+        blocks_range = blockchain_data[start:end+1]
+        
+        return jsonify({
+            "success": True,
+            "blocks": blocks_range,
+            "total_blocks": total_blocks,
+            "range_start": start,
+            "range_end": end,
+            "blocks_in_range": len(blocks_range),
+            "timestamp": int(time.time())
+        }), 200
+        
+    except Exception as e:
+        return jsonify({
+            "success": False,
+            "error": str(e)
+        }), 500
 @app.route('/blockchain/status', methods=['GET'])
 def blockchain_status():
     """Get current blockchain status and statistics"""
