@@ -2,7 +2,7 @@ import sys
 from app import app, db
 from models import User
 
-def create_admin(username="Sanny Lin"):
+def create_admin(username="伊森林"):
     with app.app_context():
         # Check if user already exists
         user = User.query.filter_by(username=username).first()

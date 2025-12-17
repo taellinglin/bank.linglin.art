@@ -96,7 +96,7 @@ NAMES_FILE = "master.txt"
 OUTPUT_ROOT = "./images"  # single folder per name
 PORTRAITS_DIR = "./portraits"
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".bmp")
-SD_API_URL = "http://localhost:3014/sdapi/v1/txt2img"
+SD_API_URL = "http://localhost:7860/sdapi/v1/txt2img"
 MAX_THREADS = 8  # Increased for 3090!
 
 # Standard denominations
@@ -416,10 +416,13 @@ def generate_front_back_pair(name, denom, img_path, timestamp_ms, denom_folder, 
                 timestamp=int(timestamp_ms)
             )
         else:
+            # Replace ampersand with underscore in name for subprocess
+            safe_name = name.replace('&', '_')
+            
             # Fallback to subprocess - ensure all arguments are strings
             subprocess.run([
                 'python', FRONT_SCRIPT,
-                name,
+                safe_name,  # Use safe name without ampersand
                 img_path,
                 '--outfile', front_svg_path,
                 '--single_denom', denom_str,  # Already string
@@ -443,13 +446,16 @@ def generate_front_back_pair(name, denom, img_path, timestamp_ms, denom_folder, 
                 timestamp=int(timestamp_ms)
             )
         else:
+            # Replace ampersand with underscore in name for subprocess
+            safe_name = name.replace('&', '_')
+            
             # Fallback to subprocess - ensure all arguments are strings
             subprocess.run([
                 'python', BACK_SCRIPT,
                 '--outdir', denom_folder,
                 '--basename', back_basename,
                 '--denomination', denom_str,  # Already string
-                '--seed_text', name,
+                '--seed_text', safe_name,  # Use safe name without ampersand
                 '--serial_id', back_serial,
                 '--timestamp', str(int(timestamp_ms))  # Convert to string
             ], check=True, timeout=13131313)

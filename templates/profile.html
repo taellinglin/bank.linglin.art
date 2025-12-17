@@ -1,92 +1,189 @@
 {% extends "base.html" %}
 {% block content %}
 <div class="profile-container">
-    <div class="profile-header">
-        <div class="avatar-container">
-            {% if get_user_avatar_url(user.username) %}
-                <img src="{{ get_user_avatar_url(user.username) }}" alt="{{ user.username }}" class="avatar-image">
-            {% else %}
-                <div class="avatar-initials">
-                    {{ get_formatted_initials(user.username) }}
-                </div>
-            {% endif %}
+    <!-- Profile Header -->
+    <div class="profile-header-card">
+        <div class="avatar-section">
+            <div class="avatar-wrapper">
+                {% if get_user_avatar_url(user.username) %}
+                    <img src="{{ get_user_avatar_url(user.username) }}" alt="{{ user.username }}" class="avatar-image">
+                {% else %}
+                    <div class="avatar-initials">
+                        {{ get_formatted_initials(user.username) }}
+                    </div>
+                {% endif %}
+                <div class="avatar-glow"></div>
+            </div>
         </div>
-        <div class="profile-info">
-            <h1>{{ user.username }}</h1>
-            <div class="profile-balance">Balance: ${{ "{:,.0f}".format(user.balance) }}</div>
-            <div>Member since: {{ user.created_at.strftime('%B %Y') }}</div>
+        
+        <div class="profile-info-section">
+            <h1 class="profile-username">{{ user.username }}</h1>
+            <div class="profile-stats">
+                <div class="profile-stat">
+                    <span class="stat-value">${{ "{:,.0f}".format(user.balance) }}</span>
+                    <span class="stat-label">Balance</span>
+                </div>
+                <div class="profile-stat">
+                    <span class="stat-value">{{ banknotes|length }}</span>
+                    <span class="stat-label">Banknotes</span>
+                </div>
+                <div class="profile-stat">
+                    <span class="stat-value">{{ user.created_at.strftime('%b %Y') }}</span>
+                    <span class="stat-label">Member Since</span>
+                </div>
+            </div>
         </div>
     </div>
-    
+
     <!-- Tab Navigation -->
     <div class="tab-navigation">
-        <button class="tab-button active" onclick="openTab('info')">Info</button>
-        <button class="tab-button" onclick="openTab('gallery')">Gallery</button>
+        <button class="tab-button active" onclick="openTab('info')">
+            <span class="tab-icon">ℹ️</span>
+            <span class="tab-text">Information</span>
+        </button>
+        <button class="tab-button" onclick="openTab('gallery')">
+            <span class="tab-icon">🖼️</span>
+            <span class="tab-text">Gallery</span>
+            <span class="tab-badge">{{ banknotes|length }}</span>
+        </button>
     </div>
-    
+
     <!-- Info Tab -->
     <div id="info" class="tab-content active">
-        <div class="profile-bio">
-            <h2>Bio</h2>
-            {% if user.bio %}
-                <div class="bio-content">{{ user.bio|safe }}</div>
-            {% else %}
-                <p>This user hasn't written a bio yet.</p>
-            {% endif %}
+        <!-- Bio Section -->
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">📝</div>
+                <h3 class="header-title">Bio</h3>
+            </div>
             
-            {% if current_user.is_authenticated and current_user.id == user.id %}
-                <form method="POST" style="margin-top: 20px;">
+            <div class="card-content">
+                {% if user.bio %}
+                    <div class="bio-content">{{ user.bio|safe }}</div>
+                {% else %}
+                    <div class="empty-state">
+                        <div class="empty-icon">📄</div>
+                        <p>This user hasn't written a bio yet.</p>
+                    </div>
+                {% endif %}
+                
+                {% if current_user.is_authenticated and current_user.id == user.id %}
+                <form method="POST" class="bio-form">
                     <textarea name="bio" placeholder="Write something about yourself... BBCode is supported: [b]bold[/b], [i]italic[/i], [url]https://example.com[/url]" 
-                            class="auth-input" style="min-height: 100px;">{{ user.bio|safe }}</textarea>
-                    <button type="submit" class="auth-button" style="margin-top: 10px;">Update Bio</button>
+                            class="form-textarea">{{ user.bio|safe }}</textarea>
+                    <button type="submit" class="action-btn cyan">
+                        <span>Update Bio</span>
+                        <div class="btn-icon">💾</div>
+                    </button>
                 </form>
-            {% endif %}
+                {% endif %}
+            </div>
         </div>
-        
+
+        <!-- Generation Status -->
         {% if current_user.is_authenticated and current_user.id == user.id %}
-        <div class="generation-status">
-            <h2>Annual Banknote Generation</h2>
-            {% if user.can_generate_money() %}
-                <p>You can generate new banknotes now!</p>
-                <form method="POST" action="/generate-money">
-                    <button type="submit" class="cta-button">Generate New Banknotes</button>
-                </form>
-            {% else %}
-                <p>You can generate new banknotes again in {{ user.days_until_next_generation() }} days.</p>
-                <button class="cta-button" disabled>Generate New Banknotes</button>
-            {% endif %}
-        </div>
-        
-        <div class="task-list">
-            <h2>Recent Generation Tasks</h2>
-            {% for task in generation_tasks %}
-                <div class="task-item status-{{ task.status }}">
-                    <div>
-                        <strong>Task #{{ task.id }}</strong> - 
-                        <span class="status-{{ task.status }}">{{ task.status|title }}</span>
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">💰</div>
+                <h3 class="header-title">Annual Banknote Generation</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="generation-status">
+                    {% if user.can_generate_money() %}
+                    <div class="status-indicator ready">
+                        <div class="status-icon">✅</div>
+                        <div class="status-text">
+                            <strong>Ready to Generate</strong>
+                            <span>You can create new banknotes now!</span>
+                        </div>
                     </div>
-                    <div>
-                        {{ task.created_at.strftime('%Y-%m-%d %H:%M') }}
-                        {% if task.completed_at %}
-                            (Completed: {{ task.completed_at.strftime('%Y-%m-%d %H:%M') }})
-                        {% endif %}
+                    <form method="POST" action="/generate-money" class="generation-form">
+                        <button type="submit" class="action-btn primary">
+                            <span>Generate New Banknotes</span>
+                            <div class="btn-icon">✨</div>
+                        </button>
+                    </form>
+                    {% else %}
+                    <div class="status-indicator waiting">
+                        <div class="status-icon">⏳</div>
+                        <div class="status-text">
+                            <strong>Generation Cooldown</strong>
+                            <span>You can generate new banknotes again in {{ user.days_until_next_generation() }} days</span>
+                        </div>
                     </div>
-                    {% if task.message %}
-                    <div class="task-message">{{ task.message }}</div>
+                    <button class="action-btn secondary" disabled>
+                        <span>Generate New Banknotes</span>
+                        <div class="btn-icon">⏳</div>
+                    </button>
                     {% endif %}
                 </div>
-            {% else %}
-                <p>No generation tasks yet.</p>
-            {% endfor %}
+            </div>
+        </div>
+
+        <!-- Recent Tasks -->
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">📋</div>
+                <h3 class="header-title">Recent Generation Tasks</h3>
+                {% if generation_tasks %}<div class="header-badge">{{ generation_tasks|length }}</div>{% endif %}
+            </div>
+            
+            <div class="card-content">
+                {% if generation_tasks %}
+                <div class="tasks-list">
+                    {% for task in generation_tasks %}
+                    <div class="task-item status-{{ task.status }}">
+                        <div class="task-header">
+                            <div class="task-id">Task #{{ task.id }}</div>
+                            <div class="task-status status-{{ task.status }}">{{ task.status|title }}</div>
+                        </div>
+                        <div class="task-details">
+                            <div class="task-date">
+                                <span class="date-icon">📅</span>
+                                {{ task.created_at.strftime('%Y-%m-%d %H:%M') }}
+                                {% if task.completed_at %}
+                                <span class="completed-date">
+                                    (Completed: {{ task.completed_at.strftime('%Y-%m-%d %H:%M') }})
+                                </span>
+                                {% endif %}
+                            </div>
+                            {% if task.message %}
+                            <div class="task-message">
+                                <span class="message-icon">💬</span>
+                                {{ task.message }}
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="empty-state">
+                    <div class="empty-icon">📭</div>
+                    <p>No generation tasks yet.</p>
+                </div>
+                {% endif %}
+            </div>
         </div>
         {% endif %}
     </div>
-    
+
     <!-- Gallery Tab -->
     <div id="gallery" class="tab-content">
         <div class="gallery-header">
-            <h2>Banknote Gallery</h2>
-            <p>Showing {{ banknotes|length }} banknotes</p>
+            <div class="header-main">
+                <h3>Banknote Gallery</h3>
+                <div class="gallery-stats">
+                    <span class="gallery-count">{{ banknotes|length }} banknotes</span>
+                    {% if current_user.is_authenticated and current_user.id == user.id %}
+                    <button class="action-btn cyan small" onclick="openTab('info')">
+                        <span>Generate New</span>
+                        <div class="btn-icon">✨</div>
+                    </button>
+                    {% endif %}
+                </div>
+            </div>
         </div>
         
         {% if banknotes %}
@@ -116,120 +213,1221 @@
         
         <div class="gallery-grid">
             {% for denomination, sides in sorted_denominations %}
-                {# Front sides #}
+                <!-- Front sides -->
                 {% for banknote in sides.front %}
                     {% if banknote %}
                         {# FIX: Handle None value for png_path #}
                         {% set clean_path = (banknote.png_path or '')|replace('images/', '')|replace('\\\\', '/')|trim('/') %}
                         <div class="gallery-item">
-                            <div class="banknote-image">
-                                {% if banknote.png_path %}
-                                <img src="{{ url_for('serve_banknote_image', filename=clean_path) }}"
-                                    alt="{{ banknote.denomination }} Front"
-                                    class="banknote-thumbnail">
-                                {% else %}
-                                <div class="no-image">No image available</div>
-                                {% endif %}
-                            </div>
-                            <div class="banknote-info">
-                                <div class="banknote-denom">{{ banknote.denomination }}</div>
-                                <div class="banknote-side">Front</div>
-                                <div class="banknote-serial">{{ banknote.serial_number }}</div>
-                                <div class="banknote-date">{{ banknote.created_at.strftime('%Y-%m-%d') }}</div>
-                                
-                                {% if current_user.is_authenticated and current_user.id == user.id %}
-                                <div class="banknote-actions">
+                            <div class="banknote-preview">
+                                <div class="banknote-side front">FRONT</div>
+                                <div class="banknote-image-container">
                                     {% if banknote.png_path %}
-                                    <a href="{{ url_for('serve_banknote_image', filename=clean_path) }}" 
-                                    download class="download-btn">Download PNG</a>
-                                    
-                                    {% endif %}
-                                    <!--
-                                    {% if banknote.pdf_path %}
-                                        {% set clean_pdf_path = (banknote.pdf_path or '')|replace('images/', '')|replace('\\\\', '/')|trim('/') %}
-                                        <a href="{{ url_for('serve_banknote_image', filename=clean_pdf_path) }}" 
-                                        download class="download-btn">Download PDF</a>
-                                    {% endif %}
-                                    -->
-                                    {% if banknote.svg_path %}
-                                        {% set clean_svg_path = (banknote.svg_path or '')|replace('images/', '')|replace('\\\\', '/')|trim('/') %}
-                                        <a href="{{ url_for('serve_banknote_image', filename=clean_svg_path) }}" 
-                                        download class="download-btn">Download SVG</a>
+                                    <img src="{{ url_for('serve_banknote_image', filename=clean_path) }}"
+                                        alt="{{ banknote.denomination }} Front"
+                                        class="banknote-image"
+                                        onclick="openBanknoteModal('{{ url_for('serve_banknote_image', filename=clean_path) }}',
+                                            '{{ banknote.denomination }} Front',
+                                            '{{ banknote.serial_number }}',
+                                            {
+                                                denomination: '{{ banknote.denomination }}',
+                                                side: 'Front',
+                                                created_at: '{{ banknote.created_at.strftime('%Y-%m-%d %H:%M') }}',
+                                                owner: '{{ user.username }}',
+                                                signature_status: '{{ 'Valid' if banknote.signature_verified else 'Unknown' }}'
+                                            })">
+                                    {% else %}
+                                    <div class="no-image">
+                                        <div class="no-image-icon">🖼️</div>
+                                        <span>No image available</span>
+                                    </div>
                                     {% endif %}
                                 </div>
-                                {% endif %}
+                                <div class="banknote-info">
+                                    <div class="banknote-denomination">{{ banknote.denomination }}</div>
+                                    <div class="banknote-serial-container">
+                                        <code class="banknote-serial">{{ banknote.serial_number }}</code>
+                                        <button class="copy-serial-btn" onclick="copySerial('{{ banknote.serial_number }}')" title="Copy serial number">
+                                            <span class="copy-icon">📋</span>
+                                        </button>
+                                    </div>
+                                    <div class="banknote-date">{{ banknote.created_at.strftime('%Y-%m-%d') }}</div>
+                                </div>
                             </div>
-                        </div>
-                    {% endif %}
-                {% endfor %}
-                
-                {# Back sides #}
-                {% for banknote in sides.back %}
-                    {# FIX: Handle None value for png_path #}
-                    {% set clean_path = (banknote.png_path or '')|replace('images/', '')|replace('\\\\', '/')|trim('/') %}
-                    <div class="gallery-item">
-                        <div class="banknote-image">
-                            {% if banknote.png_path %}
-                            <img src="{{ url_for('serve_banknote_image', filename=clean_path) }}"
-                                alt="{{ banknote.denomination }} Back"
-                                class="banknote-thumbnail">
-                            {% else %}
-                            <div class="no-image">No image available</div>
-                            {% endif %}
-                        </div>
-                        <div class="banknote-info">
-                            <div class="banknote-denom">{{ banknote.denomination }}</div>
-                            <div class="banknote-side">Back</div>
-                            <div class="banknote-serial">{{ banknote.serial_number }}</div>
-                            <div class="banknote-date">{{ banknote.created_at.strftime('%Y-%m-%d') }}</div>
-                            
                             {% if current_user.is_authenticated and current_user.id == user.id %}
                             <div class="banknote-actions">
                                 {% if banknote.png_path %}
                                 <a href="{{ url_for('serve_banknote_image', filename=clean_path) }}" 
-                                download class="download-btn">Download PNG</a>
-                                {% endif %} 
-                                <!--
-                                {% if banknote.pdf_path %}
-                                    {% set clean_pdf_path = (banknote.pdf_path or '')|replace('images/', '')|replace('\\\\', '/')|trim('/') %}
-                                    <a href="{{ url_for('serve_banknote_image', filename=clean_pdf_path) }}" 
-                                    download class="download-btn">Download PDF</a>
+                                download class="action-btn cyan small">
+                                    <span>PNG</span>
+                                    <div class="btn-icon">⬇️</div>
+                                </a>
                                 {% endif %}
-                                -->
+                                
                                 {% if banknote.svg_path %}
                                     {% set clean_svg_path = (banknote.svg_path or '')|replace('images/', '')|replace('\\\\', '/')|trim('/') %}
                                     <a href="{{ url_for('serve_banknote_image', filename=clean_svg_path) }}" 
-                                    download class="download-btn">Download SVG</a>
+                                    download class="action-btn purple small">
+                                        <span>SVG</span>
+                                        <div class="btn-icon">⬇️</div>
+                                    </a>
                                 {% endif %}
                             </div>
                             {% endif %}
                         </div>
-                    </div>
+                    {% endif %}
+                {% endfor %}
+                
+                <!-- Back sides -->
+                {% for banknote in sides.back %}
+                    {% if banknote %}
+                        {% set clean_path = (banknote.png_path or '')|replace('images/', '')|replace('\\\\', '/')|trim('/') %}
+                        <div class="gallery-item">
+                            <div class="banknote-preview">
+                                <div class="banknote-side back">BACK</div>
+                                <div class="banknote-image-container">
+                                    {% if banknote.png_path %}
+                                    <img src="{{ url_for('serve_banknote_image', filename=clean_path) }}"
+                                        alt="{{ banknote.denomination }} Back"
+                                        class="banknote-image"
+                                        onclick="openBanknoteModal('{{ url_for('serve_banknote_image', filename=clean_path) }}',
+                                            '{{ banknote.denomination }} Back',
+                                            '{{ banknote.serial_number }}',
+                                            {
+                                                denomination: '{{ banknote.denomination }}',
+                                                side: 'Back',
+                                                created_at: '{{ banknote.created_at.strftime('%Y-%m-%d %H:%M') }}',
+                                                owner: '{{ user.username }}',
+                                                signature_status: '{{ 'Valid' if banknote.signature_verified else 'Unknown' }}'
+                                            })">
+                                    {% else %}
+                                    <div class="no-image">
+                                        <div class="no-image-icon">🖼️</div>
+                                        <span>No image available</span>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                                <div class="banknote-info">
+                                    <div class="banknote-denomination">{{ banknote.denomination }}</div>
+                                    <div class="banknote-serial-container">
+                                        <code class="banknote-serial">{{ banknote.serial_number }}</code>
+                                        <button class="copy-serial-btn" onclick="copySerial('{{ banknote.serial_number }}')" title="Copy serial number">
+                                            <span class="copy-icon">📋</span>
+                                        </button>
+                                    </div>
+                                    <div class="banknote-date">{{ banknote.created_at.strftime('%Y-%m-%d') }}</div>
+                                </div>
+                            </div>
+                            {% if current_user.is_authenticated and current_user.id == user.id %}
+                            <div class="banknote-actions">
+                                {% if banknote.png_path %}
+                                <a href="{{ url_for('serve_banknote_image', filename=clean_path) }}" 
+                                download class="action-btn cyan small">
+                                    <span>PNG</span>
+                                    <div class="btn-icon">⬇️</div>
+                                </a>
+                                {% endif %}
+                                
+                                {% if banknote.svg_path %}
+                                    {% set clean_svg_path = (banknote.svg_path or '')|replace('images/', '')|replace('\\\\', '/')|trim('/') %}
+                                    <a href="{{ url_for('serve_banknote_image', filename=clean_svg_path) }}" 
+                                    download class="action-btn purple small">
+                                        <span>SVG</span>
+                                        <div class="btn-icon">⬇️</div>
+                                    </a>
+                                {% endif %}
+                            </div>
+                            {% endif %}
+                        </div>
+                    {% endif %}
                 {% endfor %}
             {% endfor %}
         </div>
         {% else %}
-        <div class="empty-gallery">
-            <h3>No banknotes yet</h3>
+        <div class="empty-state full-width">
+            <div class="empty-icon">💵</div>
+            <h4>No banknotes yet</h4>
             <p>This user hasn't generated any banknotes yet.</p>
             {% if current_user.is_authenticated and current_user.id == user.id %}
-            <p>Use the "Generate New Banknotes" button on the Info tab to create your first banknotes!</p>
+            <p>Use the "Generate New Banknotes" button above to create your first banknotes!</p>
             {% endif %}
         </div>
         {% endif %}
     </div>
 </div>
 
+<!-- Banknote Modal -->
+<div id="banknoteModal" class="modal">
+    <div class="modal-content">
+        <div class="modal-header">
+            <h3 id="modalTitle"></h3>
+            <button class="modal-close" onclick="closeBanknoteModal()">×</button>
+        </div>
+        <div class="modal-body">
+            <div class="modal-image-container">
+                <img id="modalImage" src="" alt="" class="modal-image">
+            </div>
+            <div class="modal-info">
+                <div class="info-row">
+                    <span class="info-label">Serial Number:</span>
+                    <span id="modalSerial" class="info-value code"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Denomination:</span>
+                    <span id="modalDenomination" class="info-value"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Side:</span>
+                    <span id="modalSide" class="info-value"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Created:</span>
+                    <span id="modalCreated" class="info-value"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Owner:</span>
+                    <span id="modalOwner" class="info-value"></span>
+                </div>
+                <div class="info-row">
+                    <span class="info-label">Signature Status:</span>
+                    <span id="modalSignature" class="info-value signature-valid"></span>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <a id="modalDownload" href="" download class="action-btn cyan">
+                <span>Download PNG</span>
+                <div class="btn-icon">⬇️</div>
+            </a>
+            <button class="action-btn secondary" onclick="closeBanknoteModal()">
+                <span>Close</span>
+                <div class="btn-icon">✕</div>
+            </button>
+        </div>
+    </div>
+</div>
+
 <style>
-.no-image {
-    width: 200px;
-    height: 100px;
-    background: #f0f0f0;
+/* Base Variables */
+:root {
+    /* Professional Dark Theme */
+    --bg-primary: #0f0f0f;
+    --bg-secondary: #151515;
+    --bg-tertiary: #1e1e1e;
+    --border: #2d2d2d;
+    --border-light: #3a3a3a;
+    --text-primary: #ffffff;
+    --text-secondary: #b0b0b0;
+    --text-tertiary: #888888;
+    
+    /* Professional Color Palette */
+    --primary: #007aff;
+    --primary-light: #409cff;
+    --success: #30d158;
+    --warning: #ffd60a;
+    --danger: #ff453a;
+    --info: #32d7ee;
+    --purple: #bf5af2;
+    
+    /* Shadows */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+    --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.15);
+}
+
+.profile-container {
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 2rem;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+/* Profile Header Card */
+.profile-header-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 2rem;
+    margin-bottom: 2rem;
+    display: flex;
+    align-items: center;
+    gap: 2rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.profile-header-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 4px;
+    background: linear-gradient(90deg, var(--primary), var(--info));
+}
+
+.avatar-section {
+    position: relative;
     display: flex;
     align-items: center;
     justify-content: center;
-    color: #666;
+}
+
+.avatar-wrapper {
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 3px solid var(--info);
+    box-shadow: var(--shadow-lg);
+    position: relative;
+    z-index: 2;
+}
+
+.avatar-image {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.avatar-initials {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--primary), var(--info));
+    color: white;
+    font-size: 2rem;
+    font-weight: 700;
+}
+
+.avatar-glow {
+    position: absolute;
+    width: 120px;
+    height: 120px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--info) 0%, transparent 70%);
+    opacity: 0.3;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 0.3; }
+    50% { transform: scale(1.1); opacity: 0.5; }
+}
+
+.profile-info-section {
+    flex: 1;
+}
+
+.profile-username {
+    color: var(--text-primary);
+    font-size: 2.25rem;
+    font-weight: 700;
+    margin: 0 0 1rem 0;
+}
+
+.profile-stats {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.profile-stat {
+    text-align: center;
+    padding: 1rem 1.5rem;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    min-width: 120px;
+    transition: all 0.3s ease;
+}
+
+.profile-stat:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
+    border-color: var(--info);
+}
+
+.stat-value {
+    display: block;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.stat-label {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Tab Navigation */
+.tab-navigation {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+    padding: 0.5rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow-x: auto;
+}
+
+.tab-button {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.875rem 1.5rem;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    flex: 1;
+    justify-content: center;
+}
+
+.tab-button:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.tab-button.active {
+    background: var(--primary);
+    color: white;
+    box-shadow: var(--shadow-sm);
+}
+
+.tab-icon {
+    font-size: 1.125rem;
+}
+
+.tab-text {
+    flex: 1;
+    text-align: center;
+}
+
+.tab-badge {
+    background: var(--info);
+    color: var(--bg-primary);
+    padding: 0.25rem 0.5rem;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    min-width: 24px;
+}
+
+/* Tab Content */
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Info Cards */
+.info-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 0;
+    margin-bottom: 1.5rem;
+    overflow: hidden;
+}
+
+.info-card:last-child {
+    margin-bottom: 0;
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.5rem 2rem;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.header-icon {
+    font-size: 1.5rem;
+}
+
+.header-title {
+    color: var(--text-primary);
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin: 0;
+    flex: 1;
+}
+
+.header-badge {
+    background: var(--info);
+    color: var(--bg-primary);
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.875rem;
+    font-weight: 600;
+}
+
+.card-content {
+    padding: 2rem;
+}
+
+/* Bio Content */
+.bio-content {
+    color: var(--text-primary);
+    line-height: 1.6;
+    margin-bottom: 1.5rem;
+    font-size: 0.95rem;
+}
+
+.bio-form {
+    margin-top: 1.5rem;
+}
+
+.form-textarea {
+    width: 100%;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.9rem;
+    resize: vertical;
+    min-height: 120px;
+    margin-bottom: 1rem;
+    transition: all 0.2s ease;
+}
+
+.form-textarea:focus {
+    outline: none;
+    border-color: var(--info);
+    box-shadow: 0 0 0 2px rgba(50, 215, 238, 0.2);
+}
+
+/* Generation Status */
+.generation-status {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.5rem;
+    border-radius: 12px;
+    border: 1px solid;
+}
+
+.status-indicator.ready {
+    background: rgba(48, 209, 88, 0.1);
+    border-color: var(--success);
+}
+
+.status-indicator.waiting {
+    background: rgba(255, 213, 10, 0.1);
+    border-color: var(--warning);
+}
+
+.status-icon {
+    font-size: 1.5rem;
+}
+
+.status-text {
+    flex: 1;
+}
+
+.status-text strong {
+    display: block;
+    color: var(--text-primary);
+    font-size: 1.1rem;
+    margin-bottom: 0.25rem;
+}
+
+.status-text span {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.generation-form {
+    display: flex;
+    justify-content: center;
+}
+
+/* Action Buttons */
+.action-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    border: none;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+.action-btn.cyan {
+    background: rgba(50, 215, 238, 0.1);
+    color: var(--info);
+    border: 1px solid var(--info);
+}
+
+.action-btn.cyan:hover {
+    background: var(--info);
+    color: var(--bg-primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(50, 215, 238, 0.3);
+}
+
+.action-btn.purple {
+    background: rgba(191, 90, 242, 0.1);
+    color: var(--purple);
+    border: 1px solid var(--purple);
+}
+
+.action-btn.purple:hover {
+    background: var(--purple);
+    color: var(--bg-primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(191, 90, 242, 0.3);
+}
+
+.action-btn.primary {
+    background: var(--info);
+    color: var(--bg-primary);
+    border: 1px solid var(--info);
+}
+
+.action-btn.primary:hover {
+    background: var(--info);
+    filter: brightness(1.1);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(50, 215, 238, 0.3);
+}
+
+.action-btn.secondary {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+}
+
+.action-btn.secondary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+}
+
+.action-btn.secondary:hover:not(:disabled) {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+}
+
+.action-btn.small {
+    padding: 0.6rem 1.2rem;
+    font-size: 0.85rem;
+}
+
+.btn-icon {
+    font-size: 1rem;
+}
+
+/* Tasks List */
+.tasks-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.task-item {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    transition: all 0.3s ease;
+}
+
+.task-item:hover {
+    border-color: var(--info);
+    transform: translateY(-2px);
+}
+
+.task-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.task-id {
+    color: var(--text-primary);
+    font-weight: 600;
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', monospace;
+}
+
+.task-status {
+    padding: 0.25rem 0.75rem;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.task-status.completed {
+    background: rgba(48, 209, 88, 0.2);
+    color: var(--success);
+    border: 1px solid var(--success);
+}
+
+.task-status.pending {
+    background: rgba(255, 213, 10, 0.2);
+    color: var(--warning);
+    border: 1px solid var(--warning);
+}
+
+.task-status.failed {
+    background: rgba(255, 55, 95, 0.2);
+    color: var(--danger);
+    border: 1px solid var(--danger);
+}
+
+.task-details {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.task-date {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.date-icon {
+    font-size: 1rem;
+}
+
+.completed-date {
+    color: var(--success);
+}
+
+.task-message {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
     font-style: italic;
+}
+
+.message-icon {
+    font-size: 1rem;
+}
+
+/* Empty States */
+.empty-state {
+    text-align: center;
+    padding: 3rem 2rem;
+    color: var(--text-secondary);
+}
+
+.empty-state.full-width {
+    width: 100%;
+}
+
+.empty-icon {
+    font-size: 3rem;
+    margin-bottom: 1rem;
+    opacity: 0.5;
+}
+
+.empty-state h4 {
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+
+.empty-state p {
+    margin: 0.25rem 0;
+    line-height: 1.5;
+}
+
+/* Gallery Header */
+.gallery-header {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.5rem 2rem;
+    margin-bottom: 1.5rem;
+}
+
+.header-main {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.header-main h3 {
+    color: var(--text-primary);
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.gallery-stats {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.gallery-count {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    font-weight: 500;
+}
+
+/* Gallery Grid */
+.gallery-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+}
+
+.gallery-item {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.5rem;
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+}
+
+.gallery-item:hover {
+    border-color: var(--info);
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+}
+
+.banknote-preview {
+    cursor: default;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.banknote-side {
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    text-align: center;
+    width: fit-content;
+}
+
+.banknote-side.front {
+    background: rgba(50, 215, 238, 0.2);
+    color: var(--info);
+    border: 1px solid var(--info);
+}
+
+.banknote-side.back {
+    background: rgba(191, 90, 242, 0.2);
+    color: var(--purple);
+    border: 1px solid var(--purple);
+}
+
+.banknote-image-container {
+    cursor: pointer;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: var(--bg-primary);
+    border-radius: 8px;
+    border: 2px solid var(--border);
+    transition: all 0.3s ease;
+}
+
+.banknote-image-container:hover {
+    border-color: var(--info);
+}
+
+.banknote-image {
+    max-width: 100%;
+    max-height: 150px;
+    border-radius: 4px;
+    transition: transform 0.3s ease;
+    cursor: pointer;
+}
+
+.banknote-image-container:hover .banknote-image {
+    transform: scale(1.05);
+}
+
+.no-image {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.no-image-icon {
+    font-size: 2rem;
+    opacity: 0.5;
+}
+
+.banknote-info {
+    text-align: center;
+}
+
+.banknote-denomination {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+
+.banknote-serial-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.banknote-serial {
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    word-break: break-all;
+}
+
+.copy-serial-btn {
+    background: rgba(50, 215, 238, 0.1);
+    border: 1px solid var(--info);
+    border-radius: 6px;
+    padding: 0.5rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.copy-serial-btn:hover {
+    background: var(--info);
+    transform: scale(1.1);
+}
+
+.copy-icon {
+    font-size: 1rem;
+}
+
+.banknote-date {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.banknote-actions {
+    display: flex;
+    gap: 0.75rem;
+    justify-content: center;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+}
+
+/* Modal */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+}
+
+.modal-content {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    width: 100%;
+    max-width: 600px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: modalFadeIn 0.3s ease;
+}
+
+@keyframes modalFadeIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem 2rem;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.modal-header h3 {
+    color: var(--text-primary);
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.modal-close {
+    background: var(--danger);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    font-size: 1.5rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.modal-close:hover {
+    background: var(--danger);
+    transform: scale(1.1);
+}
+
+.modal-body {
+    padding: 2rem;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.modal-image-container {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1rem;
+    background: var(--bg-primary);
+    border-radius: 8px;
+    border: 2px solid var(--border);
+    margin-bottom: 1.5rem;
+}
+
+.modal-image {
+    max-width: 100%;
+    max-height: 300px;
+    border-radius: 4px;
+}
+
+.modal-info {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.info-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border);
+}
+
+.info-row:last-child {
+    border-bottom: none;
+}
+
+.info-label {
+    color: var(--text-tertiary);
+    font-size: 0.9rem;
+    font-weight: 600;
+    min-width: 120px;
+    flex-shrink: 0;
+}
+
+.info-value {
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    text-align: right;
+    word-break: break-all;
+    flex: 1;
+    margin-left: 1rem;
+}
+
+.info-value.code {
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', monospace;
+    color: var(--info);
+}
+
+.signature-valid {
+    color: var(--success);
+    font-weight: 600;
+}
+
+.signature-unknown {
+    color: var(--warning);
+    font-weight: 600;
+}
+
+.modal-footer {
+    display: flex;
+    gap: 1rem;
+    padding: 1.5rem 2rem;
+    border-top: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.modal-footer .action-btn {
+    flex: 1;
+    justify-content: center;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    .profile-container {
+        padding: 1rem;
+    }
+    
+    .profile-header-card {
+        flex-direction: column;
+        text-align: center;
+        gap: 1.5rem;
+        padding: 1.5rem;
+    }
+    
+    .profile-stats {
+        justify-content: center;
+    }
+    
+    .profile-stat {
+        min-width: 100px;
+        padding: 0.75rem 1rem;
+    }
+    
+    .profile-username {
+        font-size: 1.75rem;
+    }
+    
+    .tab-navigation {
+        flex-direction: column;
+    }
+    
+    .gallery-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .card-header {
+        padding: 1.25rem 1.5rem;
+    }
+    
+    .card-content {
+        padding: 1.5rem;
+    }
+    
+    .modal {
+        padding: 1rem;
+    }
+    
+    .modal-content {
+        max-height: 80vh;
+    }
+    
+    .modal-header {
+        padding: 1.25rem 1.5rem;
+    }
+    
+    .modal-body {
+        padding: 1.5rem;
+    }
+    
+    .modal-footer {
+        padding: 1.25rem 1.5rem;
+        flex-direction: column;
+    }
+}
+
+@media (max-width: 480px) {
+    .profile-container {
+        padding: 0.75rem;
+    }
+    
+    .profile-username {
+        font-size: 1.5rem;
+    }
+    
+    .profile-stats {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .profile-stat {
+        width: 100%;
+        max-width: 200px;
+    }
+    
+    .info-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+    }
+    
+    .info-value {
+        text-align: left;
+        margin-left: 0;
+        width: 100%;
+    }
+    
+    .banknote-actions {
+        flex-direction: column;
+        align-items: center;
+    }
+    
+    .action-btn.small {
+        width: 100%;
+        max-width: 200px;
+    }
 }
 </style>
 
@@ -251,20 +1449,105 @@ function openTab(tabName) {
     // Find and activate the clicked button
     const buttons = document.querySelectorAll('.tab-button');
     for (let button of buttons) {
-        if (button.textContent.toLowerCase().includes(tabName.toLowerCase())) {
+        if (button.getAttribute('onclick').includes(tabName)) {
             button.classList.add('active');
             break;
         }
     }
     
     // Store the active tab in sessionStorage
-    sessionStorage.setItem('activeTab', tabName);
+    sessionStorage.setItem('profileActiveTab', tabName);
 }
+
+function openBanknoteModal(imageSrc, title, serial, banknoteData = {}) {
+    const modal = document.getElementById('banknoteModal');
+    const modalImage = document.getElementById('modalImage');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalSerial = document.getElementById('modalSerial');
+    const modalDownload = document.getElementById('modalDownload');
+    
+    // Load image first
+    const img = new Image();
+    img.onload = function() {
+        modalImage.src = imageSrc;
+        modalTitle.textContent = title;
+        modalSerial.textContent = serial;
+        modalDownload.href = imageSrc;
+        
+        // Populate banknote information
+        if (banknoteData) {
+            document.getElementById('modalDenomination').textContent = banknoteData.denomination || 'N/A';
+            document.getElementById('modalSide').textContent = banknoteData.side || 'N/A';
+            document.getElementById('modalCreated').textContent = banknoteData.created_at || 'N/A';
+            document.getElementById('modalOwner').textContent = banknoteData.owner || 'N/A';
+            
+            const signatureElement = document.getElementById('modalSignature');
+            signatureElement.textContent = banknoteData.signature_status || 'Unknown';
+            signatureElement.className = 'info-value ' + (banknoteData.signature_status === 'Valid' ? 'signature-valid' : 'signature-unknown');
+        }
+        
+        modal.style.display = 'flex';
+        document.body.style.overflow = 'hidden';
+    };
+    img.src = imageSrc;
+}
+
+function closeBanknoteModal() {
+    const modal = document.getElementById('banknoteModal');
+    modal.style.display = 'none';
+    document.body.style.overflow = 'auto';
+}
+
+function copySerial(serial) {
+    navigator.clipboard.writeText(serial).then(() => {
+        const copyBtn = event.target.closest('.copy-serial-btn');
+        const originalHTML = copyBtn.innerHTML;
+        
+        copyBtn.innerHTML = '<span class="copy-icon">✅</span>';
+        copyBtn.style.background = 'var(--success)';
+        copyBtn.style.borderColor = 'var(--success)';
+        
+        setTimeout(() => {
+            copyBtn.innerHTML = originalHTML;
+            copyBtn.style.background = '';
+            copyBtn.style.borderColor = '';
+        }, 2000);
+    }).catch(err => {
+        console.error('Failed to copy serial:', err);
+    });
+}
+
+// Close modal with Escape key
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+        closeBanknoteModal();
+    }
+});
+
+// Close modal when clicking outside
+document.getElementById('banknoteModal').addEventListener('click', (event) => {
+    if (event.target.id === 'banknoteModal') {
+        closeBanknoteModal();
+    }
+});
 
 // Restore active tab on page load
 document.addEventListener('DOMContentLoaded', function() {
-    const activeTab = sessionStorage.getItem('activeTab') || 'info';
+    const activeTab = sessionStorage.getItem('profileActiveTab') || 'info';
     openTab(activeTab);
+});
+
+// Add hover effects to gallery items
+document.addEventListener('DOMContentLoaded', () => {
+    const items = document.querySelectorAll('.gallery-item');
+    items.forEach(item => {
+        item.addEventListener('mouseenter', () => {
+            item.style.transform = 'translateY(-4px)';
+        });
+        item.addEventListener('mouseleave', () => {
+            item.style.transform = '';
+        });
+    });
 });
 </script>
 {% endblock %}

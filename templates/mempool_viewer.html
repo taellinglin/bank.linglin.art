@@ -1,659 +1,1825 @@
 {% extends "base.html" %}
-
 {% block content %}
-<div class="gallery-header">
-    <h1>Mempool Viewer</h1>
-    <p>Real-time view of pending transactions waiting to be mined</p>
-</div>
-
-<!-- Statistics Overview -->
-<div class="stats-overview">
-    <div class="stat-card">
-        <div class="stat-icon">
-            <i class="fas fa-layer-group"></i>
-        </div>
-        <div class="stat-info">
-            <div class="stat-number">{{ total_transactions }}</div>
-            <div class="stat-label">Total Transactions</div>
-        </div>
-    </div>
-    
-    <div class="stat-card">
-        <div class="stat-icon active">
-            <i class="fas fa-play-circle"></i>
-        </div>
-        <div class="stat-info">
-            <div class="stat-number">{{ active_transactions }}</div>
-            <div class="stat-label">Active</div>
-        </div>
-    </div>
-    
-    <div class="stat-card">
-        <div class="stat-icon mined">
-            <i class="fas fa-check-circle"></i>
-        </div>
-        <div class="stat-info">
-            <div class="stat-number">{{ mined_transactions }}</div>
-            <div class="stat-label">Mined</div>
-        </div>
-    </div>
-    
-    <div class="stat-card">
-        <div class="stat-icon types">
-            <i class="fas fa-chart-pie"></i>
-        </div>
-        <div class="stat-info">
-            <div class="stat-number">{{ type_counts|length }}</div>
-            <div class="stat-label">Transaction Types</div>
-        </div>
-    </div>
-</div>
-
-<!-- Transaction Type Breakdown -->
-{% if type_counts %}
-<div class="type-breakdown">
-    <h3>Transaction Types</h3>
-    <div class="type-tags">
-        {% for type, count in type_counts.items() %}
-        <span class="type-tag {{ type|lower }}">
-            <span class="type-name">{{ type }}</span>
-            <span class="type-count">{{ count }}</span>
-        </span>
-        {% endfor %}
-    </div>
-</div>
-{% endif %}
-
-<!-- Transactions Grid -->
-<div class="transactions-section">
-    <div class="section-header">
-        <h2>Transactions</h2>
-        <span class="badge">{{ transactions|length }}</span>
-    </div>
-    
-    {% if transactions %}
-    <div class="transactions-grid">
-        {% for tx in transactions %}
-        <div class="transaction-card {{ 'mined' if tx.is_mined else 'pending' }} {{ tx.type|lower }}">
-            <div class="transaction-header">
-                <div class="tx-status">
-                    {% if tx.is_mined %}
-                    <span class="status-badge mined">
-                        <i class="fas fa-check"></i> Mined
-                    </span>
-                    {% else %}
-                    <span class="status-badge pending">
-                        <i class="fas fa-clock"></i> Pending
-                    </span>
-                    {% endif %}
-                </div>
-                <div class="tx-type {{ tx.type|lower }}">
-                    {{ tx.type }}
-                </div>
-            </div>
-            
-            <div class="transaction-body">
-                <div class="tx-hash">
-                    <label>Hash:</label>
-                    <code class="hash" title="{{ tx.hash }}">{{ tx.hash[:20] }}...</code>
-                </div>
-                
-                <div class="tx-timestamp">
-                    <label>Timestamp:</label>
-                    <span>{{ tx.timestamp_readable }}</span>
-                </div>
-                
-                {% if tx.type == 'transfer' %}
-                <div class="tx-details">
-                    <label>Transfer:</label>
-                    <div class="transfer-flow">
-                        <span class="from">{{ tx.from[:12] }}...</span>
-                        <i class="fas fa-arrow-right"></i>
-                        <span class="to">{{ tx.to[:12] }}...</span>
-                    </div>
-                    <div class="amount">Amount: {{ tx.amount }}</div>
-                </div>
-                {% elif tx.type in ['genesis', 'GTX_Genesis'] %}
-                <div class="tx-details">
-                    <label>Genesis:</label>
-                    <div class="genesis-info">
-                        <div>Serial: {{ tx.serial_number[:15] }}...</div>
-                        <div>Issued to: {{ tx.issued_to }}</div>
-                        <div>Denomination: {{ tx.denomination }}</div>
-                    </div>
-                </div>
-                {% endif %}
-                
-                <div class="tx-meta">
-                    <span class="meta-item">
-                        <i class="fas fa-weight-hanging"></i> {{ tx.size }} bytes
-                    </span>
-                    {% if tx.signature %}
-                    <span class="meta-item">
-                        <i class="fas fa-fingerprint"></i> {{ tx.signature }}
-                    </span>
-                    {% endif %}
-                </div>
+<div class="mempool-container">
+    <!-- Compact Stats Grid -->
+    <div class="compact-stats-grid">
+        <div class="compact-stat-card">
+            <div class="compact-stat-value">{{ total_transactions|default(0)|int|format_number }}</div>
+            <div class="compact-stat-label">Pending TXs</div>
+            <div class="compact-stat-trend">
+                <span class="trend-indicator up">↗</span>
+                <span class="trend-value">Active</span>
             </div>
         </div>
-        {% endfor %}
+
+        <div class="compact-stat-card">
+            <div class="compact-stat-value">{{ type_counts.bills|default(0)|int|format_number }}</div>
+            <div class="compact-stat-label">Banknotes</div>
+            <div class="compact-stat-subtext">
+                <span class="subtext-label">Mined:</span>
+                <span class="subtext-value">{{ blockchain_info.mined_genesis|default(0)|int|format_number }}</span>
+            </div>
+        </div>
+
+        <div class="compact-stat-card">
+            <div class="compact-stat-value">{{ type_counts.transfers|default(0)|int|format_number }}</div>
+            <div class="compact-stat-label">Transfers</div>
+            <div class="compact-stat-subtext">
+                <span class="subtext-label">Mined:</span>
+                <span class="subtext-value">{{ blockchain_info.mined_transfers|default(0)|int|format_number }}</span>
+            </div>
+        </div>
+
+        <div class="compact-stat-card">
+            <div class="compact-stat-value">{{ type_counts.rewards|default(0)|int|format_number }}</div>
+            <div class="compact-stat-label">Rewards</div>
+            <div class="compact-stat-subtext">
+                <span class="subtext-label">Mined:</span>
+                <span class="subtext-value">{{ blockchain_info.mined_rewards|default(0)|int|format_number }}</span>
+            </div>
+        </div>
+
+        <div class="compact-stat-card">
+            <div class="compact-stat-value">{{ blockchain_info.total_blocks|default(0)|int|format_number }}</div>
+            <div class="compact-stat-label">Blocks</div>
+            <div class="compact-stat-subtext">
+                <span class="subtext-label">Total TXs:</span>
+                <span class="subtext-value">{{ blockchain_info.total_mined_transactions|default(0)|int|format_number }}</span>
+            </div>
+        </div>
     </div>
 
-    <!-- Pagination Controls -->
-    {% if total_pages > 1 %}
-    <div class="pagination-section">
-        <div class="pagination-info">
-            Showing transactions {{ ((current_page - 1) * per_page) + 1 }} to 
-            {% if current_page * per_page > total_transactions %}
-                {{ total_transactions }}
-            {% else %}
-                {{ current_page * per_page }}
-            {% endif %}
-            of {{ total_transactions }} total mempool transactions
+    <!-- Compact Activity Timeline -->
+    <div class="compact-graph-section">
+        <div class="compact-section-header">
+            <h3>Transaction Activity</h3>
+            <div class="timeframe-selector">
+                {% set timeframes = {
+                    '1h': '1H',
+                    '6h': '6H', 
+                    '24h': '24H',
+                    '7d': '7D'
+                } %}
+                {% for tf_key, tf_label in timeframes.items() %}
+                    <button class="timeframe-btn {% if selected_timeframe == tf_key %}active{% endif %}" 
+                            onclick="changeTimeframe('{{ tf_key }}')">
+                        {{ tf_label }}
+                    </button>
+                {% endfor %}
+            </div>
         </div>
         
-        <div class="pagination-controls">
-            <!-- First Page -->
+        <!-- Line Graph Container -->
+        <div class="line-graph-container" id="activityChart">
+            <canvas id="activityCanvas"></canvas>
+        </div>
+        
+        <div class="graph-stats">
+            <div class="graph-stat">
+                <span class="stat-label">Peak:</span>
+                <span class="stat-value" id="peakValue">0 TXs</span>
+            </div>
+            <div class="graph-stat">
+                <span class="stat-label">Avg/min:</span>
+                <span class="stat-value" id="avgValue">0 TXs</span>
+            </div>
+            <div class="graph-stat">
+                <span class="stat-label">Total:</span>
+                <span class="stat-value" id="totalValue">0 TXs</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Enhanced Transactions Table -->
+    <div class="compact-table-section">
+        <div class="compact-table-header">
+            <h3>Pending Transactions</h3>
+            <div class="table-info">
+                <span class="info-item">Showing {{ ((current_page - 1) * per_page + 1) if total_transactions > 0 else 0 }}-{{ [current_page * per_page, total_transactions]|min }} of {{ total_transactions|default(0)|int|format_number }}</span>
+                <span class="info-item">Page {{ current_page }} of {{ total_pages }}</span>
+                <div class="sort-controls">
+                    <select id="sortSelect" class="sort-select" onchange="applySorting()">
+                        <option value="timestamp_desc" {% if sort_by == 'timestamp_desc' %}selected{% endif %}>Newest First</option>
+                        <option value="timestamp_asc" {% if sort_by == 'timestamp_asc' %}selected{% endif %}>Oldest First</option>
+                        <option value="amount_desc" {% if sort_by == 'amount_desc' %}selected{% endif %}>Highest Amount</option>
+                        <option value="amount_asc" {% if sort_by == 'amount_asc' %}selected{% endif %}>Lowest Amount</option>
+                        <option value="type" {% if sort_by == 'type' %}selected{% endif %}>By Type</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+        
+        <div class="compact-table-container">
+            <table class="compact-transactions-table">
+                <thead>
+                    <tr>
+                        <th class="compact-type sortable" data-sort="type">
+                            <div class="th-content">
+                                Type
+                                <span class="sort-indicator {% if sort_by == 'type' %}active{% endif %}">▼</span>
+                            </div>
+                        </th>
+                        <th class="compact-hash sortable" data-sort="hash">
+                            <div class="th-content">
+                                Transaction ID
+                                <span class="sort-indicator {% if sort_by == 'hash' %}active{% endif %}">▼</span>
+                            </div>
+                        </th>
+                        <th class="compact-time sortable" data-sort="timestamp_desc">
+                            <div class="th-content">
+                                Timestamp
+                                <span class="sort-indicator {% if sort_by in ['timestamp_desc', 'timestamp_asc'] %}active{% endif %}">▼</span>
+                            </div>
+                        </th>
+                        <th class="compact-parties">Parties</th>
+                        <th class="compact-amount sortable" data-sort="amount_desc">
+                            <div class="th-content">
+                                Amount
+                                <span class="sort-indicator {% if sort_by in ['amount_desc', 'amount_asc'] %}active{% endif %}">▼</span>
+                            </div>
+                        </th>
+                        <th class="compact-size">Size</th>
+                        <th class="compact-status">Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% if transactions and transactions|length > 0 %}
+                    {% for tx in transactions %}
+                    <tr class="compact-transaction-row" onclick="toggleDetails(this)">
+                        <td class="compact-type-cell">
+                            <div class="compact-type-indicator type-{{ tx.type }}" title="{{ tx.type|title }}">
+                                {% if tx.type == 'transfer' %}
+                                    <span class="compact-type-icon">↻</span>
+                                {% elif tx.type in ['genesis', 'GTX_Genesis'] %}
+                                    <span class="compact-type-icon">$</span>
+                                {% elif tx.type == 'reward' %}
+                                    <span class="compact-type-icon">★</span>
+                                {% else %}
+                                    <span class="compact-type-icon">?</span>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td class="compact-hash-cell">
+                            <code class="compact-hash mono" title="{{ tx.hash }}">
+                                {{ tx.hash[:10] }}...{{ tx.hash[-6:] if tx.hash|length > 16 else '' }}
+                            </code>
+                        </td>
+                        <td class="compact-time-cell">
+                            {% if tx.timestamp_readable %}
+                                {% set time_parts = tx.timestamp_readable.split(' ') %}
+                                <div class="compact-time">{{ time_parts[1] if time_parts|length > 1 else '' }}</div>
+                                <div class="compact-date">{{ time_parts[0] if time_parts|length > 0 else '' }}</div>
+                            {% else %}
+                                <div class="compact-time">--:--:--</div>
+                            {% endif %}
+                            <div class="compact-age" title="Time in mempool">
+                                {% if tx.age %}
+                                    {{ tx.age }}s
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td class="compact-parties-cell">
+                            <div class="parties-container">
+                                {% if tx.type == 'transfer' %}
+                                    <div class="party-row">
+                                        <span class="party-label">From:</span>
+                                        <code class="party-address mono" title="{{ tx.from }}">
+                                            {{ tx.from[:8] if tx.from else 'N/A' }}...
+                                        </code>
+                                    </div>
+                                    <div class="party-row">
+                                        <span class="party-label">To:</span>
+                                        <code class="party-address mono" title="{{ tx.to }}">
+                                            {{ tx.to[:8] if tx.to else 'N/A' }}...
+                                        </code>
+                                    </div>
+                                {% elif tx.type in ['genesis', 'GTX_Genesis'] %}
+                                    <div class="party-row">
+                                        <span class="party-label">Serial:</span>
+                                        <code class="party-serial mono" title="{{ tx.serial_number }}">
+                                            {{ tx.serial_number[:10] if tx.serial_number else 'N/A' }}...
+                                        </code>
+                                    </div>
+                                    <div class="party-row">
+                                        <span class="party-label">Issuer:</span>
+                                        <code class="party-address mono" title="{{ tx.issued_by|default('System') }}">
+                                            {{ (tx.issued_by|default('System'))[:8] }}...
+                                        </code>
+                                    </div>
+                                {% elif tx.type == 'reward' %}
+                                    <div class="party-row">
+                                        <span class="party-label">To:</span>
+                                        <code class="party-address mono" title="{{ tx.to }}">
+                                            {{ tx.to[:8] if tx.to else 'N/A' }}...
+                                        </code>
+                                    </div>
+                                    <div class="party-row">
+                                        <span class="party-label">Type:</span>
+                                        <span class="party-description">{{ tx.description|default('Reward') }}</span>
+                                    </div>
+                                {% else %}
+                                    <div class="party-row">
+                                        <span class="party-label">Unknown Transaction</span>
+                                    </div>
+                                {% endif %}
+                            </div>
+                        </td>
+                        <td class="compact-amount-cell">
+                            {% if tx.type == 'transfer' %}
+                                <div class="amount-value">{{ tx.amount|int|format_number if tx.amount is number else tx.amount }}</div>
+                                <div class="amount-unit">LKC</div>
+                            {% elif tx.type in ['genesis', 'GTX_Genesis'] %}
+                                <div class="amount-value">{{ tx.denomination|default(0)|int|format_number }}</div>
+                                <div class="amount-unit">LKC</div>
+                            {% elif tx.type == 'reward' %}
+                                <div class="amount-value">{{ tx.amount|int|format_number if tx.amount is number else tx.amount }}</div>
+                                <div class="amount-unit">LKC</div>
+                            {% else %}
+                                <div class="amount-value">N/A</div>
+                            {% endif %}
+                        </td>
+                        <td class="compact-size-cell">
+                            <div class="size-value">{{ tx.size|default(0)|int|format_number }}</div>
+                            <div class="size-unit">bytes</div>
+                        </td>
+                        <td class="compact-status-cell">
+                            <div class="status-badge pending">
+                                <span class="status-dot"></span>
+                                <span class="status-text">Pending</span>
+                                <span class="status-time" title="Time in mempool">
+                                    {% if tx.age %}
+                                        {{ tx.age }}s
+                                    {% endif %}
+                                </span>
+                            </div>
+                        </td>
+                    </tr>
+                    <tr class="compact-details-row" style="display: none;">
+                        <td colspan="7">
+                            <div class="details-expanded">
+                                <div class="details-grid">
+                                    <div class="detail-group">
+                                        <h4>Transaction Details</h4>
+                                        <div class="detail-row">
+                                            <span class="detail-label">Full Hash:</span>
+                                            <code class="detail-value mono full-hash">{{ tx.hash }}</code>
+                                            <button class="copy-btn" onclick="copyToClipboard('{{ tx.hash }}')" title="Copy hash">
+                                                📋
+                                            </button>
+                                        </div>
+                                        <div class="detail-row">
+                                            <span class="detail-label">Type:</span>
+                                            <span class="detail-value type-tag type-{{ tx.type }}">{{ tx.type|title }}</span>
+                                        </div>
+                                        {% if tx.type == 'transfer' %}
+                                            <div class="detail-row">
+                                                <span class="detail-label">From Address:</span>
+                                                <code class="detail-value mono">{{ tx.from|default('N/A') }}</code>
+                                            </div>
+                                            <div class="detail-row">
+                                                <span class="detail-label">To Address:</span>
+                                                <code class="detail-value mono">{{ tx.to|default('N/A') }}</code>
+                                            </div>
+                                            <div class="detail-row">
+                                                <span class="detail-label">Amount:</span>
+                                                <span class="detail-value highlight">{{ tx.amount|int|format_number if tx.amount is number else tx.amount }} LKC</span>
+                                            </div>
+                                        {% elif tx.type in ['genesis', 'GTX_Genesis'] %}
+                                            <div class="detail-row">
+                                                <span class="detail-label">Serial Number:</span>
+                                                <code class="detail-value mono">{{ tx.serial_number|default('N/A') }}</code>
+                                            </div>
+                                            <div class="detail-row">
+                                                <span class="detail-label">Issued To:</span>
+                                                <code class="detail-value mono">{{ tx.issued_to|default('N/A') }}</code>
+                                            </div>
+                                            <div class="detail-row">
+                                                <span class="detail-label">Issued By:</span>
+                                                <code class="detail-value mono">{{ tx.issued_by|default('System') }}</code>
+                                            </div>
+                                            <div class="detail-row">
+                                                <span class="detail-label">Denomination:</span>
+                                                <span class="detail-value highlight">{{ tx.denomination|default('N/A') }} LKC</span>
+                                            </div>
+                                        {% elif tx.type == 'reward' %}
+                                            <div class="detail-row">
+                                                <span class="detail-label">Recipient:</span>
+                                                <code class="detail-value mono">{{ tx.to|default('N/A') }}</code>
+                                            </div>
+                                            <div class="detail-row">
+                                                <span class="detail-label">Amount:</span>
+                                                <span class="detail-value highlight">{{ tx.amount|int|format_number if tx.amount is number else tx.amount }} LKC</span>
+                                            </div>
+                                            <div class="detail-row">
+                                                <span class="detail-label">Description:</span>
+                                                <span class="detail-value">{{ tx.description|default('Mining Reward') }}</span>
+                                            </div>
+                                        {% endif %}
+                                    </div>
+                                    
+                                    <div class="detail-group">
+                                        <h4>Technical Details</h4>
+                                        <div class="detail-row">
+                                            <span class="detail-label">Timestamp:</span>
+                                            <span class="detail-value">{{ tx.timestamp_readable|default('N/A') }}</span>
+                                        </div>
+                                        <div class="detail-row">
+                                            <span class="detail-label">Block Height:</span>
+                                            <span class="detail-value">{{ tx.block_height|default('Pending') }}</span>
+                                        </div>
+                                        <div class="detail-row">
+                                            <span class="detail-label">Size:</span>
+                                            <span class="detail-value">{{ tx.size|default('N/A') }} bytes</span>
+                                        </div>
+                                        <div class="detail-row">
+                                            <span class="detail-label">Fee:</span>
+                                            <span class="detail-value">{{ tx.fee|default(0) }} LKC</span>
+                                        </div>
+                                        <div class="detail-row">
+                                            <span class="detail-label">Version:</span>
+                                            <span class="detail-value">{{ tx.version|default('1.0') }}</span>
+                                        </div>
+                                        {% if tx.nonce %}
+                                        <div class="detail-row">
+                                            <span class="detail-label">Nonce:</span>
+                                            <span class="detail-value mono">{{ tx.nonce }}</span>
+                                        </div>
+                                        {% endif %}
+                                    </div>
+                                    
+                                    <div class="detail-group">
+                                        <h4>Mempool Info</h4>
+                                        <div class="detail-row">
+                                            <span class="detail-label">Entry Time:</span>
+                                            <span class="detail-value">{{ tx.entry_timestamp|default(tx.timestamp_readable)|default('N/A') }}</span>
+                                        </div>
+                                        <div class="detail-row">
+                                            <span class="detail-label">Time in Mempool:</span>
+                                            <span class="detail-value highlight">{{ tx.age|default(0) }} seconds</span>
+                                        </div>
+                                        <div class="detail-row">
+                                            <span class="detail-label">Priority:</span>
+                                            <span class="detail-value">{{ tx.priority|default('Normal') }}</span>
+                                        </div>
+                                        <div class="detail-row">
+                                            <span class="detail-label">Confidence:</span>
+                                            <div class="confidence-bar">
+                                                <div class="confidence-fill" style="width: {{ tx.confidence|default(50) }}%"></div>
+                                                <span class="confidence-text">{{ tx.confidence|default(50) }}%</span>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                
+                                <div class="details-actions">
+                                    <button class="action-btn" onclick="viewInExplorer('{{ tx.hash }}')">
+                                        <span class="action-icon">🔍</span>
+                                        View in Explorer
+                                    </button>
+                                    <button class="action-btn" onclick="copyToClipboard('{{ tx.hash }}')">
+                                        <span class="action-icon">📋</span>
+                                        Copy Hash
+                                    </button>
+                                    <button class="action-btn" onclick="validateTransaction('{{ tx.hash }}')">
+                                        <span class="action-icon">✓</span>
+                                        Validate
+                                    </button>
+                                </div>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                    {% else %}
+                    <tr>
+                        <td colspan="7" class="empty-state">
+                            <div class="empty-content">
+                                <span class="empty-icon">⏳</span>
+                                <span class="empty-title">No Pending Transactions</span>
+                                <span class="empty-subtitle">The mempool is currently empty</span>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endif %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Compact Pagination -->
+        <div class="compact-pagination">
             {% if current_page > 1 %}
-            <a href="{{ url_for('mempool_viewer', page=1) }}" class="pagination-btn first" title="First Page">
-                <i class="fas fa-angle-double-left"></i>
-            </a>
+                <a href="{{ url_for('mempool_viewer', page=current_page-1, sort_by=sort_by) }}" class="page-nav prev">← Prev</a>
             {% else %}
-            <span class="pagination-btn first disabled" title="First Page">
-                <i class="fas fa-angle-double-left"></i>
-            </span>
+                <span class="page-nav prev disabled">← Prev</span>
             {% endif %}
             
-            <!-- Previous Page -->
-            {% if current_page > 1 %}
-            <a href="{{ url_for('mempool_viewer', page=current_page-1) }}" class="pagination-btn prev" title="Previous Page">
-                <i class="fas fa-angle-left"></i>
-            </a>
-            {% else %}
-            <span class="pagination-btn prev disabled" title="Previous Page">
-                <i class="fas fa-angle-left"></i>
-            </span>
-            {% endif %}
-            
-            <!-- Page Numbers -->
             <div class="page-numbers">
-                {% set start_page = [1, current_page-2]|max %}
-                {% set end_page = [total_pages, current_page+2]|min %}
-                
-                {% if start_page > 1 %}
-                <a href="{{ url_for('mempool_viewer', page=1) }}" class="page-number">1</a>
-                {% if start_page > 2 %}
-                <span class="page-ellipsis">...</span>
-                {% endif %}
-                {% endif %}
+                {% set start_page = [current_page - 1, 1]|max %}
+                {% set end_page = [start_page + 2, total_pages]|min %}
                 
                 {% for p in range(start_page, end_page + 1) %}
                     {% if p == current_page %}
-                    <span class="page-number current">{{ p }}</span>
+                        <span class="page-number active">{{ p }}</span>
                     {% else %}
-                    <a href="{{ url_for('mempool_viewer', page=p) }}" class="page-number">{{ p }}</a>
+                        <a href="{{ url_for('mempool_viewer', page=p, sort_by=sort_by) }}" class="page-number">{{ p }}</a>
                     {% endif %}
                 {% endfor %}
                 
                 {% if end_page < total_pages %}
-                {% if end_page < total_pages - 1 %}
-                <span class="page-ellipsis">...</span>
-                {% endif %}
-                <a href="{{ url_for('mempool_viewer', page=total_pages) }}" class="page-number">{{ total_pages }}</a>
+                    <span class="page-ellipsis">...</span>
+                    <a href="{{ url_for('mempool_viewer', page=total_pages, sort_by=sort_by) }}" class="page-number">{{ total_pages }}</a>
                 {% endif %}
             </div>
             
-            <!-- Next Page -->
             {% if current_page < total_pages %}
-            <a href="{{ url_for('mempool_viewer', page=current_page+1) }}" class="pagination-btn next" title="Next Page">
-                <i class="fas fa-angle-right"></i>
-            </a>
+                <a href="{{ url_for('mempool_viewer', page=current_page+1, sort_by=sort_by) }}" class="page-nav next">Next →</a>
             {% else %}
-            <span class="pagination-btn next disabled" title="Next Page">
-                <i class="fas fa-angle-right"></i>
-            </span>
-            {% endif %}
-            
-            <!-- Last Page -->
-            {% if current_page < total_pages %}
-            <a href="{{ url_for('mempool_viewer', page=total_pages) }}" class="pagination-btn last" title="Last Page">
-                <i class="fas fa-angle-double-right"></i>
-            </a>
-            {% else %}
-            <span class="pagination-btn last disabled" title="Last Page">
-                <i class="fas fa-angle-double-right"></i>
-            </span>
+                <span class="page-nav next disabled">Next →</span>
             {% endif %}
         </div>
     </div>
-    {% endif %}
 
-    {% else %}
-    <div class="empty-state">
-        <i class="fas fa-inbox fa-3x"></i>
-        <h3>No transactions in mempool</h3>
-        <p>The mempool is currently empty. Transactions will appear here when created.</p>
+    <div class="refresh-note">
+        <span class="note-icon">↻</span>
+        <span>Auto-refresh in <span id="countdown">30</span>s</span>
+        <button onclick="refreshNow()" class="refresh-btn">Refresh Now</button>
+        <div class="refresh-stats">
+            <span class="stat-item">Last updated: <span id="lastUpdated">Just now</span></span>
+        </div>
     </div>
-    {% endif %}
 </div>
+
 <style>
-.stats-overview {
+/* Compact Layout Styles */
+:root {
+    --bg-primary: #0f0f0f;
+    --bg-secondary: #151515;
+    --bg-tertiary: #1e1e1e;
+    --bg-quaternary: #252525;
+    --border: #2d2d2d;
+    --border-light: #3a3a3a;
+    --border-hover: #4a4a4a;
+    --text-primary: #ffffff;
+    --text-secondary: #b0b0b0;
+    --text-tertiary: #888888;
+    --text-quaternary: #666666;
+    --primary: #007aff;
+    --primary-hover: #0056cc;
+    --success: #30d158;
+    --success-light: rgba(48, 209, 88, 0.15);
+    --warning: #ffd60a;
+    --warning-light: rgba(255, 214, 10, 0.15);
+    --danger: #ff453a;
+    --danger-light: rgba(255, 69, 58, 0.15);
+    --info: #32d7ee;
+    --info-light: rgba(50, 215, 238, 0.15);
+    --type-transfer: #32d7ee;
+    --type-genesis: #30d158;
+    --type-reward: #ffd60a;
+}
+
+.mempool-container {
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 1rem;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+/* Compact Stats Grid */
+.compact-stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1.5rem;
-    margin: 2rem 0;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
 }
 
-.stat-card {
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 12px;
-    padding: 1.5rem;
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-    transition: transform 0.2s ease;
-    border: 1px solid rgba(255, 255, 255, 0.1);
+.compact-stat-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.875rem;
+    text-align: center;
+    transition: all 0.2s ease;
 }
 
-.stat-card:hover {
-    transform: translateY(-2px);
+.compact-stat-card:hover {
+    border-color: var(--border-light);
+    transform: translateY(-1px);
 }
 
-.stat-icon {
-    width: 60px;
-    height: 60px;
-    border-radius: 50%;
+.compact-stat-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+    font-variant-numeric: tabular-nums;
+}
+
+.compact-stat-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.375rem;
+}
+
+.compact-stat-trend {
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 1.5rem;
-    background: linear-gradient(135deg, #FF0000, #FF7F00);
-    color: white;
+    gap: 0.25rem;
+    font-size: 0.75rem;
 }
 
-.stat-icon.active { background: linear-gradient(135deg, #FFFF00, #00FF00); }
-.stat-icon.mined { background: linear-gradient(135deg, #0000FF, #4B0082); }
-.stat-icon.types { background: linear-gradient(135deg, #8F00FF, #9400D3); }
-
-.stat-number {
-    font-size: 2rem;
-    font-weight: bold;
-    color: #ffffff;
+.trend-indicator.up {
+    color: var(--success);
+    font-size: 0.875rem;
 }
 
-.stat-label {
-    color: #cccccc;
-    font-size: 0.9rem;
+.trend-value {
+    color: var(--text-tertiary);
 }
 
-.type-breakdown {
-    margin: 2rem 0;
-}
-
-.type-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem;
-}
-
-.type-tag {
+.compact-stat-subtext {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1.5rem;
-    border-radius: 12px;
-    font-size: 1rem;
-    background: rgba(255, 255, 255, 0.05);
-    border: 2px solid;
-    font-weight: 600;
+    justify-content: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    margin-top: 0.25rem;
 }
 
-.type-tag.genesis, 
-.type-tag.gtx_genesis { 
-    background: rgba(75, 0, 130, 0.2); 
-    border-color: #4B0082; 
-    color: #B19CD9; 
-}
-.type-tag.transfer { 
-    background: rgba(0, 255, 0, 0.2); 
-    border-color: #00FF00; 
-    color: #90EE90; 
-}
-.type-tag.reward { 
-    background: rgba(255, 0, 0, 0.2); 
-    border-color: #FF0000; 
-    color: #FFB6C1; 
+.subtext-label {
+    color: var(--text-tertiary);
 }
 
-.transactions-section {
-    margin-top: 2rem;
+.subtext-value {
+    color: var(--text-secondary);
+    font-weight: 500;
 }
 
-.section-header {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    margin-bottom: 1.5rem;
+/* Compact Graph Section */
+.compact-graph-section {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1.25rem;
 }
 
-.section-header h2 {
-    margin: 0;
-    color: #ffffff;
-}
-
-.badge {
-    background: #FF0000;
-    color: white;
-    padding: 0.25rem 0.75rem;
-    border-radius: 12px;
-    font-size: 0.9rem;
-    font-weight: 600;
-}
-
-.transactions-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
-    gap: 1.5rem;
-}
-
-.transaction-card {
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 12px;
-    padding: 1.5rem;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-    border-left: 4px solid #FF0000;
-    transition: transform 0.2s ease;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.transaction-card:hover {
-    transform: translateY(-2px);
-}
-
-.transaction-card.mined {
-    border-left-color: #4B0082;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(75, 0, 130, 0.1));
-}
-
-.transaction-card.genesis,
-.transaction-card.gtx_genesis {
-    border-left-color: #4B0082;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(75, 0, 130, 0.1));
-}
-
-.transaction-card.transfer {
-    border-left-color: #00FF00;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(0, 255, 0, 0.1));
-}
-
-.transaction-card.reward {
-    border-left-color: #FF0000;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(255, 0, 0, 0.1));
-}
-
-.transaction-header {
+.compact-section-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 1rem;
 }
 
-.status-badge {
-    padding: 0.25rem 0.75rem;
-    border-radius: 8px;
-    font-size: 0.8rem;
+.compact-section-header h3 {
+    font-size: 1rem;
     font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
 }
 
-.status-badge.pending {
-    background: rgba(255, 255, 0, 0.3);
-    color: #FFFF00;
-    border: 1px solid #FFFF00;
+.timeframe-selector {
+    display: flex;
+    gap: 0.25rem;
 }
 
-.status-badge.mined {
-    background: rgba(75, 0, 130, 0.3);
-    color: #B19CD9;
-    border: 1px solid #4B0082;
-}
-
-.tx-type {
-    padding: 0.25rem 0.75rem;
-    border-radius: 8px;
-    font-size: 0.8rem;
-    font-weight: 600;
-    background: rgba(255, 255, 255, 0.1);
-    color: #ffffff;
-}
-
-.tx-type.genesis,
-.tx-type.gtx_genesis {
-    background: rgba(75, 0, 130, 0.3);
-    color: #B19CD9;
-    border: 1px solid #4B0082;
-}
-
-.tx-type.transfer {
-    background: rgba(0, 255, 0, 0.3);
-    color: #90EE90;
-    border: 1px solid #00FF00;
-}
-
-.tx-type.reward {
-    background: rgba(255, 0, 0, 0.3);
-    color: #FFB6C1;
-    border: 1px solid #FF0000;
-}
-
-.transaction-body {
-    space-y: 0.75rem;
-}
-
-.transaction-body label {
-    font-weight: 600;
-    color: #cccccc;
-    font-size: 0.9rem;
-    display: block;
-    margin-bottom: 0.25rem;
-}
-
-.tx-hash code.hash {
-    font-family: 'Courier New', monospace;
-    background: rgba(0, 0, 0, 0.3);
+.timeframe-btn {
     padding: 0.25rem 0.5rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
     border-radius: 4px;
-    font-size: 0.85rem;
-    color: #ffffff;
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
 }
 
-.transfer-flow {
+.timeframe-btn:hover {
+    border-color: var(--border-light);
+    color: var(--text-primary);
+}
+
+.timeframe-btn.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
+}
+
+/* Line Graph Container */
+.line-graph-container {
+    height: 120px;
+    background: var(--bg-secondary);
+    border-radius: 6px;
+    margin-bottom: 0.75rem;
+    position: relative;
+}
+
+.graph-stats {
     display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin: 0.5rem 0;
-    color: #cccccc;
+    justify-content: space-around;
+    font-size: 0.75rem;
 }
 
-.amount {
-    font-weight: 600;
-    color: #00FF00;
-}
-
-.genesis-info {
-    color: #cccccc;
-    font-size: 0.9rem;
-}
-
-.tx-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 1rem;
-    margin-top: 1rem;
-    padding-top: 1rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.meta-item {
-    font-size: 0.8rem;
-    color: #cccccc;
+.graph-stat {
     display: flex;
     align-items: center;
     gap: 0.25rem;
 }
 
-.empty-state {
-    text-align: center;
-    padding: 3rem;
-    color: #cccccc;
+.stat-label {
+    color: var(--text-tertiary);
 }
 
-.empty-state i {
+.stat-value {
+    color: var(--text-primary);
+    font-weight: 500;
+}
+
+/* Enhanced Table Section */
+.compact-table-section {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
     margin-bottom: 1rem;
-    opacity: 0.5;
 }
 
-/* Pagination Styles */
-.pagination-section {
-    margin-top: 2rem;
-    padding: 1.5rem;
-    background: var(--card-bg);
-    border-top: 1px solid var(--border-color);
+.compact-table-header {
+    padding: 0.875rem 1rem;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
 }
 
-.pagination-info {
-    text-align: center;
-    margin-bottom: 1rem;
-    color: var(--text-muted);
-    font-size: 0.9rem;
+.compact-table-header h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
 }
 
-.pagination-controls {
+.table-info {
     display: flex;
     align-items: center;
-    justify-content: center;
+    gap: 1rem;
+    font-size: 0.75rem;
+}
+
+.info-item {
+    color: var(--text-tertiary);
+}
+
+.sort-controls {
+    display: flex;
+    align-items: center;
     gap: 0.5rem;
 }
 
-.pagination-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    color: var(--text-color);
-    text-decoration: none;
+.sort-select {
+    padding: 0.25rem 0.5rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-primary);
+    font-size: 0.75rem;
+    cursor: pointer;
     transition: all 0.2s ease;
 }
 
-.pagination-btn:hover:not(.disabled) {
-    background: var(--primary-color);
-    color: white;
-    border-color: var(--primary-color);
+.sort-select:hover {
+    border-color: var(--border-light);
 }
 
-.pagination-btn.disabled {
+.sort-select:focus {
+    outline: none;
+    border-color: var(--primary);
+}
+
+.compact-table-container {
+    overflow-x: auto;
+}
+
+.compact-transactions-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.8125rem;
+}
+
+.compact-transactions-table th {
+    padding: 0.75rem 0.5rem;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    background: var(--bg-quaternary);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.compact-transactions-table th.sortable {
+    cursor: pointer;
+    transition: background-color 0.2s ease;
+}
+
+.compact-transactions-table th.sortable:hover {
+    background: var(--bg-tertiary);
+}
+
+.th-content {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.sort-indicator {
+    font-size: 0.625rem;
+    color: var(--text-quaternary);
+    transition: transform 0.2s ease;
+}
+
+.sort-indicator.active {
+    color: var(--primary);
+}
+
+.sort-indicator.asc {
+    transform: rotate(180deg);
+}
+
+.compact-transactions-table td {
+    padding: 0.75rem 0.5rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+
+.compact-transaction-row {
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: var(--bg-tertiary);
+}
+
+.compact-transaction-row:hover {
+    background: var(--bg-quaternary);
+}
+
+.compact-transaction-row:nth-child(even) {
+    background: var(--bg-secondary);
+}
+
+.compact-transaction-row:nth-child(even):hover {
+    background: var(--bg-tertiary);
+}
+
+/* Enhanced Cells */
+.compact-type-cell {
+    width: 50px;
+    padding-left: 1rem !important;
+}
+
+.compact-type-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    font-size: 1rem;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+}
+
+.compact-type-indicator:hover {
+    transform: scale(1.05);
+    border-color: currentColor;
+}
+
+.type-transfer { 
+    background: rgba(50, 215, 238, 0.1);
+    color: var(--type-transfer);
+}
+.type-genesis,
+.type-GTX_Genesis { 
+    background: rgba(48, 209, 88, 0.1);
+    color: var(--type-genesis);
+}
+.type-reward { 
+    background: rgba(255, 214, 10, 0.1);
+    color: var(--type-reward);
+}
+
+.compact-hash-cell {
+    width: 160px;
+}
+
+.compact-hash {
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Roboto Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--text-primary);
+    word-break: break-all;
+}
+
+.mono {
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Roboto Mono', monospace;
+}
+
+.compact-time-cell {
+    width: 100px;
+}
+
+.compact-time {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 0.125rem;
+}
+
+.compact-date {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    margin-bottom: 0.125rem;
+}
+
+.compact-age {
+    font-size: 0.6875rem;
+    color: var(--text-quaternary);
+    font-feature-settings: "tnum";
+}
+
+.compact-parties-cell {
+    min-width: 180px;
+    max-width: 200px;
+}
+
+.parties-container {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+.party-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.party-label {
+    font-size: 0.6875rem;
+    color: var(--text-quaternary);
+    font-weight: 500;
+    min-width: 40px;
+}
+
+.party-address,
+.party-serial {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.party-description {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    font-style: italic;
+}
+
+.compact-amount-cell {
+    width: 100px;
+    text-align: right;
+    padding-right: 1rem !important;
+}
+
+.amount-value {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--success);
+    margin-bottom: 0.125rem;
+}
+
+.amount-unit {
+    font-size: 0.6875rem;
+    color: var(--text-quaternary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.compact-size-cell {
+    width: 80px;
+    text-align: center;
+}
+
+.size-value {
+    font-size: 0.8125rem;
+    color: var(--text-primary);
+    margin-bottom: 0.125rem;
+}
+
+.size-unit {
+    font-size: 0.6875rem;
+    color: var(--text-quaternary);
+}
+
+.compact-status-cell {
+    width: 120px;
+    padding-right: 1rem !important;
+}
+
+.status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.375rem 0.75rem;
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+
+.status-badge.pending {
+    background: rgba(255, 214, 10, 0.15);
+    border: 1px solid var(--warning);
+    color: var(--warning);
+}
+
+.status-badge.confirmed {
+    background: rgba(48, 209, 88, 0.15);
+    border: 1px solid var(--success);
+    color: var(--success);
+}
+
+.status-badge.failed {
+    background: rgba(255, 69, 58, 0.15);
+    border: 1px solid var(--danger);
+    color: var(--danger);
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    animation: pulse 1.5s infinite;
+}
+
+.status-badge.pending .status-dot {
+    background: var(--warning);
+}
+
+@keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+}
+
+.status-time {
+    font-size: 0.6875rem;
+    opacity: 0.8;
+    margin-left: auto;
+}
+
+/* Enhanced Details Expanded Row */
+.compact-details-row {
+    background: var(--bg-secondary);
+}
+
+.details-expanded {
+    padding: 1.5rem;
+}
+
+.details-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+    margin-bottom: 1.5rem;
+}
+
+.detail-group h4 {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0 0 1rem 0;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.detail-row {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: 0.75rem;
+    gap: 0.75rem;
+}
+
+.detail-row:last-child {
+    margin-bottom: 0;
+}
+
+.detail-label {
+    color: var(--text-tertiary);
+    min-width: 120px;
+    flex-shrink: 0;
+    font-size: 0.8125rem;
+    font-weight: 500;
+}
+
+.detail-value {
+    color: var(--text-secondary);
+    word-break: break-all;
+    font-size: 0.8125rem;
+    flex: 1;
+}
+
+.detail-value.mono {
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Roboto Mono', monospace;
+    background: var(--bg-tertiary);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+}
+
+.detail-value.highlight {
+    color: var(--success);
+    font-weight: 600;
+}
+
+.type-tag {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.type-tag.type-transfer {
+    background: var(--info-light);
+    color: var(--type-transfer);
+}
+
+.type-tag.type-genesis,
+.type-tag.type-GTX_Genesis {
+    background: var(--success-light);
+    color: var(--type-genesis);
+}
+
+.type-tag.type-reward {
+    background: var(--warning-light);
+    color: var(--type-reward);
+}
+
+.full-hash {
+    font-size: 0.75rem;
+    line-height: 1.4;
+}
+
+.copy-btn {
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    flex-shrink: 0;
+}
+
+.copy-btn:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--border-light);
+    color: var(--text-primary);
+}
+
+.confidence-bar {
+    width: 100%;
+    height: 6px;
+    background: var(--bg-tertiary);
+    border-radius: 3px;
+    overflow: hidden;
+    position: relative;
+    margin: 0.25rem 0;
+}
+
+.confidence-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--warning), var(--success));
+    transition: width 0.3s ease;
+}
+
+.confidence-text {
+    position: absolute;
+    right: 0;
+    top: -1.25rem;
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+.details-actions {
+    display: flex;
+    gap: 0.75rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border);
+}
+
+.action-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-secondary);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.action-btn:hover {
+    background: var(--bg-quaternary);
+    border-color: var(--border-light);
+    color: var(--text-primary);
+}
+
+.action-icon {
+    font-size: 1rem;
+}
+
+/* Empty State */
+.empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+}
+
+.empty-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+.empty-icon {
+    font-size: 3rem;
+    opacity: 0.3;
+    margin-bottom: 0.5rem;
+}
+
+.empty-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+}
+
+.empty-subtitle {
+    font-size: 0.875rem;
+    max-width: 300px;
+    line-height: 1.4;
+}
+
+/* Enhanced Pagination */
+.compact-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 1rem;
+    border-top: 1px solid var(--border);
+    background: var(--bg-quaternary);
+}
+
+.page-nav {
+    padding: 0.5rem 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    text-decoration: none;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.page-nav:hover:not(.disabled) {
+    background: var(--bg-secondary);
+    border-color: var(--border-light);
+    transform: translateY(-1px);
+}
+
+.page-nav.disabled {
     opacity: 0.5;
     cursor: not-allowed;
-    color: var(--text-muted);
 }
 
 .page-numbers {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    margin: 0 1rem;
+    gap: 0.375rem;
 }
 
 .page-number {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
-    border: 1px solid var(--border-color);
-    border-radius: 8px;
-    color: var(--text-color);
+    min-width: 32px;
+    height: 32px;
+    padding: 0 0.5rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
     text-decoration: none;
+    font-size: 0.8125rem;
+    font-weight: 500;
     transition: all 0.2s ease;
 }
 
-.page-number:hover {
-    background: var(--hover-color);
-    border-color: var(--primary-color);
+.page-number:hover:not(.active) {
+    background: var(--bg-secondary);
+    border-color: var(--border-light);
+    transform: translateY(-1px);
 }
 
-.page-number.current {
-    background: var(--primary-color);
+.page-number.active {
+    background: var(--primary);
+    border-color: var(--primary);
     color: white;
-    border-color: var(--primary-color);
+    box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3);
 }
 
 .page-ellipsis {
+    color: var(--text-tertiary);
     padding: 0 0.5rem;
-    color: var(--text-muted);
 }
 
-/* Responsive Design */
-@media (max-width: 768px) {
-    .stats-overview {
-        grid-template-columns: repeat(2, 1fr);
-    }
-    
-    .transactions-grid {
+/* Enhanced Refresh Note */
+.refresh-note {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.875rem 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 0.8125rem;
+    color: var(--text-secondary);
+}
+
+.refresh-note-content {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.note-icon {
+    color: var(--info);
+    animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+}
+
+#countdown {
+    color: var(--warning);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+
+.refresh-btn {
+    padding: 0.375rem 0.75rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 0.8125rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.refresh-btn:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--border-light);
+    transform: translateY(-1px);
+}
+
+.refresh-stats {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.stat-item {
+    color: var(--text-tertiary);
+    font-size: 0.75rem;
+}
+
+#lastUpdated {
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+/* Responsive */
+@media (max-width: 1200px) {
+    .details-grid {
         grid-template-columns: 1fr;
-        padding: 1rem;
+    }
+}
+
+@media (max-width: 768px) {
+    .mempool-container {
+        padding: 0.75rem;
     }
     
-    .pagination-controls {
-        flex-wrap: wrap;
-        gap: 0.25rem;
+    .compact-stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.5rem;
+    }
+    
+    .compact-table-header {
+        flex-direction: column;
+        gap: 0.75rem;
+        align-items: flex-start;
+    }
+    
+    .table-info {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 0.5rem;
+        width: 100%;
+    }
+    
+    .sort-controls {
+        width: 100%;
+    }
+    
+    .sort-select {
+        width: 100%;
+    }
+    
+    .compact-transactions-table th,
+    .compact-transactions-table td {
+        padding: 0.5rem 0.25rem;
+    }
+    
+    .compact-pagination {
+        flex-direction: column;
+        gap: 0.75rem;
+    }
+    
+    .page-nav {
+        width: 100%;
+        text-align: center;
+        justify-content: center;
     }
     
     .page-numbers {
-        order: -1;
         width: 100%;
         justify-content: center;
-        margin: 0.5rem 0;
     }
     
-    .pagination-btn, .page-number {
-        width: 36px;
-        height: 36px;
-        font-size: 0.9rem;
+    .refresh-note {
+        flex-direction: column;
+        gap: 0.75rem;
+        text-align: center;
     }
     
-    .transaction-header {
+    .refresh-note-content {
         flex-direction: column;
         gap: 0.5rem;
-        align-items: flex-start;
     }
+    
+    .refresh-stats {
+        width: 100%;
+        justify-content: center;
+    }
+}
 
-@media (max-width: 768px) {
-    .stats-overview {
+@media (max-width: 480px) {
+    .compact-stats-grid {
         grid-template-columns: 1fr;
     }
     
-    .transactions-grid {
-        grid-template-columns: 1fr;
+    .compact-stat-card {
+        padding: 0.75rem;
     }
     
-    .transaction-header {
+    .compact-section-header {
         flex-direction: column;
         align-items: flex-start;
-        gap: 0.5rem;
+        gap: 0.75rem;
     }
     
-    .type-tags {
-        flex-direction: column;
+    .timeframe-selector {
+        width: 100%;
+        justify-content: space-between;
     }
     
-    .tx-meta {
-        flex-direction: column;
-        gap: 0.5rem;
+    .timeframe-btn {
+        flex: 1;
+        text-align: center;
+    }
+    
+    .compact-transactions-table {
+        font-size: 0.75rem;
+    }
+    
+    .amount-value {
+        font-size: 0.875rem;
+    }
+    
+    .status-badge {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.6875rem;
     }
 }
 </style>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+// Timeframe Management
+let selectedTimeframe = '{{ selected_timeframe|default("1h") }}';
+
+function changeTimeframe(timeframe) {
+    selectedTimeframe = timeframe;
+    loadActivityData();
+    updateTimeframeButtons();
+}
+
+function updateTimeframeButtons() {
+    document.querySelectorAll('.timeframe-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.textContent.toLowerCase().includes(selectedTimeframe) || 
+            btn.getAttribute('onclick')?.includes(selectedTimeframe)) {
+            btn.classList.add('active');
+        }
+    });
+}
+
+// Chart Instance
+let activityChart = null;
+
+// Load Activity Data
+async function loadActivityData() {
+    try {
+        const response = await fetch(`/api/mempool/activity?timeframe=${selectedTimeframe}`);
+        const data = await response.json();
+        
+        updateGraphStats(data);
+        renderActivityChart(data);
+    } catch (error) {
+        console.error('Error loading activity data:', error);
+    }
+}
+
+// Update Graph Stats
+function updateGraphStats(data) {
+    if (!data.totals) return;
+    
+    document.getElementById('peakValue').textContent = `${data.peak} TXs`;
+    document.getElementById('avgValue').textContent = `${Math.round(data.average_per_minute)} TXs`;
+    document.getElementById('totalValue').textContent = `${data.totals.all} TXs`;
+}
+
+// Render Activity Chart
+function renderActivityChart(data) {
+    const ctx = document.getElementById('activityCanvas').getContext('2d');
+    
+    // Destroy existing chart
+    if (activityChart) {
+        activityChart.destroy();
+    }
+    
+    // Prepare datasets for each transaction type
+    const datasets = [];
+    
+    if (data.timeline && data.timeline.transfers) {
+        datasets.push({
+            label: 'Transfers',
+            data: data.timeline.transfers,
+            borderColor: 'rgba(50, 215, 238, 1)',
+            backgroundColor: 'rgba(50, 216, 238, 0.49)',
+            borderWidth: 2,
+            fill: true,
+            tension: 0.4
+        });
+    }
+    
+    if (data.timeline && data.timeline.bills) {
+        datasets.push({
+            label: 'Banknotes',
+            data: data.timeline.bills,
+            borderColor: 'rgba(48, 209, 88, 1)',
+            backgroundColor: 'rgba(48, 209, 88, 0.49)',
+            borderWidth: 2,
+            fill: true,
+            tension: 0.4
+        });
+    }
+    
+    if (data.timeline && data.timeline.rewards) {
+        datasets.push({
+            label: 'Rewards',
+            data: data.timeline.rewards,
+            borderColor: 'rgba(255, 214, 10, 1)',
+            backgroundColor: 'rgba(255, 214, 10, 0.45)',
+            borderWidth: 2,
+            fill: true,
+            tension: 0.4
+        });
+    }
+    
+    // Create new chart
+    activityChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data.labels || [],
+            datasets: datasets
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    backgroundColor: 'rgba(36, 36, 36, 0.29)',
+                    borderColor: 'var(--border)',
+                    borderWidth: 1,
+                    titleColor: 'var(--text-primary)',
+                    bodyColor: 'var(--text-secondary)',
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.dataset.label}: ${context.raw} TXs`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: {
+                        color: 'rgba(45, 45, 45, 0.5)',
+                        drawBorder: false
+                    },
+                    ticks: {
+                        color: 'var(--text-tertiary)',
+                        font: {
+                            size: 10
+                        },
+                        maxRotation: 0
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: {
+                        color: 'rgba(45, 45, 45, 0.5)',
+                        drawBorder: false
+                    },
+                    ticks: {
+                        color: 'var(--text-tertiary)',
+                        font: {
+                            size: 10
+                        },
+                        callback: function(value) {
+                            return value + ' TXs';
+                        }
+                    }
+                }
+            },
+            interaction: {
+                intersect: false,
+                mode: 'nearest'
+            },
+            elements: {
+                point: {
+                    radius: 0,
+                    hoverRadius: 4
+                }
+            }
+        }
+    });
+}
+
+// Sorting Functions
+let currentSort = '{{ sort_by|default("timestamp_desc") }}';
+
+function applySorting() {
+    const sortSelect = document.getElementById('sortSelect');
+    const sortBy = sortSelect.value;
+    
+    // Update URL with sort parameter
+    const url = new URL(window.location);
+    url.searchParams.set('sort_by', sortBy);
+    window.location.href = url.toString();
+}
+
+function sortByHeader(column) {
+    // Determine new sort direction
+    let newSort;
+    if (currentSort === column) {
+        // If already sorted by this column, reverse direction
+        if (column === 'timestamp_desc') newSort = 'timestamp_asc';
+        else if (column === 'timestamp_asc') newSort = 'timestamp_desc';
+        else if (column === 'amount_desc') newSort = 'amount_asc';
+        else if (column === 'amount_asc') newSort = 'amount_desc';
+        else newSort = column;
+    } else {
+        // Default sort direction
+        if (column.includes('timestamp')) newSort = 'timestamp_desc';
+        else if (column.includes('amount')) newSort = 'amount_desc';
+        else newSort = column;
+    }
+    
+    // Update URL
+    const url = new URL(window.location);
+    url.searchParams.set('sort_by', newSort);
+    window.location.href = url.toString();
+}
+
+// Table Details Toggle
+function toggleDetails(row) {
+    const detailsRow = row.nextElementSibling;
+    if (detailsRow && detailsRow.classList.contains('compact-details-row')) {
+        const isVisible = detailsRow.style.display !== 'none';
+        detailsRow.style.display = isVisible ? 'none' : 'table-row';
+        
+        // Smooth scroll to details if opening
+        if (!isVisible) {
+            detailsRow.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+    }
+}
+
+// Utility Functions
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        showNotification('Copied to clipboard!', 'success');
+    }).catch(err => {
+        console.error('Failed to copy: ', err);
+        showNotification('Failed to copy', 'error');
+    });
+}
+
+function viewInExplorer(hash) {
+    // You can implement explorer URL based on your blockchain setup
+    const explorerUrl = `/explorer/transaction/${hash}`;
+    window.open(explorerUrl, '_blank');
+}
+
+function validateTransaction(hash) {
+    showNotification('Validating transaction...', 'info');
+    
+    // Simulate validation (replace with actual API call)
+    setTimeout(() => {
+        showNotification('Transaction is valid', 'success');
+    }, 1000);
+}
+
+function showNotification(message, type = 'info') {
+    // Create notification element
+    const notification = document.createElement('div');
+    notification.className = `notification ${type}`;
+    notification.textContent = message;
+    notification.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        padding: 12px 20px;
+        background: ${type === 'success' ? 'var(--success-light)' : 
+                     type === 'error' ? 'var(--danger-light)' : 'var(--info-light)'};
+        color: ${type === 'success' ? 'var(--success)' : 
+                type === 'error' ? 'var(--danger)' : 'var(--info)'};
+        border: 1px solid ${type === 'success' ? 'var(--success)' : 
+                          type === 'error' ? 'var(--danger)' : 'var(--info)'};
+        border-radius: 8px;
+        z-index: 1000;
+        font-size: 0.875rem;
+        animation: slideIn 0.3s ease;
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Remove after 3 seconds
+    setTimeout(() => {
+        notification.style.animation = 'slideOut 0.3s ease';
+        setTimeout(() => notification.remove(), 300);
+    }, 3000);
+}
+
+// Update last updated time
+function updateLastUpdatedTime() {
+    const now = new Date();
+    const timeString = now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+    document.getElementById('lastUpdated').textContent = timeString;
+}
+
+// Auto-refresh Countdown
+let countdown = 30;
+let countdownInterval;
+
+function startCountdown() {
+    clearInterval(countdownInterval);
+    countdown = 30;
+    document.getElementById('countdown').textContent = countdown;
+    
+    countdownInterval = setInterval(() => {
+        countdown--;
+        document.getElementById('countdown').textContent = countdown;
+        
+        if (countdown <= 0) {
+            clearInterval(countdownInterval);
+            refreshNow();
+        }
+    }, 1000);
+}
+
+function refreshNow() {
+    clearInterval(countdownInterval);
+    updateLastUpdatedTime();
+    window.location.reload();
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize timeframe buttons
+    updateTimeframeButtons();
+    
+    // Load initial activity data
+    loadActivityData();
+    
+    // Start auto-refresh countdown
+    startCountdown();
+    
+    // Update last updated time
+    updateLastUpdatedTime();
+    
+    // Setup click handlers for sortable headers
+    document.querySelectorAll('.sortable').forEach(th => {
+        th.addEventListener('click', function() {
+            const sortField = this.dataset.sort;
+            sortByHeader(sortField);
+        });
+    });
+    
+    // Setup timeframe buttons
+    document.querySelectorAll('.timeframe-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            const timeframe = this.getAttribute('onclick')?.match(/'(\w+)'/)?.[1];
+            if (timeframe) {
+                changeTimeframe(timeframe);
+            }
+        });
+    });
+    
+    // Auto-refresh chart every 10 seconds
+    setInterval(loadActivityData, 10000);
+    
+    // Update last updated time every minute
+    setInterval(updateLastUpdatedTime, 60000);
+});
+
+// Add CSS animations for notifications
+const style = document.createElement('style');
+style.textContent = `
+@keyframes slideIn {
+    from {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+    to {
+        transform: translateX(0);
+        opacity: 1;
+    }
+}
+
+@keyframes slideOut {
+    from {
+        transform: translateX(0);
+        opacity: 1;
+    }
+    to {
+        transform: translateX(100%);
+        opacity: 0;
+    }
+}
+`;
+document.head.appendChild(style);
+</script>
 {% endblock %}

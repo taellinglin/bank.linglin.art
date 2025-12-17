@@ -1,0 +1,700 @@
+<!-- transaction_detail.html -->
+{% extends "base.html" %}
+{% block content %}
+<div class="blockchain-container">
+    <!-- Stats Grid -->
+    <div class="compact-stats-grid">
+        <div class="compact-stat-card">
+            <div class="stat-header">
+                <div class="stat-icon">🔍</div>
+                <h4 class="stat-title">Transaction Details</h4>
+            </div>
+            <div class="compact-stat-value">TX-{{ transaction.txid|truncate(12, True, '...') if transaction.txid else 'N/A' }}</div>
+            <div class="compact-stat-label">Transaction ID</div>
+            <div class="stat-trend">
+                <span class="trend-indicator up">✓</span>
+                <span class="trend-value">Confirmed</span>
+            </div>
+        </div>
+
+        <div class="compact-stat-card">
+            <div class="stat-header">
+                <div class="stat-icon">💵</div>
+                <h4 class="stat-title">Amount</h4>
+            </div>
+            <div class="compact-stat-value">${{ transaction.amount|default(0)|format_number }}</div>
+            <div class="compact-stat-label">Transfer Value</div>
+            <div class="stat-subtext">
+                <span class="subtext-label">Type:</span>
+                <span class="subtext-value">{{ transaction.tx_type|title if transaction.tx_type else 'Transfer' }}</span>
+            </div>
+        </div>
+
+        <div class="compact-stat-card">
+            <div class="stat-header">
+                <div class="stat-icon">⛓️</div>
+                <h4 class="stat-title">Block Info</h4>
+            </div>
+            <div class="compact-stat-value">#{{ transaction.block_index|default('Pending')|format_number }}</div>
+            <div class="compact-stat-label">Block Height</div>
+            <div class="stat-subtext">
+                <span class="subtext-label">Time:</span>
+                <span class="subtext-value">{{ transaction.timestamp_readable|default('Unknown') }}</span>
+            </div>
+        </div>
+
+        <div class="compact-stat-card">
+            <div class="stat-header">
+                <div class="stat-icon">📊</div>
+                <h4 class="stat-title">Status</h4>
+            </div>
+            <div class="compact-stat-value">{{ transaction.status|default('Confirmed')|title }}</div>
+            <div class="compact-stat-label">Transaction State</div>
+            <div class="stat-subtext">
+                <span class="subtext-label">Size:</span>
+                <span class="subtext-value">{{ transaction.size|default(0)|format_number }} B</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Search Bar -->
+    <div class="search-section">
+        <div class="search-header">
+            <h3>Transaction Explorer</h3>
+            <div class="search-stats">
+                <span class="search-stat">TX ID: {{ transaction.txid|truncate(16, True, '...') if transaction.txid else 'N/A' }}</span>
+                <span class="search-stat">Type: {{ transaction.tx_type|title if transaction.tx_type else 'Transfer' }}</span>
+            </div>
+        </div>
+        <div class="search-container">
+            <div class="search-input-group">
+                <div class="search-icon">🔍</div>
+                <input type="text" 
+                       class="search-input" 
+                       id="transactionSearch" 
+                       placeholder="Search other transactions, addresses..."
+                       onkeyup="filterTable()">
+            </div>
+            <button class="filter-btn" onclick="copyTransactionId()">
+                <span class="filter-btn-icon">📋</span>
+                <span class="filter-btn-text">Copy TX ID</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- Tab Navigation -->
+    <div class="tab-navigation">
+        <button class="tab-button active" onclick="openTab('overview')">
+            <span class="tab-icon">📄</span>
+            <span class="tab-text">Overview</span>
+        </button>
+        <button class="tab-button" onclick="openTab('participants')">
+            <span class="tab-icon">👥</span>
+            <span class="tab-text">Participants</span>
+        </button>
+        <button class="tab-button" onclick="openTab('raw')">
+            <span class="tab-icon">📋</span>
+            <span class="tab-text">Raw Data</span>
+        </button>
+    </div>
+
+    <!-- Overview Tab -->
+    <div id="overview" class="tab-content active">
+        <div class="compact-table-section">
+            <div class="compact-table-header">
+                <h3>Transaction Details</h3>
+                <div class="table-info">
+                    <span class="info-item">Created: {{ transaction.timestamp_readable|default('Unknown') }}</span>
+                    <span class="info-item">Size: {{ transaction.size|default(0)|format_number }} bytes</span>
+                </div>
+            </div>
+            
+            <div class="compact-table-container">
+                <table class="compact-details-table">
+                    <tbody>
+                        <tr>
+                            <td class="detail-label">Transaction ID</td>
+                            <td class="detail-value">
+                                <code class="hash-display">{{ transaction.txid|default('N/A') }}</code>
+                                <button class="copy-btn" onclick="copyToClipboard('{{ transaction.txid }}')">
+                                    <span class="copy-icon">📋</span>
+                                </button>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="detail-label">Type</td>
+                            <td class="detail-value">
+                                <span class="tx-type-badge {{ transaction.tx_type|lower if transaction.tx_type else 'transfer' }}">
+                                    {{ transaction.tx_type|title if transaction.tx_type else 'Transfer' }}
+                                </span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="detail-label">Amount</td>
+                            <td class="detail-value">
+                                <span class="amount-display">${{ transaction.amount|default(0)|format_number }}</span>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="detail-label">Block</td>
+                            <td class="detail-value">
+                                {% if transaction.block_index %}
+                                <a href="{{ url_for('blockchain_viewer') }}#block-{{ transaction.block_index }}" class="block-link">
+                                    Block #{{ transaction.block_index|format_number }}
+                                </a>
+                                {% else %}
+                                <span class="pending-text">Pending</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="detail-label">Timestamp</td>
+                            <td class="detail-value">{{ transaction.timestamp_readable|default('Unknown') }}</td>
+                        </tr>
+                        <tr>
+                            <td class="detail-label">Status</td>
+                            <td class="detail-value">
+                                <span class="status-badge confirmed">Confirmed</span>
+                            </td>
+                        </tr>
+                        {% if transaction.serial %}
+                        <tr>
+                            <td class="detail-label">Banknote Serial</td>
+                            <td class="detail-value">
+                                <code class="serial-display">{{ transaction.serial }}</code>
+                            </td>
+                        </tr>
+                        {% endif %}
+                        {% if transaction.description %}
+                        <tr>
+                            <td class="detail-label">Description</td>
+                            <td class="detail-value">{{ transaction.description }}</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Participants Tab -->
+    <div id="participants" class="tab-content">
+        <div class="compact-table-section">
+            <div class="compact-table-header">
+                <h3>Transaction Participants</h3>
+                <div class="table-info">
+                    <span class="info-item">{{ (transaction.sender and transaction.recipient)|select|length }} Participants</span>
+                    <span class="info-item">Net Change: ${{ transaction.amount|default(0)|format_number }}</span>
+                </div>
+            </div>
+            
+            <div class="compact-table-container">
+                <table class="compact-participants-table">
+                    <thead>
+                        <tr>
+                            <th>Role</th>
+                            <th>Address</th>
+                            <th>Amount</th>
+                            <th>Balance Change</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if transaction.sender %}
+                        <tr>
+                            <td>
+                                <span class="role-badge sender">Sender</span>
+                            </td>
+                            <td>
+                                <div class="address-display" title="{{ transaction.sender }}">
+                                    {% if transaction.sender|length > 20 %}
+                                        {{ transaction.sender[:10] }}...{{ transaction.sender[-8:] }}
+                                    {% else %}
+                                        {{ transaction.sender }}
+                                    {% endif %}
+                                </div>
+                                <a href="{{ url_for('profile', username=transaction.sender) }}" class="profile-link">
+                                    View Profile →
+                                </a>
+                            </td>
+                            <td class="amount-cell negative">-${{ transaction.amount|default(0)|format_number }}</td>
+                            <td class="change-cell negative">↓ Decrease</td>
+                        </tr>
+                        {% endif %}
+                        
+                        {% if transaction.recipient %}
+                        <tr>
+                            <td>
+                                <span class="role-badge recipient">Recipient</span>
+                            </td>
+                            <td>
+                                <div class="address-display" title="{{ transaction.recipient }}">
+                                    {% if transaction.recipient|length > 20 %}
+                                        {{ transaction.recipient[:10] }}...{{ transaction.recipient[-8:] }}
+                                    {% else %}
+                                        {{ transaction.recipient }}
+                                    {% endif %}
+                                </div>
+                                <a href="{{ url_for('profile', username=transaction.recipient) }}" class="profile-link">
+                                    View Profile →
+                                </a>
+                            </td>
+                            <td class="amount-cell positive">+${{ transaction.amount|default(0)|format_number }}</td>
+                            <td class="change-cell positive">↑ Increase</td>
+                        </tr>
+                        {% endif %}
+                        
+                        {% if transaction.miner %}
+                        <tr>
+                            <td>
+                                <span class="role-badge miner">Miner</span>
+                            </td>
+                            <td>
+                                <div class="address-display" title="{{ transaction.miner }}">
+                                    {% if transaction.miner|length > 20 %}
+                                        {{ transaction.miner[:10] }}...{{ transaction.miner[-8:] }}
+                                    {% else %}
+                                        {{ transaction.miner }}
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td class="amount-cell reward">+${{ transaction.fee|default('0.001')|format_number }}</td>
+                            <td class="change-cell reward">⛏️ Reward</td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Raw Data Tab -->
+    <div id="raw" class="tab-content">
+        <div class="compact-table-section">
+            <div class="compact-table-header">
+                <h3>Raw Transaction Data</h3>
+                <div class="table-info">
+                    <span class="info-item">JSON Format</span>
+                    <span class="info-item">
+                        <button class="copy-btn" onclick="copyRawData()">
+                            <span class="copy-icon">📋</span>
+                            Copy JSON
+                        </button>
+                    </span>
+                </div>
+            </div>
+            
+            <div class="compact-table-container">
+                <pre class="raw-data-display" id="rawData">{{ transaction|tojson(indent=2) }}</pre>
+            </div>
+        </div>
+    </div>
+
+    <!-- Related Transactions -->
+    <div class="compact-table-section">
+        <div class="compact-table-header">
+            <h3>Related Transactions</h3>
+            <div class="table-info">
+                <span class="info-item">From Same Block</span>
+                <span class="info-item">{{ related_transactions|length }} Found</span>
+            </div>
+        </div>
+        
+        <div class="compact-table-container">
+            <table class="compact-transactions-table">
+                <thead>
+                    <tr>
+                        <th>TX ID</th>
+                        <th>Type</th>
+                        <th>Amount</th>
+                        <th>Sender</th>
+                        <th>Recipient</th>
+                        <th>Time</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for tx in related_transactions %}
+                    <tr>
+                        <td>
+                            <a href="{{ url_for('transaction_detail', txid=tx.txid) }}" class="tx-link">
+                                {{ tx.txid|truncate(12, True, '...') }}
+                            </a>
+                        </td>
+                        <td>
+                            <span class="tx-type-badge {{ tx.tx_type|lower if tx.tx_type else 'transfer' }}">
+                                {{ tx.tx_type|title if tx.tx_type else 'Transfer' }}
+                            </span>
+                        </td>
+                        <td>${{ tx.amount|default(0)|format_number }}</td>
+                        <td class="address-cell">
+                            {{ tx.sender|truncate(10, True, '...') if tx.sender else 'System' }}
+                        </td>
+                        <td class="address-cell">
+                            {{ tx.recipient|truncate(10, True, '...') if tx.recipient else 'System' }}
+                        </td>
+                        <td>{{ tx.timestamp_readable|truncate(8, False, '') if tx.timestamp_readable else '--:--:--' }}</td>
+                    </tr>
+                    {% else %}
+                    <tr>
+                        <td colspan="6" class="empty-state">
+                            <div class="empty-content">
+                                <span class="empty-icon">📭</span>
+                                <span>No related transactions found</span>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Transaction-specific styles */
+.compact-details-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+
+.compact-details-table td {
+    padding: 1rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.detail-label {
+    width: 200px;
+    color: var(--text-tertiary);
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.detail-value {
+    color: var(--text-primary);
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Roboto Mono', monospace;
+}
+
+.hash-display {
+    background: rgba(255, 255, 255, 0.05);
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Roboto Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--primary);
+}
+
+.copy-btn {
+    margin-left: 0.5rem;
+    padding: 0.25rem 0.5rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    font-size: 0.75rem;
+    transition: all 0.2s ease;
+}
+
+.copy-btn:hover {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+.tx-type-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.tx-type-badge.transfer {
+    background: rgba(0, 122, 255, 0.2);
+    color: var(--primary);
+    border: 1px solid var(--primary);
+}
+
+.tx-type-badge.genesis {
+    background: rgba(255, 45, 85, 0.2);
+    color: var(--pink);
+    border: 1px solid var(--pink);
+}
+
+.tx-type-badge.reward {
+    background: rgba(255, 149, 0, 0.2);
+    color: var(--warning);
+    border: 1px solid var(--warning);
+}
+
+.amount-display {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--success);
+}
+
+.block-link {
+    color: var(--info);
+    text-decoration: none;
+    font-weight: 500;
+}
+
+.block-link:hover {
+    text-decoration: underline;
+}
+
+.pending-text {
+    color: var(--warning);
+    font-style: italic;
+}
+
+.status-badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.status-badge.confirmed {
+    background: rgba(48, 209, 88, 0.2);
+    color: var(--success);
+    border: 1px solid var(--success);
+}
+
+.serial-display {
+    background: rgba(191, 90, 242, 0.1);
+    padding: 0.5rem 0.75rem;
+    border-radius: 6px;
+    border: 1px solid var(--purple);
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Roboto Mono', monospace;
+    font-size: 0.875rem;
+    color: var(--purple);
+}
+
+/* Participants table */
+.compact-participants-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+
+.compact-participants-table th {
+    padding: 1rem;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.1);
+}
+
+.compact-participants-table td {
+    padding: 1rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.role-badge {
+    display: inline-block;
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.role-badge.sender {
+    background: rgba(255, 59, 48, 0.2);
+    color: #ff3b30;
+    border: 1px solid #ff3b30;
+}
+
+.role-badge.recipient {
+    background: rgba(48, 209, 88, 0.2);
+    color: var(--success);
+    border: 1px solid var(--success);
+}
+
+.role-badge.miner {
+    background: rgba(255, 149, 0, 0.2);
+    color: var(--warning);
+    border: 1px solid var(--warning);
+}
+
+.address-display {
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Roboto Mono', monospace;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.profile-link {
+    font-size: 0.75rem;
+    color: var(--info);
+    text-decoration: none;
+}
+
+.profile-link:hover {
+    text-decoration: underline;
+}
+
+.amount-cell {
+    font-weight: 600;
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Roboto Mono', monospace;
+}
+
+.amount-cell.negative {
+    color: #ff3b30;
+}
+
+.amount-cell.positive {
+    color: var(--success);
+}
+
+.amount-cell.reward {
+    color: var(--warning);
+}
+
+.change-cell {
+    font-size: 0.75rem;
+    font-weight: 500;
+}
+
+.change-cell.negative {
+    color: #ff3b30;
+}
+
+.change-cell.positive {
+    color: var(--success);
+}
+
+.change-cell.reward {
+    color: var(--warning);
+}
+
+/* Raw data display */
+.raw-data-display {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1.5rem;
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Roboto Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--text-primary);
+    line-height: 1.5;
+    margin: 0;
+    overflow-x: auto;
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+/* Related transactions table */
+.compact-transactions-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.75rem;
+}
+
+.compact-transactions-table th {
+    padding: 1rem;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-secondary);
+    border-bottom: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.1);
+}
+
+.compact-transactions-table td {
+    padding: 0.875rem 1rem;
+    border-bottom: 1px solid var(--border);
+}
+
+.tx-link {
+    color: var(--primary);
+    text-decoration: none;
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Roboto Mono', monospace;
+}
+
+.tx-link:hover {
+    text-decoration: underline;
+}
+
+.address-cell {
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Roboto Mono', monospace;
+    color: var(--text-secondary);
+}
+
+.empty-state {
+    text-align: center;
+    padding: 3rem 1rem;
+}
+
+.empty-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    color: var(--text-tertiary);
+}
+
+.empty-icon {
+    font-size: 2rem;
+    opacity: 0.5;
+}
+</style>
+
+<script>
+function openTab(tabName) {
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    
+    document.getElementById(tabName).classList.add('active');
+    
+    document.querySelectorAll('.tab-button').forEach(button => {
+        button.classList.remove('active');
+    });
+    
+    const buttons = document.querySelectorAll('.tab-button');
+    for (let button of buttons) {
+        if (button.getAttribute('onclick').includes(tabName)) {
+            button.classList.add('active');
+            break;
+        }
+    }
+    
+    sessionStorage.setItem('transactionActiveTab', tabName);
+}
+
+function filterTable() {
+    const searchInput = document.getElementById('transactionSearch').value.toLowerCase();
+    // Implement search functionality if needed
+}
+
+function copyTransactionId() {
+    const txid = "{{ transaction.txid }}";
+    navigator.clipboard.writeText(txid).then(() => {
+        alert('Transaction ID copied to clipboard!');
+    });
+}
+
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        alert('Copied to clipboard!');
+    });
+}
+
+function copyRawData() {
+    const rawData = document.getElementById('rawData').textContent;
+    navigator.clipboard.writeText(rawData).then(() => {
+        alert('Raw data copied to clipboard!');
+    });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const activeTab = sessionStorage.getItem('transactionActiveTab') || 'overview';
+    openTab(activeTab);
+});
+</script>
+{% endblock %}

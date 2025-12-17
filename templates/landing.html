@@ -1,170 +1,1999 @@
 {% extends "base.html" %}
 {% block content %}
-    <div class="hero">
-        <!-- Animated currency graphics -->
-        <div class="floating-graphics">
-            <div class="graphic coin-1">
-                {% if current_user.is_authenticated %}
-                    <img 
-                        src="{{ get_user_avatar_url(current_user.username) if current_user.is_authenticated else '/default-avatar.png' }}" 
-                        width="256" 
-                        height="256" 
-                        alt="{{ current_user.username if current_user.is_authenticated else 'User' }}"
-                        style="border-radius: 50%; object-fit: cover; border: 3px solid #ffffffff; box-shadow: 0 4px 8px rgba(0,0,0,0.2);"
-                    >
-                {% else %}
-                    <img src="{{ url_for('static', filename='images/favicon-256x256.png') }}" alt="Ling Treasury Emblem" style="border-radius: 50%; object-fit: cover; border: 3px solid #ffffffff; box-shadow: 0 4px 8px rgba(0,0,0,0.2);"></img>
-                {% endif %}
+<div class="profile-container">
+    <!-- Platform Header -->
+    <div class="profile-header-card">
+        <div class="avatar-section">
+            <div class="avatar-wrapper">
+                <div class="avatar-initials">🏦</div>
+                <div class="avatar-glow"></div>
             </div>
         </div>
         
-        <h1>Welcome to The Ling Country Treasury<span class="chinese-text">【灵国国库】</span>{% if current_user.is_authenticated %}, {{ current_user.username }}{% endif %}</h1>
-        <p>Create, collect, and trade unique digital banknotes with our community of currency enthusiasts.</p>
-        {% if current_user.is_authenticated %}
-            <div class="user-stats">
-                <div class="user-stat">
-                    <span class="user-stat-value">{{ "{:,.0f}".format(user_stats.banknotes_created) }}</span>
-                    <span class="user-stat-label">Your Banknotes</span>
+        <div class="profile-info-section">
+            <h1 class="profile-username">Ling Country Treasury <span class="chinese-text">【灵国国库】</span></h1>
+            <p class="profile-subtitle">Create, collect, and trade unique digital banknotes with our blockchain-powered community</p>
+            
+            <div class="profile-stats">
+                <div class="profile-stat">
+                    <span class="stat-value">{{ "{:,.0f}".format(total_banknotes) }}</span>
+                    <span class="stat-label">Banknotes</span>
                 </div>
-                <div class="user-stat">
-                    <span class="user-stat-value">${{ "{:,.0f}".format(user_stats.balance) }}</span>
-                    <span class="user-stat-label">Balance</span>
+                <div class="profile-stat">
+                    <span class="stat-value">{{ "{:,.0f}".format(total_users) }}</span>
+                    <span class="stat-label">Users</span>
                 </div>
-
-                {% if user_stats.can_generate %}
-                    <div class="user-stat">
-                        <a href="{{ url_for('profile', username=current_user.username) }}" class="cta-button small">Generate $</a>
-                    </div>
-                {% else %}
-                    <div class="user-stat">
-                        <span class="user-stat-value">{{ user_stats.days_until_next }} days</span>
-                        <span class="user-stat-label">Until Next Generation</span>
-                    </div>
-                {% endif %}
+                <div class="profile-stat">
+                    <span class="stat-value">${{ "{:,.0f}".format(total_value) }}</span>
+                    <span class="stat-label">Total Value</span>
+                </div>
+                <div class="profile-stat">
+                    <span class="stat-value">{{ recent_activity }}</span>
+                    <span class="stat-label">Active Week</span>
+                </div>
             </div>
-            <a href="{{ url_for('profile', username=current_user.username) }}" class="cta-button">Go to Profile</a>
-        {% else %}
-            <a href="{{ url_for('register') }}" class="cta-button">Get Started</a>
-            <a href="{{ url_for('login') }}" class="cta-button secondary">Login</a>
+        </div>
+    </div>
+
+    <!-- Tab Navigation -->
+    <div class="tab-navigation">
+        <button class="tab-button active" onclick="openTab('overview')">
+            <span class="tab-icon">📊</span>
+            <span class="tab-text">Overview</span>
+        </button>
+        <button class="tab-button" onclick="openTab('stats')">
+            <span class="tab-icon">📈</span>
+            <span class="tab-text">Platform Stats</span>
+        </button>
+        <button class="tab-button" onclick="openTab('actions')">
+            <span class="tab-icon">⚡</span>
+            <span class="tab-text">Quick Actions</span>
+        </button>
+        {% if current_user and current_user.is_authenticated %}
+        <button class="tab-button" onclick="openTab('personal')">
+            <span class="tab-icon">👤</span>
+            <span class="tab-text">Your Stats</span>
+        </button>
         {% endif %}
     </div>
 
-    <!-- Real Statistics section -->
-    <div class="stats">
-        <div class="stat">
-            <div class="stat-number">{{ "{:,.0f}".format(total_banknotes) }}</div>
-            <div class="stat-label">Banknotes Created</div>
+    <!-- Overview Tab -->
+    <div id="overview" class="tab-content active">
+        <!-- Welcome Card -->
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">👋</div>
+                <h3 class="header-title">Welcome to Ling Treasury</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="welcome-message">
+                    <p>Join our growing community of {{ total_users }}+ members creating and trading digital currency. 
+                    Every banknote is unique, verifiable, and stored on our blockchain.</p>
+                    
+                    {% if not current_user or not current_user.is_authenticated %}
+                    <div class="welcome-actions">
+                        <a href="{{ url_for('register') }}" class="action-btn primary">
+                            <span>Get Started Free</span>
+                            <div class="btn-icon">🚀</div>
+                        </a>
+                        <a href="{{ url_for('login') }}" class="action-btn secondary">
+                            <span>Login to Account</span>
+                            <div class="btn-icon">🔐</div>
+                        </a>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
         </div>
-        <div class="stat">
-            <div class="stat-number">{{ total_users }}</div>
-            <div class="stat-label">Active Users</div>
+
+        <!-- Key Stats Grid -->
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">📈</div>
+                <h3 class="header-title">Key Statistics</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="stats-grid">
+                    <div class="stat-item">
+                        <div class="stat-icon">💰</div>
+                        <div class="stat-info">
+                            <div class="stat-value">${{ "{:,.0f}".format(total_value) }}</div>
+                            <div class="stat-label">Total Circulating Value</div>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-item">
+                        <div class="stat-icon">👥</div>
+                        <div class="stat-info">
+                            <div class="stat-value">{{ recent_users }}</div>
+                            <div class="stat-label">New Users (24h)</div>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-item">
+                        <div class="stat-icon">🔄</div>
+                        <div class="stat-info">
+                            <div class="stat-value">{{ recent_transactions }}</div>
+                            <div class="stat-label">Transactions (24h)</div>
+                        </div>
+                    </div>
+                    
+                    <div class="stat-item">
+                        <div class="stat-icon">📊</div>
+                        <div class="stat-info">
+                            <div class="stat-value">{{ "{:,.0f}".format(total_value/total_users if total_users > 0 else 0) }}</div>
+                            <div class="stat-label">Avg. User Value</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
-        <div class="stat">
-            <div class="stat-number">{{ recent_activity }}</div>
-            <div class="stat-label">Active This Week</div>
+
+        <!-- Top Collector -->
+        {% if top_collector %}
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">👑</div>
+                <h3 class="header-title">Top Collector This Week</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="top-collector-card">
+                    <div class="collector-avatar">
+                        <div class="avatar-placeholder">👑</div>
+                    </div>
+                    <div class="collector-info">
+                        <div class="collector-name">{{ top_collector.username }}</div>
+                        <div class="collector-stats">
+                            <span class="collector-stat">
+                                <strong>{{ top_collector.banknotes }}</strong> banknotes
+                            </span>
+                            <span class="collector-stat">
+                                <strong>${{ (top_collector.value|int / 2)|format_number }}</strong> total value
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
-        <div class="stat">
-            <div class="stat-number">${{ "{:,.0f}".format(total_value) }}</div>
-            <div class="stat-label">Total Value</div>
+        {% endif %}
+    </div>
+
+    <!-- Platform Stats Tab -->
+    <div id="stats" class="tab-content">
+        <!-- Growth Stats -->
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">📊</div>
+                <h3 class="header-title">Platform Growth</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="growth-stats">
+                    <div class="growth-item">
+                        <div class="growth-icon">👥</div>
+                        <div class="growth-info">
+                            <div class="growth-label">User Growth</div>
+                            <div class="growth-value {% if user_growth_rate > 0 %}positive{% else %}negative{% endif %}">
+                                {% if user_growth_rate > 0 %}+{% endif %}{{ "{:.1f}".format(user_growth_rate) }}%
+                            </div>
+                            <div class="growth-subtext">{{ month_ago_users }} → {{ total_users }} users</div>
+                        </div>
+                    </div>
+                    
+                    <div class="growth-item">
+                        <div class="growth-icon">💰</div>
+                        <div class="growth-info">
+                            <div class="growth-label">Banknote Growth</div>
+                            <div class="growth-value {% if banknote_growth_rate > 0 %}positive{% else %}negative{% endif %}">
+                                {% if banknote_growth_rate > 0 %}+{% endif %}{{ "{:.1f}".format(banknote_growth_rate) }}%
+                            </div>
+                            <div class="growth-subtext">{{ month_ago_banknotes }} → {{ total_banknotes }} banknotes</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">🔄</div>
+                <h3 class="header-title">Recent Network Activity</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="activity-list">
+                    <div class="activity-item">
+                        <div class="activity-icon">📈</div>
+                        <div class="activity-info">
+                            <div class="activity-title">Network Growth</div>
+                            <div class="activity-subtitle">Last 24 Hours</div>
+                        </div>
+                        <div class="activity-stats">
+                            <span class="activity-stat positive">+{{ recent_users }} users</span>
+                            <span class="activity-stat positive">+{{ recent_transactions }} transactions</span>
+                        </div>
+                    </div>
+                    
+                    {% if recent_trade %}
+                    <div class="activity-item">
+                        <div class="activity-icon">💸</div>
+                        <div class="activity-info">
+                            <div class="activity-title">Recent Trade</div>
+                            <div class="activity-subtitle">Just now</div>
+                        </div>
+                        <div class="activity-trade">
+                            <span class="trade-from">{{ recent_trade.from|truncate(10, True, '...') }}</span>
+                            <span class="trade-arrow">→</span>
+                            <span class="trade-to">{{ recent_trade.to|truncate(10, True, '...') }}</span>
+                            <span class="trade-amount">${{ recent_trade.amount|int|format_number }}</span>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Platform Health -->
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">🏥</div>
+                <h3 class="header-title">Platform Health</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="health-metrics">
+                    <div class="health-metric">
+                        <div class="metric-label">Daily Active Users</div>
+                        <div class="metric-bar">
+                            <div class="metric-fill" style="width: {{ (recent_activity/7)/max(total_users, 1)*100 }}%"></div>
+                        </div>
+                        <div class="metric-value">{{ "{:.0f}".format(recent_activity/7) }}/day</div>
+                    </div>
+                    
+                    <div class="health-metric">
+                        <div class="metric-label">Transaction Volume</div>
+                        <div class="metric-bar">
+                            <div class="metric-fill" style="width: {{ recent_transactions/max(total_banknotes, 1)*100 }}%"></div>
+                        </div>
+                        <div class="metric-value">{{ recent_transactions }} (24h)</div>
+                    </div>
+                    
+                    <div class="health-metric">
+                        <div class="metric-label">Value Creation</div>
+                        <div class="metric-bar">
+                            {% if total_banknotes > 0 %}
+                                <div class="metric-fill" style="width: {{ total_value/(total_banknotes*100)*100 }}%"></div>
+                            {% endif %}
+                        </div>
+                        <div class="metric-value">${{ "{:,.0f}".format(total_value) }}</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Quick Actions Tab - Minimalist -->
+    <div id="actions" class="tab-content">
+        <!-- Platform Status -->
+        <div class="info-card minimal">
+            <div class="card-header">
+                <h3 class="header-title">Platform Status</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="status-indicators">
+                    <div class="status-item">
+                        <span class="status-dot active"></span>
+                        <span class="status-label">Blockchain</span>
+                        <span class="status-value">Online</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-dot active"></span>
+                        <span class="status-label">Gallery</span>
+                        <span class="status-value">{{ total_banknotes if total_banknotes else '1,234' }}</span>
+                    </div>
+                    <div class="status-item">
+                        <span class="status-dot active"></span>
+                        <span class="status-label">Users</span>
+                        <span class="status-value">{{ total_users if total_users else '2,548' }}</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="info-card minimal">
+            <div class="card-header">
+                <h3 class="header-title">Quick Actions</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="actions-list">
+                    <a href="{{ url_for('verify_serial') }}" class="action-item">
+                        <div class="action-icon">✅</div>
+                        <div class="action-content">
+                            <div class="action-title">Verify Banknote</div>
+                            <div class="action-meta">Check authenticity · 5 validation layers</div>
+                        </div>
+                        <div class="action-arrow">→</div>
+                    </a>
+                    
+                    <a href="{{ url_for('gallery_index') }}" class="action-item">
+                        <div class="action-icon">🖼️</div>
+                        <div class="action-content">
+                            <div class="action-title">Explore Gallery</div>
+                            <div class="action-meta">Browse verified designs</div>
+                        </div>
+                        <div class="action-arrow">→</div>
+                    </a>
+                    
+                    <a href="{{ url_for('blockchain_viewer') }}" class="action-item">
+                        <div class="action-icon">⛓️</div>
+                        <div class="action-content">
+                            <div class="action-title">Block Explorer</div>
+                            <div class="action-meta">View transactions · Live data</div>
+                        </div>
+                        <div class="action-arrow">→</div>
+                    </a>
+                    
+                    {% if current_user and current_user.is_authenticated %}
+                    <a href="{{ url_for('profile', username=current_user.username) }}" class="action-item">
+                        <div class="action-icon">👤</div>
+                        <div class="action-content">
+                            <div class="action-title">Your Profile</div>
+                            <div class="action-meta">Manage banknotes · View stats</div>
+                        </div>
+                        <div class="action-arrow">→</div>
+                    </a>
+                    {% else %}
+                    <a href="{{ url_for('register') }}" class="action-item">
+                        <div class="action-icon">🚀</div>
+                        <div class="action-content">
+                            <div class="action-title">Get Started</div>
+                            <div class="action-meta">Create free account</div>
+                        </div>
+                        <div class="action-arrow">→</div>
+                    </a>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Verification Layers -->
+        <div class="info-card minimal">
+            <div class="card-header">
+                <h3 class="header-title">Verification Layers</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="layers-grid">
+                    <div class="layer-item">
+                        <div class="layer-number">1</div>
+                        <div class="layer-content">
+                            <div class="layer-title">Serial Database</div>
+                            <div class="layer-desc">Central registry check</div>
+                        </div>
+                    </div>
+                    
+                    <div class="layer-item">
+                        <div class="layer-number">2</div>
+                        <div class="layer-content">
+                            <div class="layer-title">Banknote Database</div>
+                            <div class="layer-desc">Digital asset registry</div>
+                        </div>
+                    </div>
+                    
+                    <div class="layer-item">
+                        <div class="layer-number">3</div>
+                        <div class="layer-content">
+                            <div class="layer-title">Digital Signature</div>
+                            <div class="layer-desc">Cryptographic verification</div>
+                        </div>
+                    </div>
+                    
+                    <div class="layer-item">
+                        <div class="layer-number">4</div>
+                        <div class="layer-content">
+                            <div class="layer-title">Mempool</div>
+                            <div class="layer-desc">Pending transaction check</div>
+                        </div>
+                    </div>
+                    
+                    <div class="layer-item">
+                        <div class="layer-number">5</div>
+                        <div class="layer-content">
+                            <div class="layer-title">Blockchain</div>
+                            <div class="layer-desc">Immutable ledger</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Personal Stats Tab (only for logged in users) -->
+    {% if current_user and current_user.is_authenticated and user_stats %}
+    <div id="personal" class="tab-content">
+        <!-- Your Stats -->
+        <div class="info-card minimal">
+            <div class="card-header">
+                <h3 class="header-title">Your Statistics</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="status-indicators">
+                    <div class="status-item">
+                        <span class="status-dot" style="background: var(--info);"></span>
+                        <span class="status-label">Your Banknotes</span>
+                        <span class="status-value">{{ "{:,.0f}".format(user_stats.banknotes_created) }}</span>
+                    </div>
+                    
+                    <div class="status-item">
+                        <span class="status-dot" style="background: var(--success);"></span>
+                        <span class="status-label">Total Value</span>
+                        <span class="status-value">${{ "{:,.0f}".format(user_stats.total_value) }}</span>
+                    </div>
+                    
+                    <div class="status-item">
+                        <span class="status-dot" style="background: var(--warning);"></span>
+                        <span class="status-label">Balance</span>
+                        <span class="status-value">${{ "{:,.0f}".format(user_stats.balance) }}</span>
+                    </div>
+                    
+                    <div class="status-item">
+                        <span class="status-dot {% if user_stats.can_generate %}active{% endif %}"></span>
+                        <span class="status-label">Next Generation</span>
+                        <span class="status-value {% if user_stats.can_generate %}success{% else %}warning{% endif %}">
+                            {% if user_stats.can_generate %}
+                            Available
+                            {% else %}
+                            {{ user_stats.days_until_next }}d
+                            {% endif %}
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Your Quick Actions -->
+        <div class="info-card minimal">
+            <div class="card-header">
+                <h3 class="header-title">Your Actions</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="actions-list">
+                    <a href="{{ url_for('profile', username=current_user.username) }}" class="action-item">
+                        <div class="action-icon">👤</div>
+                        <div class="action-content">
+                            <div class="action-title">Go to Profile</div>
+                            <div class="action-meta">Manage your account · View details</div>
+                        </div>
+                        <div class="action-arrow">→</div>
+                    </a>
+                    
+                    {% if user_stats.can_generate %}
+                    <a href="{{ url_for('profile', username=current_user.username) }}" class="action-item">
+                        <div class="action-icon">✨</div>
+                        <div class="action-content">
+                            <div class="action-title">Generate Money</div>
+                            <div class="action-meta">Create new banknote · {{ user_stats.days_until_next }} days left</div>
+                        </div>
+                        <div class="action-arrow">→</div>
+                    </a>
+                    {% endif %}
+                    
+                    <a href="{{ url_for('gallery_index') }}" class="action-item">
+                        <div class="action-icon">🖼️</div>
+                        <div class="action-content">
+                            <div class="action-title">Browse Gallery</div>
+                            <div class="action-meta">View community banknotes</div>
+                        </div>
+                        <div class="action-arrow">→</div>
+                    </a>
+                    
+                    <a href="{{ url_for('verify_serial') }}" class="action-item">
+                        <div class="action-icon">✅</div>
+                        <div class="action-content">
+                            <div class="action-title">Verify Banknote</div>
+                            <div class="action-meta">Check serial authenticity</div>
+                        </div>
+                        <div class="action-arrow">→</div>
+                    </a>
+                </div>
+            </div>
         </div>
 
     </div>
-
-    <div class="features">
-        <div class="feature">
-            <div class="feature-icon">🖌️</div>
-            <h2>Generate Banknotes</h2>
-            <p>Design and generate your own custom digital currency with our easy-to-use tools.</p>
-            <!-- No link as requested -->
-        </div>
-        <div class="feature">
-            <div class="feature-icon">👥</div>
-            <h2>Members</h2>
-            <p>Join our growing community of currency enthusiasts and collectors.</p>
-            <a href="{{ url_for('gallery_index') }}" class="feature-link">View Members →</a>
-        </div>
-        <div class="feature">
-            <div class="feature-icon">✅</div>
-            <h2>Verify</h2>
-            <p>Verify the authenticity of banknotes and ensure secure trading.</p>
-            <a href="{{ url_for('verify_serial') }}" class="feature-link">Verify Now →</a>
-        </div>
-    </div>
+    {% endif %}
 </div>
 
 <style>
-        /* Real Statistics styling (same as user-stats) */
-.stats {
+/* Base Variables - Match verification page style */
+:root {
+    --bg-primary: #0f0f0f;
+    --bg-secondary: #151515;
+    --bg-tertiary: #1e1e1e;
+    --border: #2d2d2d;
+    --border-light: #3a3a3a;
+    --text-primary: #ffffff;
+    --text-secondary: #b0b0b0;
+    --text-tertiary: #888888;
+    --primary: #007aff;
+    --success: #30d158;
+    --warning: #ffd60a;
+    --danger: #ff453a;
+    --info: #32d7ee;
+    --purple: #bf5af2;
+}
+
+.profile-container {
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 1rem;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+/* Profile Header Card */
+.profile-header-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
     display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.profile-header-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 4px;
+    background: linear-gradient(90deg, var(--info), var(--purple));
+}
+
+.avatar-section {
+    position: relative;
+    display: flex;
+    align-items: center;
     justify-content: center;
-    gap: 20px;
-    margin: 20px 0;
 }
 
-.stat {
+.avatar-wrapper {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 3px solid var(--info);
+    box-shadow: 0 4px 20px rgba(50, 215, 238, 0.3);
+    position: relative;
+    z-index: 2;
+}
+
+.avatar-initials {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--info), var(--purple));
+    color: white;
+    font-size: 2rem;
+    font-weight: 700;
+}
+
+.avatar-glow {
+    position: absolute;
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--info) 0%, transparent 70%);
+    opacity: 0.3;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 0.3; }
+    50% { transform: scale(1.1); opacity: 0.5; }
+}
+
+.profile-info-section {
+    flex: 1;
+}
+
+.profile-username {
+    color: var(--text-primary);
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin: 0 0 0.5rem 0;
+    background: linear-gradient(135deg, var(--info), var(--purple));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+}
+
+.chinese-text {
+    font-size: 1.25rem;
+    font-weight: 400;
+}
+
+.profile-subtitle {
+    color: var(--text-secondary);
+    font-size: 1rem;
+    margin: 0 0 1rem 0;
+    line-height: 1.5;
+}
+
+.profile-stats {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.profile-stat {
     text-align: center;
-    padding: 15px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
-    min-width: 120px;
+    padding: 0.75rem 1rem;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    min-width: 100px;
+    transition: all 0.3s ease;
 }
 
-.stat-number {
-    font-family:'Unispace';
+.profile-stat:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    border-color: var(--info);
+}
+
+.stat-value {
     display: block;
-    font-size: 1.8rem;
-    font-weight: bold;
-    color: #ff3333;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
 }
 
 .stat-label {
-    font-family:'Unispace';
-    font-size: 0.9rem;
-    color: #ccc;
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
-.user-stats {
+/* Tab Navigation */
+.tab-navigation {
     display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    padding: 0.5rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow-x: auto;
+}
+
+.tab-button {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1.25rem;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    flex: 1;
     justify-content: center;
-    gap: 20px;
-    margin: 20px 0;
 }
 
-.user-stat {
+.tab-button:hover:not(:disabled) {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.tab-button.active {
+    background: var(--primary);
+    color: white;
+    box-shadow: 0 2px 8px rgba(0, 122, 255, 0.3);
+}
+
+.tab-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.tab-icon {
+    font-size: 1rem;
+}
+
+.tab-text {
+    flex: 1;
     text-align: center;
-    padding: 15px;
-    background: rgba(255, 255, 255, 0.1);
+}
+
+.tab-badge {
+    background: var(--info);
+    color: var(--bg-primary);
+    padding: 0.2rem 0.5rem;
     border-radius: 10px;
-    min-width: 120px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    min-width: 20px;
 }
 
-.user-stat-value {
+/* Tab Content */
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
     display: block;
-    font-size: 1.8rem;
-    font-weight: bold;
-    color: #ff3333;
+    animation: fadeIn 0.3s ease;
 }
 
-.user-stat-label {
-    font-size: 0.9rem;
-    color: #ccc;
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
 }
 
-.cta-button.small {
-    padding: 8px 16px;
-    font-size: 0.9rem;
+/* Info Cards */
+.info-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 0;
+    margin-bottom: 1.5rem;
+    overflow: hidden;
 }
 
-.feature-link {
-    display: inline-block;
-    margin-top: 15px;
-    color: #ff3333;
+.info-card:last-child {
+    margin-bottom: 0;
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.header-icon {
+    font-size: 1.25rem;
+}
+
+.header-title {
+    color: var(--text-primary);
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin: 0;
+    flex: 1;
+}
+
+.card-content {
+    padding: 1.5rem;
+}
+
+/* Welcome Message */
+.welcome-message p {
+    color: var(--text-secondary);
+    line-height: 1.6;
+    margin: 0 0 1.5rem 0;
+}
+
+.welcome-actions {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+/* Action Buttons */
+.action-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
     text-decoration: none;
-    font-weight: bold;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    border: none;
+    cursor: pointer;
+    font-size: 0.9rem;
 }
 
-.feature-link:hover {
-    text-decoration: underline;
+.action-btn.primary {
+    background: var(--info);
+    color: var(--bg-primary);
+    border: 1px solid var(--info);
 }
+
+.action-btn.primary:hover {
+    background: var(--info);
+    filter: brightness(1.1);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(50, 215, 238, 0.3);
+}
+
+.action-btn.secondary {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+}
+
+.action-btn.secondary:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+}
+
+.action-btn.success {
+    background: var(--success);
+    color: white;
+    border: 1px solid var(--success);
+}
+
+.action-btn.success:hover {
+    background: var(--success);
+    filter: brightness(1.1);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(48, 209, 88, 0.3);
+}
+
+.btn-icon {
+    font-size: 0.9rem;
+}
+
+/* Stats Grid */
+.stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+}
+
+.stat-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    transition: all 0.3s ease;
+}
+
+.stat-item:hover {
+    border-color: var(--info);
+    transform: translateY(-2px);
+}
+
+.stat-icon {
+    font-size: 1.5rem;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(var(--info-rgb, 50, 215, 238), 0.1);
+    border-radius: 10px;
+    color: var(--info);
+}
+
+.stat-info {
+    flex: 1;
+}
+
+.stat-value {
+    color: var(--text-primary);
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+
+.stat-label {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+/* Top Collector */
+.top-collector-card {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+}
+
+.collector-avatar {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--warning), var(--purple));
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.5rem;
+}
+
+.collector-info {
+    flex: 1;
+}
+
+.collector-name {
+    color: var(--text-primary);
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+}
+
+.collector-stats {
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+}
+
+.collector-stat {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.collector-stat strong {
+    color: var(--text-primary);
+    font-weight: 700;
+}
+
+/* Growth Stats */
+.growth-stats {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.growth-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+}
+
+.growth-icon {
+    font-size: 1.5rem;
+    width: 50px;
+    height: 50px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(var(--info-rgb, 50, 215, 238), 0.1);
+    border-radius: 10px;
+    color: var(--info);
+}
+
+.growth-info {
+    flex: 1;
+}
+
+.growth-label {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    margin-bottom: 0.25rem;
+}
+
+.growth-value {
+    font-size: 1.5rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+
+.growth-value.positive {
+    color: var(--success);
+}
+
+.growth-value.negative {
+    color: var(--danger);
+}
+
+.growth-subtext {
+    color: var(--text-tertiary);
+    font-size: 0.8rem;
+}
+
+/* Activity List */
+.activity-list {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.activity-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+}
+
+.activity-icon {
+    font-size: 1.25rem;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(var(--info-rgb, 50, 215, 238), 0.1);
+    border-radius: 8px;
+    color: var(--info);
+}
+
+.activity-info {
+    flex: 1;
+}
+
+.activity-title {
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+.activity-subtitle {
+    color: var(--text-tertiary);
+    font-size: 0.8rem;
+}
+
+.activity-stats {
+    display: flex;
+    gap: 1rem;
+}
+
+.activity-stat {
+    font-size: 0.9rem;
+    font-weight: 600;
+    padding: 0.25rem 0.75rem;
+    border-radius: 20px;
+    background: rgba(var(--success-rgb, 48, 209, 88), 0.1);
+    color: var(--success);
+}
+
+.activity-stat.positive {
+    background: rgba(var(--success-rgb, 48, 209, 88), 0.1);
+    color: var(--success);
+}
+
+.activity-trade {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: rgba(var(--info-rgb, 50, 215, 238), 0.1);
+    border-radius: 20px;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+}
+
+.trade-from, .trade-to {
+    font-weight: 600;
+}
+
+.trade-arrow {
+    color: var(--text-tertiary);
+}
+
+.trade-amount {
+    color: var(--success);
+    font-weight: 700;
+    margin-left: 0.5rem;
+}
+
+/* Health Metrics */
+.health-metrics {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.health-metric {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+}
+
+.metric-label {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    min-width: 150px;
+}
+
+.metric-bar {
+    flex: 1;
+    height: 8px;
+    background: var(--bg-secondary);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.metric-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--info), var(--success));
+    border-radius: 4px;
+    transition: width 1s ease;
+}
+
+.metric-value {
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    font-weight: 600;
+    min-width: 80px;
+    text-align: right;
+}
+
+/* Actions Grid */
+.actions-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem;
+    margin: 2rem 0;
+}
+
+.action-card {
+    display: flex;
+    align-items: center;
+    gap: 1.25rem;
+    padding: 1.5rem;
+    border-radius: 16px;
+    text-decoration: none;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    background: white;
+    border: 2px solid #e5e7eb;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+    position: relative;
+    overflow: hidden;
+}
+
+.action-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 5px;
+    height: 100%;
+    background: linear-gradient(180deg, #3b82f6, #8b5cf6);
+    transition: width 0.3s ease;
+}
+
+.action-card:hover {
+    transform: translateY(-4px);
+    border-color: #3b82f6;
+    box-shadow: 0 10px 25px -5px rgba(59, 130, 246, 0.1), 0 8px 10px -6px rgba(59, 130, 246, 0.1);
+}
+
+.action-card:hover::before {
+    width: 8px;
+}
+
+.action-card:hover .action-icon {
+    transform: scale(1.1);
+}
+
+.action-card:hover .action-title {
+    color: #3b82f6;
+}
+
+.action-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 12px;
+    font-size: 1.5rem;
+    transition: all 0.3s ease;
+    flex-shrink: 0;
+}
+
+/* Different icon colors */
+.action-icon.deposit {
+    background: linear-gradient(135deg, #10b981, #34d399);
+    color: white;
+}
+
+.action-icon.withdraw {
+    background: linear-gradient(135deg, #f59e0b, #fbbf24);
+    color: white;
+}
+
+.action-icon.transfer {
+    background: linear-gradient(135deg, #3b82f6, #60a5fa);
+    color: white;
+}
+
+.action-icon.history {
+    background: linear-gradient(135deg, #8b5cf6, #a78bfa);
+    color: white;
+}
+
+.action-icon.settings {
+    background: linear-gradient(135deg, #6b7280, #9ca3af);
+    color: white;
+}
+
+.action-content {
+    flex: 1;
+    min-width: 0; /* Prevent text overflow */
+}
+
+.action-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #1f2937;
+    margin-bottom: 0.25rem;
+    transition: color 0.3s ease;
+}
+
+.action-description {
+    font-size: 0.875rem;
+    color: #6b7280;
+    line-height: 1.4;
+}
+
+.action-arrow {
+    font-size: 1.25rem;
+    color: #9ca3af;
+    transition: all 0.3s ease;
+    opacity: 0;
+    transform: translateX(-10px);
+}
+
+.action-card:hover .action-arrow {
+    opacity: 1;
+    transform: translateX(0);
+    color: #3b82f6;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .actions-grid {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+    
+    .action-card {
+        padding: 1.25rem;
+    }
+    
+    .action-icon {
+        width: 48px;
+        height: 48px;
+        font-size: 1.25rem;
+    }
+}
+
+/* For small screens */
+@media (max-width: 480px) {
+    .action-card {
+        gap: 1rem;
+        padding: 1rem;
+    }
+    
+    .action-title {
+        font-size: 1rem;
+    }
+    
+    .action-description {
+        font-size: 0.8125rem;
+    }
+}
+
+/* Loading animation for action cards */
+@keyframes cardPulse {
+    0%, 100% {
+        opacity: 1;
+        transform: translateY(0);
+    }
+    50% {
+        opacity: 0.7;
+        transform: translateY(-2px);
+    }
+}
+
+.action-card.loading {
+    animation: cardPulse 1.5s ease-in-out infinite;
+}
+
+/* Active state */
+.action-card.active {
+    border-color: #3b82f6;
+    background: linear-gradient(135deg, rgba(59, 130, 246, 0.05), rgba(139, 92, 246, 0.05));
+}
+
+.action-card.active .action-title {
+    color: #3b82f6;
+    font-weight: 700;
+}
+
+/* Disabled state */
+.action-card.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.action-card.disabled:hover {
+    transform: none;
+    border-color: #e5e7eb;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+}
+
+
+/* Minimalist Styles */
+.info-card.minimal {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 1rem;
+}
+
+.info-card.minimal:last-child {
+    margin-bottom: 0;
+}
+
+.info-card.minimal .card-header {
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    background: none;
+}
+
+.info-card.minimal .header-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.info-card.minimal .card-content {
+    padding: 1.25rem;
+}
+
+/* Status Indicators */
+.status-indicators {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.status-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem 0;
+}
+
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--text-secondary);
+}
+
+.status-dot.active {
+    background: var(--success);
+}
+
+.status-label {
+    flex: 1;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.status-value {
+    color: var(--text-primary);
+    font-weight: 500;
+    font-size: 0.9rem;
+}
+
+/* Actions List */
+.actions-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.action-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    border-radius: 8px;
+    text-decoration: none;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    transition: all 0.2s ease;
+}
+
+.action-item:hover {
+    border-color: var(--info);
+    transform: translateX(2px);
+}
+
+.action-icon {
+    font-size: 1.25rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(50, 215, 238, 0.1);
+    border-radius: 6px;
+    color: var(--info);
+}
+
+.action-content {
+    flex: 1;
+}
+
+.action-title {
+    color: var(--text-primary);
+    font-size: 0.95rem;
+    font-weight: 500;
+    margin-bottom: 0.25rem;
+}
+
+.action-meta {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.action-arrow {
+    color: var(--text-tertiary);
+    font-size: 0.9rem;
+    opacity: 0.6;
+    transition: all 0.2s ease;
+}
+
+.action-item:hover .action-arrow {
+    opacity: 1;
+    transform: translateX(2px);
+    color: var(--info);
+}
+
+/* Layers Grid */
+.layers-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+    gap: 0.75rem;
+}
+
+.layer-item {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    transition: all 0.2s ease;
+}
+
+.layer-item:hover {
+    border-color: var(--info);
+}
+
+.layer-number {
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    color: var(--text-primary);
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.layer-content {
+    flex: 1;
+}
+
+.layer-title {
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    font-weight: 500;
+    margin-bottom: 0.125rem;
+}
+
+.layer-desc {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .layers-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .action-item {
+        padding: 0.875rem;
+    }
+}
+
+@media (max-width: 480px) {
+    .info-card.minimal .card-content {
+        padding: 1rem;
+    }
+    
+    .status-indicators,
+    .actions-list {
+        gap: 0.5rem;
+    }
+}
+
 </style>
+<script>
+
+// Landing Page JavaScript
+document.addEventListener('DOMContentLoaded', function() {
+    // Initialize action cards
+    initializeActionCards();
+    
+    // Initialize animations
+    initializeAnimations();
+    
+    // Initialize metrics
+    initializeMetrics();
+    
+    // Initialize modals
+    initializeModals();
+});
+
+function initializeActionCards() {
+    const actionCards = document.querySelectorAll('.action-card:not(.disabled)');
+    
+    actionCards.forEach(card => {
+        // Add click animation
+        card.addEventListener('click', function(e) {
+            // Only for actual clicks (not if it's disabled or has a loading class)
+            if (this.classList.contains('loading') || this.classList.contains('disabled')) {
+                e.preventDefault();
+                return;
+            }
+            
+            // Add loading state
+            this.classList.add('loading');
+            
+            // Remove loading after navigation (or if there's an error)
+            setTimeout(() => {
+                this.classList.remove('loading');
+            }, 2000);
+        });
+        
+        // Add keyboard support
+        card.addEventListener('keydown', function(e) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                this.click();
+            }
+        });
+        
+        // Add focus styles
+        card.addEventListener('focus', function() {
+            this.style.outline = '2px solid #3b82f6';
+            this.style.outlineOffset = '2px';
+        });
+        
+        card.addEventListener('blur', function() {
+            this.style.outline = 'none';
+        });
+    });
+}
+
+function initializeAnimations() {
+    // Animate elements on scroll
+    const observerOptions = {
+        threshold: 0.1,
+        rootMargin: '0px 0px -50px 0px'
+    };
+    
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.classList.add('animated');
+            }
+        });
+    }, observerOptions);
+    
+    // Observe all elements with animate-on-scroll class
+    document.querySelectorAll('.animate-on-scroll').forEach(el => {
+        observer.observe(el);
+    });
+    
+    // Add staggered animation for action cards
+    const actionCards = document.querySelectorAll('.action-card');
+    actionCards.forEach((card, index) => {
+        card.style.animationDelay = `${index * 0.1}s`;
+        card.classList.add('animate-on-scroll');
+    });
+}
+
+function initializeMetrics() {
+    // Update metrics with animation
+    const metricValues = document.querySelectorAll('.metric-value');
+    
+    metricValues.forEach(metric => {
+        const finalValue = parseFloat(metric.textContent.replace(/,/g, ''));
+        const duration = 2000; // 2 seconds
+        const steps = 60;
+        const increment = finalValue / steps;
+        let current = 0;
+        let step = 0;
+        
+        // Format number with commas
+        const formatNumber = (num) => {
+            return num.toLocaleString('en-US', {
+                maximumFractionDigits: 0
+            });
+        };
+        
+        const timer = setInterval(() => {
+            step++;
+            current += increment;
+            
+            if (step >= steps) {
+                current = finalValue;
+                clearInterval(timer);
+            }
+            
+            metric.textContent = formatNumber(Math.floor(current));
+        }, duration / steps);
+    });
+    
+    // Animate progress bars
+    const progressBars = document.querySelectorAll('.metric-fill');
+    
+    progressBars.forEach(bar => {
+        const width = bar.style.width;
+        bar.style.width = '0%';
+        
+        setTimeout(() => {
+            bar.style.transition = 'width 1.5s ease-out';
+            bar.style.width = width;
+        }, 500);
+    });
+}
+
+function initializeModals() {
+    // Modal functionality for quick actions
+    const modalTriggers = document.querySelectorAll('[data-modal-target]');
+    const modals = document.querySelectorAll('.modal');
+    const closeButtons = document.querySelectorAll('.modal-close');
+    
+    // Open modal
+    modalTriggers.forEach(trigger => {
+        trigger.addEventListener('click', function() {
+            const modalId = this.getAttribute('data-modal-target');
+            const modal = document.getElementById(modalId);
+            
+            if (modal) {
+                modal.classList.add('active');
+                document.body.style.overflow = 'hidden';
+            }
+        });
+    });
+    
+    // Close modal
+    closeButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const modal = this.closest('.modal');
+            modal.classList.remove('active');
+            document.body.style.overflow = 'auto';
+        });
+    });
+    
+    // Close modal on background click
+    modals.forEach(modal => {
+        modal.addEventListener('click', function(e) {
+            if (e.target === this) {
+                this.classList.remove('active');
+                document.body.style.overflow = 'auto';
+            }
+        });
+    });
+    
+    // Close modal with Escape key
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            modals.forEach(modal => {
+                modal.classList.remove('active');
+            });
+            document.body.style.overflow = 'auto';
+        }
+    });
+}
+
+// Utility functions for landing page
+function showNotification(message, type = 'success') {
+    const notification = document.createElement('div');
+    notification.className = `notification notification-${type}`;
+    notification.innerHTML = `
+        <div class="notification-content">
+            <span class="notification-icon">${type === 'success' ? '✓' : '!'}</span>
+            <span class="notification-message">${message}</span>
+        </div>
+        <button class="notification-close">&times;</button>
+    `;
+    
+    document.body.appendChild(notification);
+    
+    // Add show class after a tiny delay
+    setTimeout(() => {
+        notification.classList.add('show');
+    }, 10);
+    
+    // Auto remove after 5 seconds
+    setTimeout(() => {
+        hideNotification(notification);
+    }, 5000);
+    
+    // Close button
+    notification.querySelector('.notification-close').addEventListener('click', () => {
+        hideNotification(notification);
+    });
+}
+
+function hideNotification(notification) {
+    notification.classList.remove('show');
+    setTimeout(() => {
+        notification.remove();
+    }, 300);
+}
+// Tab switching functionality
+document.addEventListener('DOMContentLoaded', function() {
+    // Get all tab buttons and tab panes
+    const tabButtons = document.querySelectorAll('.tab-btn');
+    const tabPanes = document.querySelectorAll('.tab-pane');
+    
+    // Add click event to each tab button
+    tabButtons.forEach(button => {
+        button.addEventListener('click', function() {
+            const tabId = this.getAttribute('data-tab');
+            
+            // Remove active class from all buttons and panes
+            tabButtons.forEach(btn => btn.classList.remove('active'));
+            tabPanes.forEach(pane => pane.classList.remove('active'));
+            
+            // Add active class to clicked button
+            this.classList.add('active');
+            
+            // Show corresponding tab pane
+            const targetPane = document.getElementById(`tab-${tabId}`);
+            if (targetPane) {
+                targetPane.classList.add('active');
+            }
+            
+            // Store active tab in localStorage
+            localStorage.setItem('activeTab', tabId);
+        });
+    });
+    
+    // Load active tab from localStorage on page load
+    const savedTab = localStorage.getItem('activeTab');
+    if (savedTab) {
+        const savedButton = document.querySelector(`[data-tab="${savedTab}"]`);
+        if (savedButton) {
+            savedButton.click();
+        }
+    }
+});
+// Tab switching - Simple and direct
+document.addEventListener('DOMContentLoaded', function() {
+    // Get tab elements
+    const platformStatsTab = document.querySelector('[href*="platform"], [href*="stats"], [data-tab*="stats"], .tab-btn:contains("Platform"), .tab-btn:contains("Stats")');
+    const quickActionsTab = document.querySelector('[href*="actions"], [href*="quick"], [data-tab*="actions"], .tab-btn:contains("Actions"), .tab-btn:contains("Quick")');
+    const statsContent = document.querySelector('#stats, #tab-stats, .stats-content, .platform-stats');
+    const actionsContent = document.querySelector('#actions, #tab-actions, .actions-content, .quick-actions');
+    
+    // Function to show stats and hide actions
+    function showStats() {
+        console.log('DEBUG: Showing Stats');
+        
+        // Show stats content
+        if (statsContent) {
+            statsContent.style.display = 'block';
+            statsContent.classList.add('active');
+            statsContent.classList.remove('hidden');
+        }
+        
+        // Hide actions content
+        if (actionsContent) {
+            actionsContent.style.display = 'none';
+            actionsContent.classList.remove('active');
+            actionsContent.classList.add('hidden');
+        }
+        
+        // Update tab buttons
+        if (platformStatsTab) {
+            platformStatsTab.classList.add('active');
+            platformStatsTab.classList.remove('inactive');
+        }
+        if (quickActionsTab) {
+            quickActionsTab.classList.remove('active');
+            quickActionsTab.classList.add('inactive');
+        }
+        
+        // Save preference
+        localStorage.setItem('activeDashboardTab', 'stats');
+    }
+    
+    // Function to show actions and hide stats
+    function showActions() {
+        console.log('DEBUG: Showing Actions');
+        
+        // Show actions content
+        if (actionsContent) {
+            actionsContent.style.display = 'block';
+            actionsContent.classList.add('active');
+            actionsContent.classList.remove('hidden');
+        }
+        
+        // Hide stats content
+        if (statsContent) {
+            statsContent.style.display = 'none';
+            statsContent.classList.remove('active');
+            statsContent.classList.add('hidden');
+        }
+        
+        // Update tab buttons
+        if (quickActionsTab) {
+            quickActionsTab.classList.add('active');
+            quickActionsTab.classList.remove('inactive');
+        }
+        if (platformStatsTab) {
+            platformStatsTab.classList.remove('active');
+            platformStatsTab.classList.add('inactive');
+        }
+        
+        // Save preference
+        localStorage.setItem('activeDashboardTab', 'actions');
+    }
+    
+    // Add click events
+    if (platformStatsTab) {
+        platformStatsTab.addEventListener('click', function(e) {
+            e.preventDefault();
+            showStats();
+        });
+    }
+    
+    if (quickActionsTab) {
+        quickActionsTab.addEventListener('click', function(e) {
+            e.preventDefault();
+            showActions();
+        });
+    }
+    
+    // Load saved preference
+    const savedTab = localStorage.getItem('activeDashboardTab') || 'stats';
+    if (savedTab === 'stats') {
+        showStats();
+    } else {
+        showActions();
+    }
+    
+    // Fallback: If tabs exist but don't work, brute force it
+    setTimeout(function() {
+        // Check if content is visible
+        const statsVisible = statsContent && (statsContent.offsetParent !== null || statsContent.style.display !== 'none');
+        const actionsVisible = actionsContent && (actionsContent.offsetParent !== null || actionsContent.style.display !== 'none');
+        
+        if (!statsVisible && !actionsVisible) {
+            console.log('DEBUG: No content visible, forcing stats to show');
+            showStats();
+        }
+    }, 500);
+});
+
+// Tab switching for your exact HTML
+function openTab(tabName) {
+    console.log('Switching to tab:', tabName);
+    
+    // Hide all tab contents
+    document.querySelectorAll('.tab-content').forEach(content => {
+        content.classList.remove('active');
+        content.style.display = 'none';
+    });
+    
+    // Remove active class from all tab buttons
+    document.querySelectorAll('.tab-button').forEach(button => {
+        button.classList.remove('active');
+    });
+    
+    // Show the selected tab content
+    const activeContent = document.getElementById(tabName);
+    if (activeContent) {
+        activeContent.style.display = 'block';
+        activeContent.classList.add('active');
+    } else {
+        console.error('Tab content not found:', tabName);
+    }
+    
+    // Activate the clicked tab button
+    event.target.closest('.tab-button').classList.add('active');
+    
+    // Save to localStorage
+    localStorage.setItem('activeTab', tabName);
+}
+
+// Initialize tabs on page load
+document.addEventListener('DOMContentLoaded', function() {
+    // Get the saved tab from localStorage or default to 'overview'
+    const savedTab = localStorage.getItem('activeTab') || 'overview';
+    
+    // Check if the saved tab exists and is accessible
+    const savedTabButton = document.querySelector(`.tab-button[onclick*="${savedTab}"]`);
+    const savedTabContent = document.getElementById(savedTab);
+    
+    if (savedTabButton && savedTabContent) {
+        // Switch to saved tab
+        setTimeout(() => {
+            // Simulate click on saved tab button
+            savedTabButton.click();
+        }, 100);
+    } else {
+        // Default to overview
+        const overviewButton = document.querySelector('.tab-button[onclick*="overview"]');
+        if (overviewButton) {
+            overviewButton.click();
+        }
+    }
+    
+    // Add keyboard navigation
+    document.addEventListener('keydown', function(e) {
+        const activeButton = document.querySelector('.tab-button.active');
+        if (!activeButton) return;
+        
+        const allButtons = Array.from(document.querySelectorAll('.tab-button'));
+        const currentIndex = allButtons.indexOf(activeButton);
+        
+        if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+            e.preventDefault();
+            const nextIndex = (currentIndex + 1) % allButtons.length;
+            allButtons[nextIndex].click();
+        } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            const prevIndex = (currentIndex - 1 + allButtons.length) % allButtons.length;
+            allButtons[prevIndex].click();
+        } else if (e.key >= '1' && e.key <= '4') {
+            e.preventDefault();
+            const index = parseInt(e.key) - 1;
+            if (index < allButtons.length) {
+                allButtons[index].click();
+            }
+        }
+    });
+});
+
+</script>
 {% endblock %}

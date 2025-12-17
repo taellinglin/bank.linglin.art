@@ -1,0 +1,295 @@
+<!-- transaction_search.html -->
+{% extends "base.html" %}
+{% block content %}
+<div class="blockchain-container">
+    <!-- Stats Grid -->
+    <div class="compact-stats-grid">
+        <div class="compact-stat-card">
+            <div class="stat-header">
+                <div class="stat-icon">🔍</div>
+                <h4 class="stat-title">Transactions Found</h4>
+            </div>
+            <div class="compact-stat-value">{{ transactions|length|default(0)|format_number }}</div>
+            <div class="compact-stat-label">Total Results</div>
+            <div class="stat-trend">
+                <span class="trend-indicator up">📈</span>
+                <span class="trend-value">Real-time</span>
+            </div>
+        </div>
+
+        <div class="compact-stat-card">
+            <div class="stat-header">
+                <div class="stat-icon">💰</div>
+                <h4 class="stat-title">Total Value</h4>
+            </div>
+            <div class="compact-stat-value">${{ total_value|default(0)|format_number }}</div>
+            <div class="compact-stat-label">Across Results</div>
+            <div class="stat-subtext">
+                <span class="subtext-label">Average:</span>
+                <span class="subtext-value">${{ (total_value/transactions|length if transactions|length > 0 else 0)|format_number }}</span>
+            </div>
+        </div>
+
+        <div class="compact-stat-card">
+            <div class="stat-header">
+                <div class="stat-icon">👤</div>
+                <h4 class="stat-title">Unique Addresses</h4>
+            </div>
+            <div class="compact-stat-value">{{ unique_addresses|default(0)|format_number }}</div>
+            <div class="compact-stat-label">Participants</div>
+            <div class="stat-subtext">
+                <span class="subtext-label">Senders:</span>
+                <span class="subtext-value">{{ senders_count|default(0) }}</span>
+            </div>
+        </div>
+
+        <div class="compact-stat-card">
+            <div class="stat-header">
+                <div class="stat-icon">📊</div>
+                <h4 class="stat-title">Types</h4>
+            </div>
+            <div class="compact-stat-value">{{ tx_types|length|default(0) }}</div>
+            <div class="compact-stat-label">Transaction Types</div>
+            <div class="stat-subtext">
+                {% if tx_types %}
+                <span class="subtext-label">Most Common:</span>
+                <span class="subtext-value">{{ tx_types[0]|title }}</span>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="compact-stat-card">
+            <div class="stat-header">
+                <div class="stat-icon">⏱️</div>
+                <h4 class="stat-title">Time Range</h4>
+            </div>
+            <div class="compact-stat-value">{{ time_range|default('24h') }}</div>
+            <div class="compact-stat-label">Search Window</div>
+            <div class="stat-subtext">
+                <span class="subtext-label">Latest:</span>
+                <span class="subtext-value">{{ latest_tx_time|default('Now') }}</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Search Section -->
+    <div class="search-section">
+        <div class="search-header">
+            <h3>Transaction Search</h3>
+            <div class="search-stats">
+                <span class="search-stat">Results: {{ transactions|length }}</span>
+                <span class="search-stat">Value: ${{ total_value|default(0)|format_number }}</span>
+                <span class="search-stat">Updated: Just now</span>
+            </div>
+        </div>
+        
+        <form method="GET" action="{{ url_for('transaction_search') }}" class="search-container">
+            <div class="search-input-group">
+                <div class="search-icon">🔍</div>
+                <input type="text" 
+                       name="q"
+                       class="search-input" 
+                       placeholder="Search by TX ID, address, amount, banknote serial..."
+                       value="{{ query }}">
+            </div>
+            
+            <div class="search-filters">
+                <select name="type" class="filter-select">
+                    <option value="">All Types</option>
+                    <option value="transfer" {% if tx_type == 'transfer' %}selected{% endif %}>Transfer</option>
+                    <option value="genesis" {% if tx_type == 'genesis' %}selected{% endif %}>Banknote Creation</option>
+                    <option value="reward" {% if tx_type == 'reward' %}selected{% endif %}>Mining Reward</option>
+                </select>
+                
+                <select name="timeframe" class="filter-select">
+                    <option value="">All Time</option>
+                    <option value="1h" {% if timeframe == '1h' %}selected{% endif %}>Last Hour</option>
+                    <option value="24h" {% if timeframe == '24h' %}selected{% endif %}>Last 24 Hours</option>
+                    <option value="7d" {% if timeframe == '7d' %}selected{% endif %}>Last 7 Days</option>
+                    <option value="30d" {% if timeframe == '30d' %}selected{% endif %}>Last 30 Days</option>
+                </select>
+                
+                <button type="submit" class="filter-btn">
+                    <span class="filter-btn-icon">🔍</span>
+                    <span class="filter-btn-text">Search</span>
+                </button>
+                
+                <a href="{{ url_for('transaction_search') }}" class="filter-btn">
+                    <span class="filter-btn-icon">⟳</span>
+                    <span class="filter-btn-text">Clear</span>
+                </a>
+            </div>
+        </form>
+    </div>
+
+    <!-- Tab Navigation -->
+    <div class="tab-navigation">
+        <button class="tab-button active" onclick="openTab('results')">
+            <span class="tab-icon">📋</span>
+            <span class="tab-text">Results ({{ transactions|length }})</span>
+        </button>
+        <button class="tab-button" onclick="openTab('analysis')">
+            <span class="tab-icon">📊</span>
+            <span class="tab-text">Analysis</span>
+        </button>
+        <button class="tab-button" onclick="openTab('export')">
+            <span class="tab-icon">📤</span>
+            <span class="tab-text">Export</span>
+        </button>
+    </div>
+
+    <!-- Results Tab -->
+    <div id="results" class="tab-content active">
+        <div class="compact-table-section">
+            <div class="compact-table-header">
+                <h3>Transaction Results</h3>
+                <div class="table-info">
+                    <span class="info-item">Showing {{ transactions|length }} transactions</span>
+                    <span class="info-item">Sorted by: Newest First</span>
+                </div>
+            </div>
+            
+            <div class="compact-table-container">
+                <table class="compact-search-results-table" id="resultsTable">
+                    <thead>
+                        <tr>
+                            <th>TX ID</th>
+                            <th>Type</th>
+                            <th>Amount</th>
+                            <th>From</th>
+                            <th>To</th>
+                            <th>Block</th>
+                            <th>Time</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if transactions and transactions|length > 0 %}
+                        {% for tx in transactions %}
+                        <tr class="compact-tx-row">
+                            <td>
+                                <div class="tx-id-display" title="{{ tx.txid|default('N/A') }}">
+                                    <code class="compact-tx-hash">
+                                        {% if tx.txid and tx.txid != 'N/A' %}
+                                            {{ tx.txid[:10] }}...{{ tx.txid[-6:] }}
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </code>
+                                </div>
+                            </td>
+                            <td>
+                                <span class="tx-type-badge {{ tx.tx_type|lower if tx.tx_type else 'transfer' }}">
+                                    {{ tx.tx_type|title if tx.tx_type else 'Transfer' }}
+                                </span>
+                            </td>
+                            <td>
+                                <div class="amount-display {% if tx.sender == current_user.username %}negative{% elif tx.recipient == current_user.username %}positive{% endif %}">
+                                    ${{ tx.amount|default(0)|format_number }}
+                                </div>
+                            </td>
+                            <td>
+                                <div class="address-display" title="{{ tx.sender|default('System') }}">
+                                    {% if tx.sender and tx.sender != 'System' %}
+                                        {% if tx.sender|length > 16 %}
+                                            {{ tx.sender[:8] }}...{{ tx.sender[-4:] }}
+                                        {% else %}
+                                            {{ tx.sender }}
+                                        {% endif %}
+                                    {% else %}
+                                        System
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td>
+                                <div class="address-display" title="{{ tx.recipient|default('System') }}">
+                                    {% if tx.recipient and tx.recipient != 'System' %}
+                                        {% if tx.recipient|length > 16 %}
+                                            {{ tx.recipient[:8] }}...{{ tx.recipient[-4:] }}
+                                        {% else %}
+                                            {{ tx.recipient }}
+                                        {% endif %}
+                                    {% else %}
+                                        System
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td>
+                                {% if tx.block_index %}
+                                <div class="block-link">
+                                    #{{ tx.block_index|format_number }}
+                                </div>
+                                {% else %}
+                                <span class="pending-text">Pending</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if tx.timestamp_readable %}
+                                    {% set time_parts = tx.timestamp_readable.split(' ') %}
+                                    <div class="compact-time">{{ time_parts[1] if time_parts|length > 1 else '' }}</div>
+                                    <div class="compact-date">{{ time_parts[0] if time_parts|length > 0 else '' }}</div>
+                                {% else %}
+                                    <div class="compact-time">--:--:--</div>
+                                    <div class="compact-date">Unknown</div>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="action-buttons">
+                                    {% if tx.txid %}
+                                    <a href="{{ url_for('transaction_detail', txid=tx.txid) }}" class="action-btn" title="View Details">
+                                        <span class="action-icon">👁️</span>
+                                    </a>
+                                    <button class="action-btn" onclick="copyTxId('{{ tx.txid }}')" title="Copy TX ID">
+                                        <span class="action-icon">📋</span>
+                                    </button>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% else %}
+                        <tr>
+                            <td colspan="8" class="empty-state">
+                                <div class="empty-content">
+                                    <span class="empty-icon">🔍</span>
+                                    <span>No transactions found{% if query %} for "{{ query }}"{% endif %}</span>
+                                    {% if query %}
+                                    <p class="empty-subtext">Try a different search term or clear filters</p>
+                                    {% endif %}
+                                </div>
+                            </td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Analysis Tab -->
+    <div id="analysis" class="tab-content">
+        <div class="statistics-section">
+            <div class="statistics-grid">
+                <div class="stat-card">
+                    <div class="stat-card-header">
+                        <div class="stat-card-icon">📈</div>
+                        <h4>Volume Analysis</h4>
+                    </div>
+                    <div class="stat-card-content">
+                        <div class="stat-item">
+                            <span class="stat-item-label">Total Volume:</span>
+                            <span class="stat-item-value">${{ total_value|default(0)|format_number }}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-item-label">Average TX Size:</span>
+                            <span class="stat-item-value">${{ avg_tx_value|default(0)|format_number }}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-item-label">Largest TX:</span>
+                            <span class="stat-item-value">${{ max_tx_value|default(0)|format_number }}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-item-label">Smallest TX:</span>
+                            <span class="stat-item-value">${{ min_tx_value|default(0)|format_number }}</span>
+                        </div>
+                   

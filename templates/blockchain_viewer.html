@@ -1,853 +1,1959 @@
 {% extends "base.html" %}
-
 {% block content %}
-<div class="gallery-header">
-    <h1>Blockchain Viewer</h1>
-    <p>Explore the complete blockchain ledger and transaction history</p>
-</div>
+<div class="blockchain-container">
+    <!-- Stats Grid with Profile-like Cards -->
+    <div class="compact-stats-grid">
+        <div class="compact-stat-card">
+            <div class="stat-header">
+                <div class="stat-icon">⛓️</div>
+                <h4 class="stat-title">Chain Length</h4>
+            </div>
+            <div class="compact-stat-value">{{ total_blocks|default(0)|int|format_number }}</div>
+            <div class="compact-stat-label">Total Blocks</div>
+            <div class="stat-trend">
+                <span class="trend-indicator up">↗</span>
+                <span class="trend-value">Growing</span>
+            </div>
+        </div>
 
-<!-- Blockchain Overview -->
-<div class="stats-overview">
-    <div class="stat-card">
-        <div class="stat-icon">
-            <i class="fas fa-cube"></i>
+        <div class="compact-stat-card">
+            <div class="stat-header">
+                <div class="stat-icon">📊</div>
+                <h4 class="stat-title">Transactions</h4>
+            </div>
+            <div class="compact-stat-value">{{ total_transactions|default(0)|int|format_number }}</div>
+            <div class="compact-stat-label">Total TXs</div>
+            <div class="stat-subtext">
+                <span class="subtext-label">On Page:</span>
+                <span class="subtext-value">{{ blocks|sum(attribute='transaction_count')|default(0)|int|format_number }}</span>
+            </div>
         </div>
-        <div class="stat-info">
-            <div class="stat-number">{{ total_blocks }}</div>
-            <div class="stat-label">Total Blocks</div>
-        </div>
-    </div>
-    
-    <div class="stat-card">
-        <div class="stat-icon transactions">
-            <i class="fas fa-exchange-alt"></i>
-        </div>
-        <div class="stat-receipt">
-            <div class="stat-number">{{ total_transactions }}</div>
-            <div class="stat-label">Total Transactions</div>
-        </div>
-    </div>
-    
-    <div class="stat-card">
-        <div class="stat-icon genesis">
-            <i class="fas fa-seedling"></i>
-        </div>
-        <div class="stat-info">
-            <div class="stat-number">{{ genesis_count }}</div>
-            <div class="stat-label">Genesis</div>
-        </div>
-    </div>
-    
-    <div class="stat-card">
-        <div class="stat-icon transfer">
-            <i class="fas fa-seedling"></i>
-        </div>
-        <div class="stat-info">
-            <div class="stat-number">{{ transfer_count }}</div>
-            <div class="stat-label">Transfers</div>
-        </div>
-    </div>
-    <div class="stat-card">
-        <div class="stat-icon regular">
-            <i class="fas fa-reward"></i>
-        </div>
-        <div class="stat-info">
-            <div class="stat-number">{{ reward_count }}</div>
-            <div class="stat-label">Rewards</div>
-        </div>
-    </div>
-</div>
 
-<!-- Transaction Type Summary -->
-<div class="type-breakdown">
-    <h3>Transaction Summary</h3>
-    <div class="type-tags">
-        <span class="type-tag genesis">
-            <span class="type-name">Genesis</span>
-            <span class="type-count">{{ genesis_count }}</span>
-        </span>
-        <span class="type-tag transfer">
-            <span class="type-name">Transfers</span>
-            <span class="type-count">{{ transfer_count }}</span>
-        </span>
-        <span class="type-tag reward">
-            <span class="type-name">Rewards</span>
-            <span class="type-count">{{ reward_count }}</span>
-        </span>
-    </div>
-</div>
+        <div class="compact-stat-card">
+            <div class="stat-header">
+                <div class="stat-icon">💵</div>
+                <h4 class="stat-title">Banknotes</h4>
+            </div>
+            <div class="compact-stat-value">{{ genesis_count|default(0)|int|format_number }}</div>
+            <div class="compact-stat-label">GTX_Genesis</div>
+            <div class="stat-subtext">
+                <span class="subtext-label">On Page:</span>
+                <span class="subtext-value">{{ blocks|sum(attribute='genesis_count')|default(0)|int|format_number }}</span>
+            </div>
+        </div>
 
-<!-- Blocks Grid -->
-<div class="blocks-section">
-    <div class="section-header">
-        <h2>Blocks</h2>
-        <span class="badge">{{ blocks|length }}</span>
+        <div class="compact-stat-card">
+            <div class="stat-header">
+                <div class="stat-icon">🔄</div>
+                <h4 class="stat-title">Transfers</h4>
+            </div>
+            <div class="compact-stat-value">{{ transfer_count|default(0)|int|format_number }}</div>
+            <div class="compact-stat-label">Peer-to-Peer</div>
+            <div class="stat-subtext">
+                <span class="subtext-label">On Page:</span>
+                <span class="subtext-value">{{ blocks|sum(attribute='transfer_count')|default(0)|int|format_number }}</span>
+            </div>
+        </div>
+
+        <div class="compact-stat-card">
+            <div class="stat-header">
+                <div class="stat-icon">✨</div>
+                <h4 class="stat-title">Mining Rewards</h4>
+            </div>
+            <div class="compact-stat-value">{{ reward_count|default(0)|int|format_number }}</div>
+            <div class="compact-stat-label">Total Rewards</div>
+            <div class="stat-subtext">
+                <span class="subtext-label">On Page:</span>
+                <span class="subtext-value">{{ blocks|sum(attribute='reward_count')|default(0)|int|format_number }}</span>
+            </div>
+        </div>
     </div>
-    
-    {% if blocks %}
-    <div class="blocks-grid">
-        {% for block in blocks %}
-        <div class="block-card {{ 'genesis' if block.index == 0 else 'regular' }}">
-            <div class="block-header">
-                <div class="block-number">
-                    <span class="block-index">Block #{{ block.index }}</span>
-                    {% if block.index == 0 %}
-                    <span class="genesis-badge">Genesis</span>
-                    {% endif %}
-                </div>
-                <div class="block-hash" title="{{ block.hash }}">
-                    {{ block.hash[:20] }}...
+
+    <!-- Search and Filter Bar -->
+    <div class="search-section">
+        <div class="search-header">
+            <h3>Explore Blockchain</h3>
+            <div class="search-stats">
+                <span class="search-stat">Blocks: {{ total_blocks|default(0) }}</span>
+                <span class="search-stat">TXs: {{ total_transactions|default(0) }}</span>
+            </div>
+        </div>
+        <div class="search-container">
+            <div class="search-input-group">
+                <div class="search-icon">🔍</div>
+                <input type="text" 
+                       class="search-input" 
+                       id="blockchainSearch" 
+                       placeholder="Search blocks, transactions, miners, banknote serials..."
+                       onkeyup="filterTable()">
+            </div>
+            <div class="search-filters">
+                <select class="filter-select" id="filterType" onchange="filterTable()">
+                    <option value="all">All Types</option>
+                    <option value="block">Block Hash/Index</option>
+                    <option value="miner">Miner Address</option>
+                    <option value="transaction">Transaction Hash</option>
+                    <option value="genesis">Banknote Serial</option>
+                    <option value="user">User Address</option>
+                    <option value="amount">Amount Value</option>
+                </select>
+                <button class="filter-btn" onclick="resetFilters()">
+                    <span class="filter-btn-icon">⟳</span>
+                    <span class="filter-btn-text">Reset</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab Navigation -->
+    <div class="tab-navigation">
+        <button class="tab-button active" onclick="openTab('blocks')">
+            <span class="tab-icon">⛓️</span>
+            <span class="tab-text">Blocks</span>
+        </button>
+        <button class="tab-button" onclick="openTab('activity')">
+            <span class="tab-icon">📈</span>
+            <span class="tab-text">Activity Timeline</span>
+        </button>
+        <button class="tab-button" onclick="openTab('statistics')">
+            <span class="tab-icon">📊</span>
+            <span class="tab-text">Statistics</span>
+        </button>
+    </div>
+
+    <!-- Blocks Tab -->
+    <div id="blocks" class="tab-content active">
+        <div class="compact-table-section">
+            <div class="compact-table-header">
+                <h3>Latest Blocks</h3>
+                <div class="table-info">
+                    <span class="info-item">Showing {{ ((current_page - 1) * per_page + 1) if total_blocks > 0 else 0 }}-{{ [current_page * per_page, total_blocks]|min }} of {{ total_blocks|default(0)|int|format_number }}</span>
+                    <span class="info-item">Page {{ current_page }} of {{ total_pages }}</span>
                 </div>
             </div>
             
-            <div class="block-body">
-                <div class="block-info">
-                    <div class="info-item">
-                        <label>Timestamp:</label>
-                        <span>
-                            {% if block.timestamp_readable and not block.timestamp_readable.startswith('Invalid') and not block.timestamp_readable.startswith('Error') and not block.timestamp_readable.startswith('Conversion') %}
-                                {{ block.timestamp_readable }}
-                            {% else %}
-                                <span class="text-muted" title="Raw timestamp: {{ block.timestamp }}">
-                                    {% if block.timestamp is number %}
-                                        {{ block.timestamp|datetimeformat }}
-                                    {% else %}
-                                        Raw: {{ block.timestamp }}
-                                    {% endif %}
-                                </span>
-                            {% endif %}
-                        </span>
-                    </div>
-                                        
-                    <div class="info-item">
-                        <label>Previous Hash:</label>
-                        <code class="hash" title="{{ block.previous_hash }}">
-                            {% if block.previous_hash != "N/A" %}
-                                {{ block.previous_hash[:20] }}...
-                            {% else %}
-                                —
-                            {% endif %}
-                        </code>
-                    </div>
-                    
-                    <div class="info-item">
-                        <label>Nonce:</label>
-                        <code>{{ block.nonce }}</code>
-                    </div>
-                    
-                    {% if block.difficulty and block.difficulty != "N/A" %}
-                    <div class="info-item">
-                        <label>Difficulty:</label>
-                        <code>{{ block.difficulty }}</code>
-                    </div>
-                    {% endif %}
-                </div>
-                
-                <div class="transactions-summary">
-                    <div class="tx-count">
-                        <i class="fas fa-file-invoice"></i>
-                        {{ block.transaction_count }} transactions
-                    </div>
-                    
-                    {% if block.transaction_count > 0 %}
-                    <div class="tx-breakdown">
-                        {% if block.genesis_count > 0 %}
-                        <span class="tx-type-badge genesis">{{ block.genesis_count }} genesis</span>
-                        {% endif %}
-                        {% if block.transfer_count > 0 %}
-                        <span class="tx-type-badge transfer">{{ block.transfer_count }} transfers</span>
-                        {% endif %}
-                        {% if block.reward_count > 0 %}
-                        <span class="tx-type-badge reward">{{ block.reward_count }} rewards</span>
-                        {% endif %}
-                    </div>
-                    {% endif %}
-                </div>
-
-                <!-- Show transaction details for blocks with transactions -->
-                {% if block.transaction_count > 0 and block.transactions %}
-                <div class="transaction-details">
-                    <h4>Transactions:</h4>
-                    <div class="transaction-list">
-                        {% for tx in block.transactions %}
-                        <div class="transaction-item {{ tx.type|lower }}">
-                            <div class="tx-header">
-                                <span class="tx-type {{ tx.type|lower }}">{{ tx.type }}</span>
-                                {% if tx.hash %}
-                                <span class="tx-hash" title="{{ tx.hash }}">{{ tx.hash[:16] }}...</span>
+            <div class="compact-table-container">
+                <table class="compact-blocks-table" id="blocksTable">
+                    <thead>
+                        <tr>
+                            <th class="compact-index">#</th>
+                            <th class="compact-hash">Block Hash</th>
+                            <th class="compact-time">Time</th>
+                            <th class="compact-miner">Miner</th>
+                            <th class="compact-transactions">Transactions</th>
+                            <th class="compact-size">Size</th>
+                            <th class="compact-details">Details</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% if blocks and blocks|length > 0 %}
+                        {% for block in blocks %}
+                        <tr class="compact-block-row">
+                            <td class="compact-index-cell">
+                                <div class="compact-index-number">{{ block.index|default(0)|int|format_number }}</div>
+                                {% if block.index == total_blocks - 1 %}
+                                <div class="latest-badge">Latest</div>
+                                {% endif %}
+                            </td>
+                            <td class="compact-hash-cell">
+                                <div class="hash-display">
+                                    <code class="compact-block-hash" title="{{ block.hash|default('N/A') }}">
+                                        {% if block.hash and block.hash != 'N/A' %}
+                                            {{ block.hash[:12] }}...{{ block.hash[-6:] }}
+                                        {% else %}
+                                            N/A
+                                        {% endif %}
+                                    </code>
+                                    <div class="prev-hash">
+                                        <span class="prev-label">Prev:</span>
+                                        <code class="compact-prev-hash" title="{{ block.previous_hash|default('N/A') }}">
+                                            {% if block.previous_hash and block.previous_hash != 'N/A' %}
+                                                {{ block.previous_hash[:8] }}...{{ block.previous_hash[-4:] }}
+                                            {% else %}
+                                                N/A
+                                            {% endif %}
+                                        </code>
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="compact-time-cell">
+                                {% if block.timestamp_readable %}
+                                    {% set time_parts = block.timestamp_readable.split(' ') %}
+                                    <div class="compact-time">{{ time_parts[1] if time_parts|length > 1 else '' }}</div>
+                                    <div class="compact-date">{{ time_parts[0] if time_parts|length > 0 else '' }}</div>
                                 {% else %}
-                                <span class="tx-hash no-hash">No hash</span>
+                                    <div class="compact-time">--:--:--</div>
+                                    <div class="compact-date">Unknown</div>
                                 {% endif %}
-                            </div>
-                            
-                            {% if tx.type == "transfer" and tx.from and tx.to %}
-                            <div class="tx-flow">
-                                <span class="tx-from" title="{{ tx.from }}">{{ tx.from[:10] }}...</span>
-                                <i class="fas fa-arrow-right"></i>
-                                <span class="tx-to" title="{{ tx.to }}">{{ tx.to[:10] }}...</span>
-                                <span class="tx-amount">{{ tx.amount }} LC</span>
-                            </div>
-                            {% elif tx.type == "reward" and tx.to %}
-                            <div class="tx-flow">
-                                <i class="fas fa-gift"></i>
-                                <span class="tx-to" title="{{ tx.to }}">{{ tx.to[:10] }}...</span>
-                                <span class="tx-amount">{{ tx.amount }} LC</span>
-                                {% if tx.block_height %}
-                                <span class="tx-block">Block {{ tx.block_height }}</span>
-                                {% endif %}
-                            </div>
-                            {% elif tx.type in ["GTX_Genesis", "genesis"] %}
-                            <div class="tx-flow">
-                                <i class="fas fa-money-bill-wave"></i>
-                                {% if tx.serial_number %}
-                                <span class="tx-serial">Serial: {{ tx.serial_number[:12] }}...</span>
-                                {% endif %}
-                                {% if tx.denomination %}
-                                <span class="tx-amount">{{ tx.denomination }} LC</span>
-                                {% endif %}
-                                {% if tx.message %}
-                                <span class="tx-message">{{ tx.message }}</span>
-                                {% endif %}
-                            </div>
-                            {% else %}
-                            <div class="tx-flow">
-                                <span class="tx-raw">{{ tx|tojson }}</span>
-                            </div>
-                            {% endif %}
-                        </div>
+                            </td>
+                            <td class="compact-miner-cell">
+                                <div class="miner-display">
+                                    <div class="miner-address" title="{{ block.miner|default('Unknown') }}">
+                                        {% if block.miner and block.miner != 'Unknown' %}
+                                            {{ block.miner[:8] }}...{{ block.miner[-4:] }}
+                                        {% else %}
+                                            Unknown
+                                        {% endif %}
+                                    </div>
+                                    {% if block.nonce %}
+                                    <div class="nonce-info">
+                                        <span class="nonce-label">Nonce:</span>
+                                        <span class="nonce-value">{{ block.nonce|default(0)|int|format_number }}</span>
+                                    </div>
+                                    {% endif %}
+                                </div>
+                            </td>
+                            <td class="compact-transactions-cell">
+                                <div class="transactions-display">
+                                    <div class="tx-count">{{ block.transaction_count|default(0)|int|format_number }} TXs</div>
+                                    <div class="tx-breakdown">
+                                        {% if block.genesis_count > 0 %}
+                                        <span class="tx-badge genesis" title="Banknotes">
+                                            💵 {{ block.genesis_count|default(0)|int }}
+                                        </span>
+                                        {% endif %}
+                                        {% if block.transfer_count > 0 %}
+                                        <span class="tx-badge transfer" title="Transfers">
+                                            🔄 {{ block.transfer_count|default(0)|int }}
+                                        </span>
+                                        {% endif %}
+                                        {% if block.reward_count > 0 %}
+                                        <span class="tx-badge reward" title="Rewards">
+                                            ✨ {{ block.reward_count|default(0)|int }}
+                                        </span>
+                                        {% endif %}
+                                    </div>
+                                </div>
+                            </td>
+                            <td class="compact-size-cell">
+                                <div class="size-display">
+                                    {{ block.size|default(0)|int|format_number }} B
+                                </div>
+                            </td>
+                            <td class="compact-details-cell">
+                                
+                                    <button class="details-btn">
+                                        <a href="/block/{{ block.index }}"><span class="details-icon">📋</span></a>
+                                    </button>
+                                
+                            </td>
+                        </tr>
                         {% endfor %}
+                        {% else %}
+                        <tr>
+                            <td colspan="7" class="empty-state">
+                                <div class="empty-content">
+                                    <span class="empty-icon">⛓️</span>
+                                    <span>No blocks in the blockchain</span>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Pagination -->
+            <div class="compact-pagination">
+                {% if current_page > 1 %}
+                    <a href="{{ url_for('blockchain_viewer', page=current_page-1) }}" class="page-nav prev">← Prev</a>
+                {% else %}
+                    <span class="page-nav prev disabled">← Prev</span>
+                {% endif %}
+                
+                <div class="page-numbers">
+                    {% set start_page = [current_page - 1, 1]|max %}
+                    {% set end_page = [start_page + 2, total_pages]|min %}
+                    
+                    {% for p in range(start_page, end_page + 1) %}
+                        {% if p == current_page %}
+                            <span class="page-number active">{{ p }}</span>
+                        {% else %}
+                            <a href="{{ url_for('blockchain_viewer', page=p) }}" class="page-number">{{ p }}</a>
+                        {% endif %}
+                    {% endfor %}
+                    
+                    {% if end_page < total_pages %}
+                        <span class="page-ellipsis">...</span>
+                        <a href="{{ url_for('blockchain_viewer', page=total_pages) }}" class="page-number">{{ total_pages }}</a>
+                    {% endif %}
+                </div>
+                
+                {% if current_page < total_pages %}
+                    <a href="{{ url_for('blockchain_viewer', page=current_page+1) }}" class="page-nav next">Next →</a>
+                {% else %}
+                    <span class="page-nav next disabled">Next →</span>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Activity Timeline Tab -->
+    <div id="activity" class="tab-content">
+        <div class="graph-section">
+            <div class="graph-header">
+                <h3>Block Activity Timeline</h3>
+                <div class="timeframe-selector">
+                    {% set timeframes = {
+                        '10b': 'Last 10 Blocks',
+                        '25b': 'Last 25 Blocks', 
+                        '50b': 'Last 50 Blocks',
+                        'all': 'All Blocks'
+                    } %}
+                    {% for tf_key, tf_label in timeframes.items() %}
+                        <button class="timeframe-btn {% if selected_timeframe == tf_key %}active{% endif %}" 
+                                onclick="changeTimeframe('{{ tf_key }}')">
+                            {{ tf_label }}
+                        </button>
+                    {% endfor %}
+                </div>
+            </div>
+            
+            <!-- Line Graph Container -->
+            <div class="line-graph-container" id="activityChart">
+                <canvas id="activityCanvas"></canvas>
+            </div>
+            
+            <div class="graph-stats">
+                <div class="graph-stat">
+                    <span class="stat-label">Peak TXs/Block:</span>
+                    <span class="stat-value" id="peakValue">0</span>
+                </div>
+                <div class="graph-stat">
+                    <span class="stat-label">Avg TXs/Block:</span>
+                    <span class="stat-value" id="avgValue">0</span>
+                </div>
+                <div class="graph-stat">
+                    <span class="stat-label">Total Blocks:</span>
+                    <span class="stat-value" id="totalValue">{{ total_blocks|default(0) }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Statistics Tab -->
+    <div id="statistics" class="tab-content">
+        <div class="statistics-section">
+            <div class="statistics-grid">
+                <div class="stat-card">
+                    <div class="stat-card-header">
+                        <div class="stat-card-icon">📈</div>
+                        <h4>Block Production</h4>
+                    </div>
+                    <div class="stat-card-content">
+                        <div class="stat-item">
+                            <span class="stat-item-label">Average Block Time:</span>
+                            <span class="stat-item-value" id="avgBlockTime">Calculating...</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-item-label">Blocks per Day:</span>
+                            <span class="stat-item-value" id="blocksPerDay">Calculating...</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-item-label">Chain Age:</span>
+                            <span class="stat-item-value" id="chainAge">Calculating...</span>
+                        </div>
                     </div>
                 </div>
-                {% endif %}
-                
-                <div class="block-meta">
-                    <span class="meta-item">
-                        <i class="fas fa-weight-hanging"></i> {{ block.size }} bytes
-                    </span>
-                    {% if block.mining_time and block.mining_time != "N/A" %}
-                    <span class="meta-item">
-                        <i class="fas fa-clock"></i> {{ "%.2f"|format(block.mining_time) }}s
-                    </span>
-                    {% endif %}
+
+                <div class="stat-card">
+                    <div class="stat-card-header">
+                        <div class="stat-card-icon">💵</div>
+                        <h4>Banknote Stats</h4>
+                    </div>
+                    <div class="stat-card-content">
+                        <div class="stat-item">
+                            <span class="stat-item-label">Total Banknotes:</span>
+                            <span class="stat-item-value">{{ genesis_count|default(0) }}</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-item-label">Average Denomination:</span>
+                            <span class="stat-item-value" id="avgDenomination">Calculating...</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-item-label">Total Value:</span>
+                            <span class="stat-item-value" id="totalBanknoteValue">Calculating...</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="stat-card">
+                    <div class="stat-card-header">
+                        <div class="stat-card-icon">👥</div>
+                        <h4>Network Activity</h4>
+                    </div>
+                    <div class="stat-card-content">
+                        <div class="stat-item">
+                            <span class="stat-item-label">Active Miners:</span>
+                            <span class="stat-item-value" id="activeMiners">Calculating...</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-item-label">Unique Addresses:</span>
+                            <span class="stat-item-value" id="uniqueAddresses">Calculating...</span>
+                        </div>
+                        <div class="stat-item">
+                            <span class="stat-item-label">Transactions/Day:</span>
+                            <span class="stat-item-value" id="txsPerDay">Calculating...</span>
+                        </div>
+                    </div>
                 </div>
             </div>
-            
-            <div class="block-actions">
-                {% if block.index > 0 %}
-                <a href="/block/{{ block.hash }}" class="btn btn-info action-btn">View Details</a>
-                {% else %}
-                <span class="badge bg-primary">Genesis Block</span>
-                {% endif %}
-            </div>
-        </div>
-        {% endfor %}
-    </div>
-    {% else %}
-    <div class="empty-state">
-        <i class="fas fa-cube fa-3x"></i>
-        <h3>No blocks in blockchain</h3>
-        <p>The blockchain is empty. Mine some blocks to get started.</p>
-    </div>
-    {% endif %}
-    <!-- Pagination Controls -->
-    {% if total_pages > 1 %}
-    <div class="pagination-section">
-        <div class="pagination-info">
-            Showing blocks {{ ((current_page - 1) * per_page) + 1 }} to {{ [current_page * per_page, total_blocks]|min }} of {{ total_blocks }} total blocks
-        </div>
-        
-        <div class="pagination-controls">
-            <!-- First Page -->
-            {% if current_page > 1 %}
-            <a href="{{ url_for('blockchain_viewer', page=1) }}" class="pagination-btn first">
-                <i class="fas fa-angle-double-left"></i>
-            </a>
-            {% else %}
-            <span class="pagination-btn first disabled">
-                <i class="fas fa-angle-double-left"></i>
-            </span>
-            {% endif %}
-            
-            <!-- Previous Page -->
-            {% if current_page > 1 %}
-            <a href="{{ url_for('blockchain_viewer', page=current_page-1) }}" class="pagination-btn prev">
-                <i class="fas fa-angle-left"></i>
-            </a>
-            {% else %}
-            <span class="pagination-btn prev disabled">
-                <i class="fas fa-angle-left"></i>
-            </span>
-            {% endif %}
-            
-            <!-- Page Numbers -->
-            <div class="page-numbers">
-                {% for p in range(max(1, current_page-2), min(total_pages+1, current_page+3)) %}
-                    {% if p == current_page %}
-                    <span class="page-number current">{{ p }}</span>
-                    {% else %}
-                    <a href="{{ url_for('blockchain_viewer', page=p) }}" class="page-number">{{ p }}</a>
-                    {% endif %}
-                {% endfor %}
-                
-                {% if total_pages > current_page + 2 %}
-                <span class="page-ellipsis">...</span>
-                <a href="{{ url_for('blockchain_viewer', page=total_pages) }}" class="page-number">{{ total_pages }}</a>
-                {% endif %}
-            </div>
-            
-            <!-- Next Page -->
-            {% if current_page < total_pages %}
-            <a href="{{ url_for('blockchain_viewer', page=current_page+1) }}" class="pagination-btn next">
-                <i class="fas fa-angle-right"></i>
-            </a>
-            {% else %}
-            <span class="pagination-btn next disabled">
-                <i class="fas fa-angle-right"></i>
-            </span>
-            {% endif %}
-            
-            <!-- Last Page -->
-            {% if current_page < total_pages %}
-            <a href="{{ url_for('blockchain_viewer', page=total_pages) }}" class="pagination-btn last">
-                <i class="fas fa-angle-double-right"></i>
-            </a>
-            {% else %}
-            <span class="pagination-btn last disabled">
-                <i class="fas fa-angle-double-right"></i>
-            </span>
-            {% endif %}
         </div>
     </div>
-    {% endif %}
+
+    <!-- Refresh Note -->
+    <div class="refresh-note">
+        <span class="note-icon">↻</span>
+        <span>Auto-refresh in <span id="countdown">30</span>s</span>
+        <button onclick="refreshNow()" class="refresh-btn">Refresh Now</button>
+    </div>
 </div>
+
+
 
 <style>
-.stats-overview {
+/* Profile-like Variables */
+:root {
+    --bg-primary: #0f0f0f;
+    --bg-secondary: #151515;
+    --bg-tertiary: #1e1e1e;
+    --border: #2d2d2d;
+    --border-light: #3a3a3a;
+    --text-primary: #ffffff;
+    --text-secondary: #b0b0b0;
+    --text-tertiary: #888888;
+    
+    /* Professional Colors */
+    --primary: #007aff;
+    --primary-light: #409cff;
+    --success: #30d158;
+    --warning: #ffd60a;
+    --danger: #ff453a;
+    --info: #32d7ee;
+    --purple: #bf5af2;
+    --cyan: #5ac8fa;
+    --pink: #ff2d55;
+    
+    /* Shadows */
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+    --shadow-xl: 0 20px 25px rgba(0, 0, 0, 0.15);
+}
+
+.blockchain-container {
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 2rem;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+/* Stats Grid - Profile Style */
+.compact-stats-grid {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1.5rem;
-    margin: 2rem 0;
+    gap: 1rem;
+    margin-bottom: 2rem;
 }
 
-.stat-card {
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 12px;
+.compact-stat-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
     padding: 1.5rem;
+    transition: all 0.3s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.compact-stat-card:hover {
+    border-color: var(--primary);
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-xl);
+}
+
+.compact-stat-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--primary), var(--info));
+    opacity: 0.7;
+}
+
+.stat-header {
     display: flex;
     align-items: center;
-    gap: 1rem;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-    transition: transform 0.2s ease;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.stat-card:hover {
-    transform: translateY(-2px);
+    gap: 0.75rem;
+    margin-bottom: 1rem;
 }
 
 .stat-icon {
-    width: 60px;
-    height: 60px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
     font-size: 1.5rem;
-    background: linear-gradient(135deg, #0d0062ff, #00aaffff);
-    color: white;
+    color: var(--info);
 }
 
-.stat-icon.transactions { background: linear-gradient(135deg, #7a8500ff, #f6ff00ff); }
-.stat-icon.genesis { background: linear-gradient(135deg, #00a118ff, #00ff59ff); }
-.stat-icon.regular { background: linear-gradient(135deg, #740000ff, #ff0000ff); }
-.stat-icon.transfer { background: linear-gradient(135deg, #710080ff, #ff00eeff); }
+.stat-title {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin: 0;
+}
 
-
-.stat-number {
+.compact-stat-value {
     font-size: 2rem;
-    font-weight: bold;
-    color: #ffffff;
+    font-weight: 800;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+    line-height: 1;
 }
 
-.stat-label {
-    color: #cccccc;
-    font-size: 0.9rem;
+.compact-stat-label {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+    margin-bottom: 0.75rem;
 }
 
-.type-breakdown {
-    margin: 2rem 0;
-}
-
-.type-tags {
-    display: flex;
-    gap: 1rem;
-    flex-wrap: wrap;
-}
-
-.type-tag {
+.stat-trend {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.75rem 1.5rem;
-    border-radius: 12px;
+    font-size: 0.875rem;
+}
+
+.trend-indicator {
     font-size: 1rem;
-    background: rgba(255, 255, 255, 0.05);
-    border: 2px solid;
+    animation: pulse 2s infinite;
+}
+
+.trend-indicator.up {
+    color: var(--success);
+}
+
+.stat-subtext {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    margin-top: 0.5rem;
+}
+
+.subtext-label {
+    color: var(--text-tertiary);
+}
+
+.subtext-value {
+    color: var(--text-secondary);
     font-weight: 600;
 }
 
-.type-tag.genesis { 
-    background: rgba(0, 255, 0, 0.2); 
-    border-color: #00FF00; 
-    color: #90EE90; 
-
-}
-.type-tag.transfer { 
-    background: rgba(75, 0, 130, 0.2); 
-    border-color: #4B0082; 
-    color: #B19CD9; 
-}
-.type-tag.reward { 
-    background: rgba(255, 0, 0, 0.2); 
-    border-color: #FF0000; 
-    color: #FFB6C1; 
+/* Search Section */
+.search-section {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 2rem;
 }
 
-.blocks-section {
-    margin-top: 2rem;
+.search-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
 }
 
-.section-header {
+.search-header h3 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.search-stats {
+    display: flex;
+    gap: 1.5rem;
+}
+
+.search-stat {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 500;
+}
+
+.search-container {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.search-input-group {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.5rem 1rem;
+    transition: all 0.2s ease;
+}
+
+.search-input-group:focus-within {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2);
+}
+
+.search-icon {
+    color: var(--text-tertiary);
+    font-size: 1rem;
+    margin-right: 0.5rem;
+}
+
+.search-input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    outline: none;
+}
+
+.search-input::placeholder {
+    color: var(--text-tertiary);
+}
+
+.search-filters {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.filter-select {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    padding: 0.5rem 1rem;
+    outline: none;
+    cursor: pointer;
+    min-width: 150px;
+}
+
+.filter-select:focus {
+    border-color: var(--primary);
+}
+
+.filter-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.filter-btn:hover {
+    background: var(--bg-tertiary);
+    border-color: var(--border-light);
+    color: var(--text-primary);
+}
+
+/* Tab Navigation */
+.tab-navigation {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 2rem;
+    padding: 0.5rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow-x: auto;
+}
+
+.tab-button {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.875rem 1.5rem;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    flex: 1;
+    justify-content: center;
+}
+
+.tab-button:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.tab-button.active {
+    background: var(--primary);
+    color: white;
+    box-shadow: var(--shadow-sm);
+}
+
+.tab-icon {
+    font-size: 1.125rem;
+}
+
+.tab-text {
+    flex: 1;
+    text-align: center;
+}
+
+/* Tab Content */
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+    animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* Compact Table Section */
+.compact-table-section {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 1rem;
+}
+
+.compact-table-header {
+    padding: 1.5rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.compact-table-header h3 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.table-info {
+    display: flex;
+    gap: 1.5rem;
+    font-size: 0.875rem;
+}
+
+.info-item {
+    color: var(--text-secondary);
+}
+
+.compact-table-container {
+    overflow-x: auto;
+    max-height: 600px;
+    overflow-y: auto;
+}
+
+.compact-blocks-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.875rem;
+}
+
+.compact-blocks-table th {
+    padding: 1rem;
+    text-align: left;
+    font-weight: 600;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+    background: rgba(0, 0, 0, 0.1);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+}
+
+.compact-blocks-table td {
+    padding: 1rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: middle;
+}
+
+.compact-block-row {
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: var(--bg-tertiary);
+}
+
+.compact-block-row:hover {
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.compact-block-row:nth-child(even) {
+    background: rgba(255, 255, 255, 0.02);
+}
+
+/* Cells */
+.compact-index-cell {
+    width: 70px;
+    text-align: center;
+}
+
+.compact-index-number {
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    font-variant-numeric: tabular-nums;
+}
+
+.latest-badge {
+    display: inline-block;
+    margin-top: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    background: rgba(48, 209, 88, 0.2);
+    color: var(--success);
+    border: 1px solid var(--success);
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.compact-hash-cell {
+    width: 200px;
+}
+
+.hash-display {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.compact-block-hash {
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Roboto Mono', monospace;
+    font-size: 0.875rem;
+    color: var(--primary);
+    word-break: break-all;
+    font-weight: 500;
+}
+
+.prev-hash {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+}
+
+.prev-label {
+    color: var(--text-tertiary);
+}
+
+.compact-prev-hash {
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Roboto Mono', monospace;
+    color: var(--text-secondary);
+    word-break: break-all;
+}
+
+.compact-time-cell {
+    width: 100px;
+}
+
+.compact-time {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.compact-date {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+}
+
+.compact-miner-cell {
+    width: 150px;
+}
+
+.miner-display {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.miner-address {
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Roboto Mono', monospace;
+    font-size: 0.875rem;
+    color: var(--info);
+    word-break: break-all;
+    font-weight: 500;
+}
+
+.nonce-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+}
+
+.nonce-label {
+    color: var(--text-tertiary);
+}
+
+.nonce-value {
+    color: var(--text-secondary);
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Roboto Mono', monospace;
+    font-weight: 500;
+}
+
+.compact-transactions-cell {
+    width: 160px;
+}
+
+.transactions-display {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.tx-count {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.tx-breakdown {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.tx-badge {
+    padding: 0.25rem 0.5rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+.tx-badge.genesis {
+    background: rgba(255, 45, 85, 0.2);
+    color: var(--pink);
+    border: 1px solid var(--pink);
+}
+
+.tx-badge.transfer {
+    background: rgba(0, 122, 255, 0.2);
+    color: var(--primary);
+    border: 1px solid var(--primary);
+}
+
+.tx-badge.reward {
+    background: rgba(255, 149, 0, 0.2);
+    color: var(--warning);
+    border: 1px solid var(--warning);
+}
+
+.compact-size-cell {
+    width: 80px;
+    text-align: center;
+}
+
+.size-display {
+    padding: 0.5rem 0.75rem;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Roboto Mono', monospace;
+    font-weight: 500;
+}
+
+.compact-details-cell {
+    width: 60px;
+    text-align: center;
+}
+
+.details-btn {
+    width: 36px;
+    height: 36px;
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.details-btn:hover {
+    background: var(--primary);
+    border-color: var(--primary);
+    transform: scale(1.05);
+}
+
+.details-icon {
+    font-size: 1rem;
+}
+
+/* Graph Section */
+.graph-section {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.graph-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.graph-header h3 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin: 0;
+}
+
+.timeframe-selector {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.timeframe-btn {
+    padding: 0.5rem 1rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.timeframe-btn:hover {
+    border-color: var(--border-light);
+    color: var(--text-primary);
+}
+
+.timeframe-btn.active {
+    background: var(--primary);
+    border-color: var(--primary);
+    color: white;
+}
+
+.line-graph-container {
+    height: 250px;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+    position: relative;
+    border: 1px solid var(--border);
+    padding: 1rem;
+}
+
+.graph-stats {
+    display: flex;
+    justify-content: space-around;
+    font-size: 0.875rem;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    padding: 1rem;
+}
+
+.graph-stat {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.stat-label {
+    color: var(--text-tertiary);
+    font-weight: 500;
+}
+
+.stat-value {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+/* Statistics Section */
+.statistics-section {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.5rem;
+}
+
+.statistics-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 1.5rem;
+}
+
+.stat-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    transition: all 0.3s ease;
+}
+
+.stat-card:hover {
+    border-color: var(--primary);
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+}
+
+.stat-card-header {
     display: flex;
     align-items: center;
     gap: 1rem;
     margin-bottom: 1.5rem;
 }
 
-.section-header h2 {
+.stat-card-icon {
+    font-size: 1.5rem;
+    color: var(--info);
+}
+
+.stat-card-header h4 {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--text-primary);
     margin: 0;
-    color: #ffffff;
 }
 
-.blocks-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
-    gap: 1.5rem;
-}
-
-.block-card {
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 12px;
-    padding: 1.5rem;
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.3);
-    border-left: 4px solid #FF0000;
-    transition: transform 0.2s ease;
+.stat-card-content {
     display: flex;
     flex-direction: column;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.block-card:hover {
-    transform: translateY(-2px);
-}
-
-.block-card.genesis {
-    border-left-color: #00FF00;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(0, 255, 0, 0.1));
-}
-
-.block-card.transaction {
-    border-left-color: #ffe600ff;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(75, 0, 130, 0.1));
-}
-
-.block-header {
-    margin-bottom: 1rem;
-}
-
-.block-number {
-    display: flex;
-    align-items: center;
     gap: 1rem;
-    margin-bottom: 0.5rem;
 }
 
-.block-index {
-    font-size: 1.25rem;
-    font-weight: bold;
-    color: #ffffff;
-}
-
-.genesis-badge {
-    background: #00FF00;
-    color: #000000;
-    padding: 0.25rem 0.75rem;
-    border-radius: 8px;
-    font-size: 0.8rem;
-    font-weight: 600;
-    
-}
-
-.transaction-badge {
-    background: #dfbe00ff;
-    color: white;
-    padding: 0.25rem 0.75rem;
-    border-radius: 8px;
-    font-size: 0.8rem;
-    font-weight: 600;
-}
-
-.block-hash {
-    font-family: 'Courier New', monospace;
-    font-size: 0.9rem;
-    color: #cccccc;
-    background: rgba(0, 0, 0, 0.3);
-    padding: 0.5rem;
-    border-radius: 4px;
-    word-break: break-all;
-}
-
-.block-body {
-    flex: 1;
-    space-y: 1rem;
-}
-
-.info-item {
-    margin-bottom: 0.75rem;
-}
-
-.info-item label {
-    font-weight: 600;
-    color: #cccccc;
-    font-size: 0.9rem;
-    display: block;
-    margin-bottom: 0.25rem;
-}
-
-.info-item code {
-    font-family: 'Courier New', monospace;
-    background: rgba(0, 0, 0, 0.3);
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.85rem;
-    color: #ffffff;
-}
-
-.transactions-summary {
-    background: rgba(255, 255, 255, 0.03);
-    padding: 1rem;
-    border-radius: 8px;
-    margin: 1rem 0;
-}
-
-.tx-count {
-    font-weight: 600;
-    margin-bottom: 0.5rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    color: #ffffff;
-}
-
-.tx-breakdown {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-}
-
-.tx-type-badge {
-    padding: 0.25rem 0.5rem;
-    border-radius: 6px;
-    font-size: 0.8rem;
-    font-weight: 600;
-}
-
-.tx-type-badge.genesis { 
-    background: rgba(0, 255, 0, 0.3); 
-    color: #90EE90; 
-    border: 1px solid #00FF00;
-}
-.tx-type-badge.transfer { 
-    background: rgba(75, 0, 130, 0.3); 
-    color: #B19CD9; 
-    border: 1px solid #4B0082;
-}
-.tx-type-badge.reward { 
-    background: rgba(255, 0, 0, 0.3); 
-    color: #FFB6C1; 
-    border: 1px solid #FF0000;
-}
-
-.transaction-details {
-    margin: 1rem 0;
-    padding: 1rem;
-    background: rgba(255, 255, 255, 0.03);
-    border-radius: 8px;
-    border-left: 3px solid #00FF00;
-}
-
-.transaction-details h4 {
-    margin: 0 0 0.75rem 0;
-    font-size: 1rem;
-    color: #ffffff;
-}
-
-.transaction-list {
-    space-y: 0.5rem;
-}
-
-.transaction-item {
-    padding: 0.5rem;
-    background: rgba(255, 255, 255, 0.05);
-    border-radius: 4px;
-    border-left: 2px solid #00FF00;
-}
-
-.tx-type {
-    font-size: 0.8rem;
-    font-weight: 600;
-    padding: 0.2rem 0.5rem;
-    border-radius: 4px;
-    display: inline-block;
-    margin-bottom: 0.25rem;
-}
-
-.tx-type.genesis {
-    background: rgba(0, 255, 0, 0.3);
-    color: #90EE90;
-    border: 1px solid #00FF00;
-}
-
-.tx-type.transfer {
-    background: rgba(75, 0, 130, 0.3);
-    color: #B19CD9;
-    border: 1px solid #4B0082;
-}
-
-.tx-type.reward {
-    background: rgba(255, 0, 0, 0.3);
-    color: #FFB6C1;
-    border: 1px solid #FF0000;
-}
-
-.tx-flow {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.85rem;
-    color: #cccccc;
-}
-
-.tx-amount {
-    font-weight: 600;
-    color: #00FF00;
-}
-
-.tx-serial {
-    font-size: 0.85rem;
-    color: #cccccc;
-    font-family: 'Courier New', monospace;
-}
-
-.tx-more {
-    text-align: center;
-    font-size: 0.8rem;
-    color: #cccccc;
-    font-style: italic;
-    margin-top: 0.5rem;
-}
-
-.block-meta {
+.stat-item {
     display: flex;
     justify-content: space-between;
-    margin-top: 1rem;
-    padding-top: 1rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
-    flex-wrap: wrap;
-    gap: 0.5rem;
-}
-
-.meta-item {
-    font-size: 0.8rem;
-    color: #cccccc;
-    display: flex;
     align-items: center;
-    gap: 0.25rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border);
 }
 
-.block-actions {
-    margin-top: 1rem;
-    padding-top: 1rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.1);
+.stat-item:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
 }
 
-.action-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    background: linear-gradient(135deg, #FF0000, #FF7F00);
-    color: white;
-    text-decoration: none;
-    border-radius: 6px;
-    font-size: 0.9rem;
-    transition: all 0.2s ease;
-    border: none;
+.stat-item-label {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    font-weight: 500;
 }
 
-.action-btn:hover {
-    background: linear-gradient(135deg, #FF7F00, #FFFF00);
-    color: #000000;
-    transform: translateY(-1px);
+.stat-item-value {
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-weight: 600;
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Roboto Mono', monospace;
 }
 
+/* Empty State */
 .empty-state {
     text-align: center;
-    padding: 3rem;
-    color: #cccccc;
+    padding: 3rem 1rem;
 }
 
-.empty-state i {
-    margin-bottom: 1rem;
+.empty-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 1rem;
+    color: var(--text-tertiary);
+}
+
+.empty-icon {
+    font-size: 3rem;
     opacity: 0.5;
 }
 
-.badge {
-    background: #FF0000;
-    color: white;
-    padding: 0.25rem 0.75rem;
-    border-radius: 12px;
-    font-size: 0.9rem;
-    font-weight: 600;
-}
-
-.text-muted {
-    color: #999999 !important;
-}
-@media (max-width: 768px) {
-    .stats-overview {
-        grid-template-columns: 1fr;
-    }
-    
-    .blocks-grid {
-        grid-template-columns: 1fr;
-    }
-    
-    .type-tags {
-        flex-direction: column;
-    }
-    
-    .block-meta {
-        flex-direction: column;
-    }
-    
-    .transaction-details {
-        padding: 0.75rem;
-    }
-}
-/* Pagination Styles */
-.pagination-section {
-    margin-top: 2rem;
+/* Pagination */
+.compact-pagination {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     padding: 1.5rem;
-    background: var(--card-bg);
-    border-radius: 12px;
-    border: 1px solid var(--border-color);
+    border-top: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.1);
 }
 
-.pagination-info {
-    text-align: center;
-    margin-bottom: 1rem;
-    color: var(--text-muted);
-    font-size: 0.9rem;
-}
-
-.pagination-controls {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-}
-
-.pagination-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border: 1px solid var(--border-color);
+.page-nav {
+    padding: 0.5rem 1rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
     border-radius: 8px;
-    color: var(--text-color);
+    color: var(--text-primary);
     text-decoration: none;
+    font-size: 0.875rem;
+    font-weight: 500;
     transition: all 0.2s ease;
 }
 
-.pagination-btn:hover:not(.disabled) {
-    background: var(--primary-color);
-    color: white;
-    border-color: var(--primary-color);
+.page-nav:hover:not(.disabled) {
+    background: var(--primary);
+    border-color: var(--primary);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
 }
 
-.pagination-btn.disabled {
+.page-nav.disabled {
     opacity: 0.5;
     cursor: not-allowed;
-    color: var(--text-muted);
 }
 
 .page-numbers {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    margin: 0 1rem;
 }
 
 .page-number {
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 40px;
-    height: 40px;
-    border: 1px solid var(--border-color);
+    min-width: 36px;
+    height: 36px;
+    padding: 0 0.5rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
     border-radius: 8px;
-    color: var(--text-color);
+    color: var(--text-primary);
     text-decoration: none;
+    font-size: 0.875rem;
+    font-weight: 500;
     transition: all 0.2s ease;
 }
 
-.page-number:hover {
-    background: var(--hover-color);
-    border-color: var(--primary-color);
+.page-number:hover:not(.active) {
+    background: var(--bg-tertiary);
+    border-color: var(--border-light);
 }
 
-.page-number.current {
-    background: var(--primary-color);
+.page-number.active {
+    background: var(--primary);
+    border-color: var(--primary);
     color: white;
-    border-color: var(--primary-color);
 }
 
 .page-ellipsis {
+    color: var(--text-tertiary);
     padding: 0 0.5rem;
-    color: var(--text-muted);
 }
 
-/* Responsive pagination */
+/* Refresh Note */
+.refresh-note {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+}
+
+.note-icon {
+    color: var(--primary);
+    animation: spin 2s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+#countdown {
+    color: var(--warning);
+    font-weight: 600;
+}
+
+.refresh-btn {
+    padding: 0.5rem 1rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.refresh-btn:hover {
+    background: var(--primary);
+    border-color: var(--primary);
+}
+
+/* Modal */
+.modal {
+    display: none;
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.85);
+    z-index: 1000;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+}
+
+.modal-content {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    width: 100%;
+    max-width: 800px;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    animation: modalFadeIn 0.3s ease;
+}
+
+@keyframes modalFadeIn {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+}
+
+.modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem 2rem;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.modal-header h3 {
+    color: var(--text-primary);
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.modal-close {
+    background: var(--danger);
+    color: white;
+    border: none;
+    border-radius: 50%;
+    width: 36px;
+    height: 36px;
+    font-size: 1.5rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.modal-close:hover {
+    background: var(--danger);
+    transform: scale(1.1);
+}
+
+.modal-body {
+    padding: 2rem;
+    overflow-y: auto;
+    flex: 1;
+}
+
+.modal-loading {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 3rem 2rem;
+    gap: 1rem;
+}
+
+.loading-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+.loading-text {
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+}
+
+.modal-details {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+/* Responsive */
 @media (max-width: 768px) {
-    .pagination-controls {
-        flex-wrap: wrap;
-        gap: 0.25rem;
+    .blockchain-container {
+        padding: 1rem;
+    }
+    
+    .compact-stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 1rem;
+    }
+    
+    .search-container {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 1rem;
+    }
+    
+    .search-filters {
+        width: 100%;
+        justify-content: space-between;
+    }
+    
+    .filter-select {
+        flex: 1;
+    }
+    
+    .tab-navigation {
+        flex-direction: column;
+    }
+    
+    .compact-table-header {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: flex-start;
+    }
+    
+    .table-info {
+        width: 100%;
+        justify-content: space-between;
+    }
+    
+    .graph-header {
+        flex-direction: column;
+        gap: 1rem;
+        align-items: flex-start;
+    }
+    
+    .timeframe-selector {
+        width: 100%;
+        justify-content: space-between;
+    }
+    
+    .timeframe-btn {
+        flex: 1;
+        text-align: center;
+    }
+    
+    .statistics-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .compact-pagination {
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .page-nav {
+        width: 100%;
+        text-align: center;
     }
     
     .page-numbers {
-        order: -1;
-        width: 100%;
-        justify-content: center;
-        margin: 0.5rem 0;
+        order: 2;
+    }
+}
+
+@media (max-width: 480px) {
+    .compact-stats-grid {
+        grid-template-columns: 1fr;
     }
     
-    .pagination-btn, .page-number {
-        width: 36px;
-        height: 36px;
-        font-size: 0.9rem;
+    .compact-stat-card {
+        padding: 1.25rem;
+    }
+    
+    .compact-stat-value {
+        font-size: 1.75rem;
+    }
+    
+    .search-filters {
+        flex-direction: column;
+    }
+    
+    .filter-btn {
+        width: 100%;
+        justify-content: center;
     }
 }
 </style>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+// Tab Management
+function openTab(tabName) {
+    // Hide all tab contents
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    
+    // Show selected tab
+    document.getElementById(tabName).classList.add('active');
+    
+    // Update tab buttons
+    document.querySelectorAll('.tab-button').forEach(button => {
+        button.classList.remove('active');
+    });
+    
+    // Find and activate the clicked button
+    const buttons = document.querySelectorAll('.tab-button');
+    for (let button of buttons) {
+        if (button.getAttribute('onclick').includes(tabName)) {
+            button.classList.add('active');
+            break;
+        }
+    }
+    
+    // Store active tab
+    sessionStorage.setItem('blockchainActiveTab', tabName);
+    
+    // Load data for the tab if needed
+    if (tabName === 'activity') {
+        loadActivityData();
+    } else if (tabName === 'statistics') {
+        calculateStatistics();
+    }
+}
+
+// Filter Functions
+function filterTable() {
+    const searchInput = document.getElementById('blockchainSearch').value.toLowerCase();
+    const filterType = document.getElementById('filterType').value;
+    const rows = document.querySelectorAll('.compact-block-row');
+    
+    rows.forEach(row => {
+        let shouldShow = false;
+        
+        if (!searchInput) {
+            shouldShow = true;
+        } else {
+            const index = row.querySelector('.compact-index-number').textContent;
+            const blockHash = row.querySelector('.compact-block-hash').textContent;
+            const prevHash = row.querySelector('.compact-prev-hash')?.textContent || '';
+            const miner = row.querySelector('.miner-address').textContent;
+            const txCount = row.querySelector('.tx-count').textContent;
+            const genesisCount = row.querySelector('.tx-badge.genesis')?.textContent || '';
+            const transferCount = row.querySelector('.tx-badge.transfer')?.textContent || '';
+            const rewardCount = row.querySelector('.tx-badge.reward')?.textContent || '';
+            
+            const allText = (index + ' ' + blockHash + ' ' + prevHash + ' ' + miner + ' ' + 
+                          txCount + ' ' + genesisCount + ' ' + transferCount + ' ' + rewardCount).toLowerCase();
+            
+            switch(filterType) {
+                case 'block':
+                    shouldShow = index.includes(searchInput) || blockHash.includes(searchInput) || prevHash.includes(searchInput);
+                    break;
+                case 'miner':
+                    shouldShow = miner.includes(searchInput);
+                    break;
+                case 'user':
+                    shouldShow = miner.includes(searchInput);
+                    break;
+                default: // 'all'
+                    shouldShow = allText.includes(searchInput);
+            }
+        }
+        
+        row.style.display = shouldShow ? '' : 'none';
+    });
+}
+
+function resetFilters() {
+    document.getElementById('blockchainSearch').value = '';
+    document.getElementById('filterType').selectedIndex = 0;
+    filterTable();
+}
+
+// Show Block Details
+function showBlockDetails(blockIndex) {
+    const modal = document.getElementById('blockModal');
+    const modalLoading = document.getElementById('modalLoading');
+    const modalDetails = document.getElementById('modalDetails');
+    
+    modal.style.display = 'flex';
+    modalLoading.style.display = 'flex';
+    modalDetails.style.display = 'none';
+    
+    // In a real app, you would fetch block details from your API
+    // For now, we'll simulate with existing data
+    setTimeout(() => {
+        modalLoading.style.display = 'none';
+        modalDetails.style.display = 'block';
+        modalDetails.innerHTML = `
+            <div class="block-details">
+                <h4>Block #${blockIndex}</h4>
+                <p>Details would be loaded here...</p>
+                <p>In a real implementation, you would fetch block data from your backend API.</p>
+                <div class="detail-actions">
+                    <a href="/block/${blockIndex}" class="action-btn">
+                        <span>View Full Details</span>
+                    </a>
+                </div>
+            </div>
+        `;
+    }, 500);
+}
+
+function closeModal() {
+    document.getElementById('blockModal').style.display = 'none';
+}
+
+// Timeframe Management
+let selectedTimeframe = '25b';
+let activityChart = null;
+
+function changeTimeframe(timeframe) {
+    selectedTimeframe = timeframe;
+    loadActivityData();
+    updateTimeframeButtons();
+}
+
+function updateTimeframeButtons() {
+    document.querySelectorAll('.timeframe-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.textContent.toLowerCase().includes(selectedTimeframe.replace('b', ' blocks')) || 
+            btn.getAttribute('onclick')?.includes(selectedTimeframe)) {
+            btn.classList.add('active');
+        }
+    });
+}
+
+// Load Activity Data
+async function loadActivityData() {
+    try {
+        const blocks = {{ blocks|tojson|safe }};
+        const totalBlocks = {{ total_blocks|default(0) }};
+        
+        // Prepare data based on timeframe
+        let displayBlocks = [];
+        if (selectedTimeframe === 'all') {
+            displayBlocks = blocks;
+        } else {
+            const limit = parseInt(selectedTimeframe.replace('b', ''));
+            displayBlocks = blocks.slice(0, Math.min(limit, blocks.length));
+        }
+        
+        // Reverse for chronological order
+        const chronologicalBlocks = [...displayBlocks].reverse();
+        
+        // Prepare chart data
+        const labels = chronologicalBlocks.map(block => `#${block.index}`);
+        const txCounts = chronologicalBlocks.map(block => block.transaction_count || 0);
+        const genesisCounts = chronologicalBlocks.map(block => block.genesis_count || 0);
+        const transferCounts = chronologicalBlocks.map(block => block.transfer_count || 0);
+        const rewardCounts = chronologicalBlocks.map(block => block.reward_count || 0);
+        
+        // Update stats
+        const peakTXs = Math.max(...txCounts);
+        const avgTXs = txCounts.length > 0 ? Math.round(txCounts.reduce((a, b) => a + b) / txCounts.length) : 0;
+        
+        document.getElementById('peakValue').textContent = `${peakTXs}`;
+        document.getElementById('avgValue').textContent = `${avgTXs}`;
+        document.getElementById('totalValue').textContent = `${displayBlocks.length}`;
+        
+        // Render chart
+        renderActivityChart(labels, txCounts, genesisCounts, transferCounts, rewardCounts);
+    } catch (error) {
+        console.error('Error loading activity data:', error);
+    }
+}
+
+// Render Activity Chart
+function renderActivityChart(labels, txCounts, genesisCounts, transferCounts, rewardCounts) {
+    const ctx = document.getElementById('activityCanvas').getContext('2d');
+    
+    // Destroy existing chart
+    if (activityChart) {
+        activityChart.destroy();
+    }
+    
+    // Create new chart
+    activityChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [
+                {
+                    label: 'Total Transactions',
+                    data: txCounts,
+                    borderColor: 'rgba(255, 214, 10, 1)', // Yellow
+                    backgroundColor: 'rgba(255, 214, 10, 0.1)',
+                    borderWidth: 2,
+                    fill: true,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    pointHoverRadius: 4
+                },
+                {
+                    label: 'Banknotes',
+                    data: genesisCounts,
+                    borderColor: 'rgba(255, 45, 85, 1)', // Pink
+                    backgroundColor: 'rgba(255, 45, 85, 0.1)',
+                    borderWidth: 2,
+                    fill: false,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    pointHoverRadius: 4
+                },
+                {
+                    label: 'Transfers',
+                    data: transferCounts,
+                    borderColor: 'rgba(0, 122, 255, 1)', // Blue
+                    backgroundColor: 'rgba(0, 122, 255, 0.1)',
+                    borderWidth: 2,
+                    fill: false,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    pointHoverRadius: 4
+                },
+                {
+                    label: 'Rewards',
+                    data: rewardCounts,
+                    borderColor: 'rgba(255, 149, 0, 1)', // Orange
+                    backgroundColor: 'rgba(255, 149, 0, 0.1)',
+                    borderWidth: 2,
+                    fill: false,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    pointHoverRadius: 4
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: false
+                },
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    backgroundColor: 'rgba(18, 18, 18, 0.9)',
+                    borderColor: 'var(--border)',
+                    borderWidth: 1,
+                    titleColor: 'var(--text-primary)',
+                    bodyColor: 'var(--text-secondary)',
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.dataset.label}: ${context.raw} TXs`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    grid: {
+                        color: 'rgba(42, 42, 42, 0.5)',
+                        drawBorder: false
+                    },
+                    ticks: {
+                        color: 'var(--text-tertiary)',
+                        font: {
+                            size: 10
+                        },
+                        maxRotation: 45,
+                        callback: function(value) {
+                            const label = this.getLabelForValue(value);
+                            return label;
+                        }
+                    }
+                },
+                y: {
+                    beginAtZero: true,
+                    grid: {
+                        color: 'rgba(42, 42, 42, 0.5)',
+                        drawBorder: false
+                    },
+                    ticks: {
+                        color: 'var(--text-tertiary)',
+                        font: {
+                            size: 10
+                        },
+                        callback: function(value) {
+                            return value + ' TXs';
+                        }
+                    }
+                }
+            },
+            interaction: {
+                intersect: false,
+                mode: 'nearest'
+            }
+        }
+    });
+}
+
+// Calculate Statistics
+async function calculateStatistics() {
+    try {
+        const blocks = {{ blocks|tojson|safe }};
+        
+        if (blocks.length === 0) {
+            return;
+        }
+        
+        // Calculate block time statistics
+        const sortedBlocks = [...blocks].sort((a, b) => a.index - b.index);
+        let totalBlockTime = 0;
+        let blockTimeCount = 0;
+        
+        for (let i = 1; i < sortedBlocks.length; i++) {
+            const prevTime = sortedBlocks[i - 1].timestamp || 0;
+            const currTime = sortedBlocks[i].timestamp || 0;
+            if (prevTime > 0 && currTime > 0) {
+                const timeDiff = currTime - prevTime;
+                if (timeDiff > 0 && timeDiff < 3600) { // Filter outliers (max 1 hour between blocks)
+                    totalBlockTime += timeDiff;
+                    blockTimeCount++;
+                }
+            }
+        }
+        
+        const avgBlockTime = blockTimeCount > 0 ? (totalBlockTime / blockTimeCount).toFixed(2) : 'N/A';
+        const blocksPerDay = avgBlockTime !== 'N/A' ? (86400 / avgBlockTime).toFixed(1) : 'N/A';
+        
+        // Calculate chain age
+        const firstBlock = sortedBlocks[0];
+        const latestBlock = sortedBlocks[sortedBlocks.length - 1];
+        const chainAgeSeconds = latestBlock.timestamp - firstBlock.timestamp;
+        const chainAgeDays = (chainAgeSeconds / 86400).toFixed(1);
+        
+        // Update statistics
+        document.getElementById('avgBlockTime').textContent = avgBlockTime === 'N/A' ? 'N/A' : `${avgBlockTime}s`;
+        document.getElementById('blocksPerDay').textContent = blocksPerDay;
+        document.getElementById('chainAge').textContent = `${chainAgeDays} days`;
+        
+    } catch (error) {
+        console.error('Error calculating statistics:', error);
+    }
+}
+
+// Auto-refresh Countdown
+let countdown = 30;
+let countdownInterval;
+
+function startCountdown() {
+    clearInterval(countdownInterval);
+    countdown = 30;
+    document.getElementById('countdown').textContent = countdown;
+    
+    countdownInterval = setInterval(() => {
+        countdown--;
+        document.getElementById('countdown').textContent = countdown;
+        
+        if (countdown <= 0) {
+            clearInterval(countdownInterval);
+            refreshNow();
+        }
+    }, 1000);
+}
+
+function refreshNow() {
+    clearInterval(countdownInterval);
+    window.location.reload();
+}
+
+// Initialize
+document.addEventListener('DOMContentLoaded', function() {
+    // Restore active tab
+    const activeTab = sessionStorage.getItem('blockchainActiveTab') || 'blocks';
+    openTab(activeTab);
+    
+    // Initialize timeframe buttons
+    updateTimeframeButtons();
+    
+    // Load initial activity data if on activity tab
+    if (activeTab === 'activity') {
+        loadActivityData();
+    }
+    
+    // Calculate statistics if on statistics tab
+    if (activeTab === 'statistics') {
+        calculateStatistics();
+    }
+    
+    // Start auto-refresh countdown
+    startCountdown();
+    
+    // Setup search input debounce
+    let searchTimeout;
+    document.getElementById('blockchainSearch').addEventListener('input', function() {
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(filterTable, 300);
+    });
+    
+    // Auto-refresh data every 15 seconds
+    setInterval(() => {
+        if (document.getElementById('activity').classList.contains('active')) {
+            loadActivityData();
+        }
+        if (document.getElementById('statistics').classList.contains('active')) {
+            calculateStatistics();
+        }
+    }, 15000);
+    
+    // Close modal with Escape key
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape') {
+            closeModal();
+        }
+    });
+    
+    // Close modal when clicking outside
+    document.getElementById('blockModal').addEventListener('click', (event) => {
+        if (event.target.id === 'blockModal') {
+            closeModal();
+        }
+    });
+});
+</script>
 {% endblock %}

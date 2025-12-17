@@ -1,0 +1,1170 @@
+<!-- transaction_viewer.html -->
+{% extends "base.html" %}
+{% block content %}
+<div class="profile-container">
+    <!-- Transaction Header -->
+    <div class="profile-header-card">
+        <div class="avatar-section">
+            <div class="avatar-wrapper">
+                <div class="avatar-initials">⛓️</div>
+                <div class="avatar-glow"></div>
+            </div>
+        </div>
+        
+        <div class="profile-info-section">
+            <h1 class="profile-username">Transaction Explorer</h1>
+            <div class="profile-stats">
+                <div class="profile-stat">
+                    <span class="stat-value">{{ transaction.status_icon }} {{ transaction.status_label }}</span>
+                    <span class="stat-label">Status</span>
+                </div>
+                <div class="profile-stat">
+                    <span class="stat-value">{{ transaction.confirmations }}</span>
+                    <span class="stat-label">Confirmations</span>
+                </div>
+                {% if transaction.block_height %}
+                <div class="profile-stat">
+                    <span class="stat-value">#{{ transaction.block_height }}</span>
+                    <span class="stat-label">Block</span>
+                </div>
+                {% endif %}
+                {% if transaction.value %}
+                <div class="profile-stat">
+                    <span class="stat-value">{{ "%.6f"|format(transaction.value) }}</span>
+                    <span class="stat-label">Value</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab Navigation -->
+    <div class="tab-navigation">
+        <button class="tab-button active" onclick="openTab('overview')">
+            <span class="tab-icon">📊</span>
+            <span class="tab-text">Overview</span>
+        </button>
+        <button class="tab-button" onclick="openTab('details')">
+            <span class="tab-icon">📄</span>
+            <span class="tab-text">Details</span>
+        </button>
+        <button class="tab-button" onclick="openTab('raw')">
+            <span class="tab-icon">📝</span>
+            <span class="tab-text">Raw Data</span>
+        </button>
+        <button class="tab-button" onclick="openTab('tracking')">
+            <span class="tab-icon">🔍</span>
+            <span class="tab-text">Tracking</span>
+        </button>
+    </div>
+
+    <!-- Overview Tab -->
+    <div id="overview" class="tab-content active">
+        <!-- Status Card -->
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">{{ transaction.status_icon }}</div>
+                <h3 class="header-title">Transaction Status</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="status-display">
+                    <div class="status-indicator {{ transaction.status_color }}">
+                        <div class="status-icon-large">{{ transaction.status_icon }}</div>
+                        <div class="status-info">
+                            <div class="status-title">{{ transaction.status_label }}</div>
+                            <div class="status-subtitle">
+                                {% if transaction.status == 'confirmed' %}
+                                    {{ transaction.confirmations }} block confirmations
+                                {% elif transaction.status == 'pending' %}
+                                    Waiting for network confirmation
+                                {% elif transaction.status == 'failed' %}
+                                    Transaction failed to execute
+                                {% else %}
+                                    Status unknown
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    
+                    {% if transaction.status == 'pending' %}
+                    <div class="progress-section">
+                        <div class="progress-info">
+                            <span class="progress-label">Confirmation Progress</span>
+                            <span class="progress-value">{{ confirmation_percentage|int }}%</span>
+                        </div>
+                        <div class="progress-bar">
+                            <div class="progress-fill" style="width: {{ confirmation_percentage }}%"></div>
+                        </div>
+                        <div class="progress-stats">
+                            <span class="stat-label">{{ transaction.confirmations }} of 6 confirmations</span>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if transaction.error_message %}
+                    <div class="error-message">
+                        <div class="error-icon">⚠️</div>
+                        <div class="error-text">
+                            <strong>Error:</strong>
+                            <span>{{ transaction.error_message }}</span>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Transaction Hash -->
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">🔑</div>
+                <h3 class="header-title">Transaction Hash</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="hash-display">
+                    <code class="hash-full">{{ transaction.hash }}</code>
+                    <button class="copy-btn" onclick="copyToClipboard('{{ transaction.hash }}')" title="Copy hash">
+                        <span class="copy-icon">📋</span>
+                    </button>
+                </div>
+                <div class="hash-actions">
+                    <a href="https://blockchain.info/tx/{{ transaction.hash }}" target="_blank" class="action-btn cyan small">
+                        <span>View on Blockchain Explorer</span>
+                        <div class="btn-icon">🌐</div>
+                    </a>
+                    <button class="action-btn secondary small" onclick="openTab('raw')">
+                        <span>View Raw Data</span>
+                        <div class="btn-icon">📝</div>
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Transaction Flow -->
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">🔄</div>
+                <h3 class="header-title">Transaction Flow</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="flow-diagram">
+                    {% if transaction.from_address %}
+                    <div class="flow-step">
+                        <div class="step-avatar">👤</div>
+                        <div class="step-info">
+                            <div class="step-label">From</div>
+                            <div class="step-address code">{{ transaction.from_address[:20] }}...{{ transaction.from_address[-8:] }}</div>
+                        </div>
+                        <div class="step-arrow">→</div>
+                    </div>
+                    {% endif %}
+                    
+                    <div class="flow-step">
+                        <div class="step-avatar">💸</div>
+                        <div class="step-info">
+                            <div class="step-label">Amount</div>
+                            <div class="step-amount">
+                                {% if transaction.value %}
+                                    {{ "%.6f"|format(transaction.value) }} BTC
+                                {% else %}
+                                    N/A
+                                {% endif %}
+                            </div>
+                        </div>
+                        <div class="step-arrow">→</div>
+                    </div>
+                    
+                    {% if transaction.to_address %}
+                    <div class="flow-step">
+                        <div class="step-avatar">🏦</div>
+                        <div class="step-info">
+                            <div class="step-label">To</div>
+                            <div class="step-address code">{{ transaction.to_address[:20] }}...{{ transaction.to_address[-8:] }}</div>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Gas & Fees -->
+        {% if transaction.gas_used or transaction.gas_price %}
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">⛽</div>
+                <h3 class="header-title">Gas & Fees</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="gas-details">
+                    <div class="detail-row">
+                        <span class="detail-label">Gas Used:</span>
+                        <span class="detail-value">{{ transaction.gas_used or 'N/A' }}</span>
+                    </div>
+                    <div class="detail-row">
+                        <span class="detail-label">Gas Price:</span>
+                        <span class="detail-value">{{ transaction.gas_price or 'N/A' }}</span>
+                    </div>
+                    {% if transaction.gas_used and transaction.gas_price %}
+                    <div class="detail-row">
+                        <span class="detail-label">Total Fee:</span>
+                        <span class="detail-value">{{ transaction.gas_used * transaction.gas_price }} wei</span>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Details Tab -->
+    <div id="details" class="tab-content">
+        <!-- Transaction Metadata -->
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">📋</div>
+                <h3 class="header-title">Transaction Metadata</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="metadata-grid">
+                    <div class="metadata-item">
+                        <div class="metadata-icon">🕒</div>
+                        <div class="metadata-content">
+                            <div class="metadata-label">Timestamp</div>
+                            <div class="metadata-value">{{ transaction.timestamp_readable }}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metadata-item">
+                        <div class="metadata-icon">⏱️</div>
+                        <div class="metadata-content">
+                            <div class="metadata-label">Age</div>
+                            <div class="metadata-value">{{ transaction_age // 3600 }}h {{ (transaction_age % 3600) // 60 }}m ago</div>
+                        </div>
+                    </div>
+                    
+                    {% if transaction.block_height %}
+                    <div class="metadata-item">
+                        <div class="metadata-icon">📦</div>
+                        <div class="metadata-content">
+                            <div class="metadata-label">Block Height</div>
+                            <div class="metadata-value">{{ transaction.block_height }}</div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if transaction.nonce %}
+                    <div class="metadata-item">
+                        <div class="metadata-icon">🔢</div>
+                        <div class="metadata-content">
+                            <div class="metadata-label">Nonce</div>
+                            <div class="metadata-value">{{ transaction.nonce }}</div>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    <div class="metadata-item">
+                        <div class="metadata-icon">📊</div>
+                        <div class="metadata-content">
+                            <div class="metadata-label">Size</div>
+                            <div class="metadata-value">{{ transaction.hash|length * 2 }} bytes (estimated)</div>
+                        </div>
+                    </div>
+                    
+                    <div class="metadata-item">
+                        <div class="metadata-icon">🎯</div>
+                        <div class="metadata-content">
+                            <div class="metadata-label">Type</div>
+                            <div class="metadata-value">
+                                {% if transaction.input_data and transaction.input_data != '0x' %}
+                                    Contract Interaction
+                                {% else %}
+                                    Value Transfer
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Address Details -->
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">📍</div>
+                <h3 class="header-title">Address Details</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="address-details">
+                    {% if transaction.from_address %}
+                    <div class="address-section">
+                        <div class="address-header">
+                            <div class="address-icon">📤</div>
+                            <h4 class="address-title">From Address</h4>
+                        </div>
+                        <div class="address-value code">{{ transaction.from_address }}</div>
+                        <div class="address-actions">
+                            <button class="copy-btn small" onclick="copyToClipboard('{{ transaction.from_address }}')">
+                                <span class="copy-icon">📋</span>
+                                Copy
+                            </button>
+                            <a href="https://blockchain.info/address/{{ transaction.from_address }}" target="_blank" class="action-btn secondary small">
+                                <span>View Address</span>
+                                <div class="btn-icon">🔍</div>
+                            </a>
+                        </div>
+                    </div>
+                    {% endif %}
+                    
+                    {% if transaction.to_address %}
+                    <div class="address-section">
+                        <div class="address-header">
+                            <div class="address-icon">📥</div>
+                            <h4 class="address-title">To Address</h4>
+                        </div>
+                        <div class="address-value code">{{ transaction.to_address }}</div>
+                        <div class="address-actions">
+                            <button class="copy-btn small" onclick="copyToClipboard('{{ transaction.to_address }}')">
+                                <span class="copy-icon">📋</span>
+                                Copy
+                            </button>
+                            <a href="https://blockchain.info/address/{{ transaction.to_address }}" target="_blank" class="action-btn secondary small">
+                                <span>View Address</span>
+                                <div class="btn-icon">🔍</div>
+                            </a>
+                        </div>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Input Data -->
+        {% if transaction.input_data and transaction.input_data != '0x' %}
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">📥</div>
+                <h3 class="header-title">Input Data</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="input-data-display">
+                    <div class="data-header">
+                        <div class="data-info">
+                            <span class="data-label">Method ID:</span>
+                            <span class="data-value code">{{ transaction.input_data[:10] }}</span>
+                        </div>
+                        <button class="copy-btn small" onclick="copyToClipboard('{{ transaction.input_data }}')">
+                            <span class="copy-icon">📋</span>
+                            Copy All
+                        </button>
+                    </div>
+                    <pre class="data-content">{{ transaction.input_data }}</pre>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- Raw Data Tab -->
+    <div id="raw" class="tab-content">
+        <!-- Raw JSON -->
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">📝</div>
+                <h3 class="header-title">Raw Transaction Data</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="raw-data-display">
+                    <div class="data-actions">
+                        <button class="action-btn cyan small" onclick="copyToClipboard(JSON.stringify({{ transaction|tojson|safe }}, null, 2))">
+                            <span>Copy JSON</span>
+                            <div class="btn-icon">📋</div>
+                        </button>
+                        <button class="action-btn purple small" onclick="downloadJSON()">
+                            <span>Download JSON</span>
+                            <div class="btn-icon">⬇️</div>
+                        </button>
+                    </div>
+                    <pre class="json-display">{{ transaction|tojson(indent=2) }}</pre>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tracking Tab -->
+    <div id="tracking" class="tab-content">
+        <!-- Live Tracking -->
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">📡</div>
+                <h3 class="header-title">Live Tracking</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="tracking-info">
+                    <div class="tracking-status">
+                        <div class="status-icon">📡</div>
+                        <div class="status-details">
+                            <div class="status-title">Network Status</div>
+                            <div class="status-subtitle">Monitoring transaction in real-time</div>
+                        </div>
+                    </div>
+                    
+                    <div class="tracking-actions">
+                        <button class="action-btn primary" onclick="refreshTransaction()">
+                            <span>Refresh Status</span>
+                            <div class="btn-icon">🔄</div>
+                        </button>
+                        <button class="action-btn secondary" onclick="startAutoRefresh()">
+                            <span id="autoRefreshText">Enable Auto-Refresh</span>
+                            <div class="btn-icon">⏱️</div>
+                        </button>
+                    </div>
+                    
+                    <div class="last-updated">
+                        <span class="update-label">Last updated:</span>
+                        <span class="update-time" id="lastUpdated">{{ now.strftime('%H:%M:%S') }}</span>
+                    </div>
+                </div>
+                
+                <!-- Confirmation History -->
+                <div class="confirmation-history">
+                    <h4>Confirmation History</h4>
+                    <div class="history-timeline">
+                        {% for i in range(6) %}
+                        <div class="timeline-step {% if i < transaction.confirmations %}step-complete{% else %}step-pending{% endif %}">
+                            <div class="step-number">{{ i + 1 }}</div>
+                            <div class="step-label">
+                                {% if i < transaction.confirmations %}
+                                    Confirmed
+                                {% else %}
+                                    Pending
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Network Nodes -->
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">🌐</div>
+                <h3 class="header-title">Network Propagation</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="network-nodes">
+                    {% for node in ['Node 1', 'Node 2', 'Node 3', 'Node 4', 'Node 5'] %}
+                    <div class="network-node">
+                        <div class="node-status connected"></div>
+                        <div class="node-info">
+                            <div class="node-name">{{ node }}</div>
+                            <div class="node-status-text">Connected</div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+/* Additional styles for transaction viewer */
+.status-display {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    border-radius: 12px;
+    border: 2px solid;
+}
+
+.status-indicator.success {
+    background: rgba(48, 209, 88, 0.1);
+    border-color: var(--success);
+}
+
+.status-indicator.warning {
+    background: rgba(255, 214, 10, 0.1);
+    border-color: var(--warning);
+}
+
+.status-indicator.danger {
+    background: rgba(255, 69, 58, 0.1);
+    border-color: var(--danger);
+}
+
+.status-indicator.secondary {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--border);
+}
+
+.status-icon-large {
+    font-size: 2rem;
+    flex-shrink: 0;
+}
+
+.status-info {
+    flex: 1;
+}
+
+.status-title {
+    color: var(--text-primary);
+    font-size: 1.25rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+
+.status-subtitle {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.progress-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem;
+}
+
+.progress-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.progress-label {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.progress-value {
+    color: var(--text-primary);
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.error-message {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    background: rgba(255, 69, 58, 0.1);
+    border: 1px solid var(--danger);
+    border-radius: 12px;
+}
+
+.error-icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+}
+
+.error-text {
+    flex: 1;
+}
+
+.error-text strong {
+    display: block;
+    color: var(--text-primary);
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+    font-weight: 700;
+}
+
+.error-text span {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    display: block;
+}
+
+.hash-display {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    margin-bottom: 1rem;
+}
+
+.hash-full {
+    flex: 1;
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', monospace;
+    font-size: 0.9rem;
+    color: var(--text-primary);
+    word-break: break-all;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+}
+
+.hash-actions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.flow-diagram {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.flow-step {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+}
+
+.step-avatar {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+}
+
+.step-info {
+    flex: 1;
+}
+
+.step-label {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.25rem;
+}
+
+.step-address {
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', monospace;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    word-break: break-all;
+}
+
+.step-amount {
+    color: var(--text-primary);
+    font-size: 1.1rem;
+    font-weight: 700;
+}
+
+.step-arrow {
+    font-size: 1.5rem;
+    color: var(--info);
+    flex-shrink: 0;
+}
+
+.metadata-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+}
+
+.metadata-item {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    transition: all 0.3s ease;
+}
+
+.metadata-item:hover {
+    border-color: var(--info);
+    transform: translateY(-2px);
+}
+
+.metadata-icon {
+    font-size: 1.25rem;
+    flex-shrink: 0;
+}
+
+.metadata-content {
+    flex: 1;
+}
+
+.metadata-label {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 0.25rem;
+}
+
+.metadata-value {
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 600;
+    word-break: break-all;
+}
+
+.address-details {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.address-section {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem;
+}
+
+.address-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.address-icon {
+    font-size: 1.25rem;
+}
+
+.address-title {
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.address-value {
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', monospace;
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    word-break: break-all;
+    margin-bottom: 1rem;
+    padding: 1rem;
+    background: var(--bg-tertiary);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+}
+
+.address-actions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.input-data-display {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.data-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1rem 1.25rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-bottom: 1px solid var(--border);
+}
+
+.data-info {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.data-label {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.data-value {
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', monospace;
+    color: var(--info);
+    font-size: 0.85rem;
+}
+
+.data-content {
+    padding: 1.25rem;
+    margin: 0;
+    background: var(--bg-primary);
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--text-primary);
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.raw-data-display {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.data-actions {
+    display: flex;
+    gap: 0.75rem;
+    padding: 1rem 1.25rem;
+    background: rgba(0, 0, 0, 0.2);
+    border-bottom: 1px solid var(--border);
+}
+
+.json-display {
+    padding: 1.25rem;
+    margin: 0;
+    background: var(--bg-primary);
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', monospace;
+    font-size: 0.85rem;
+    color: var(--info);
+    white-space: pre-wrap;
+    word-break: break-all;
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.tracking-info {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.tracking-status {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+}
+
+.status-details {
+    flex: 1;
+}
+
+.status-title {
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 700;
+    margin-bottom: 0.25rem;
+}
+
+.status-subtitle {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.tracking-actions {
+    display: flex;
+    gap: 0.75rem;
+}
+
+.last-updated {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg-secondary);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+}
+
+.update-label {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.update-time {
+    color: var(--text-primary);
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+
+.confirmation-history {
+    margin-top: 1.5rem;
+}
+
+.confirmation-history h4 {
+    color: var(--text-primary);
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 0 0 1rem 0;
+}
+
+.history-timeline {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.timeline-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem;
+    border-radius: 8px;
+    flex: 1;
+    min-width: 80px;
+}
+
+.step-complete {
+    background: rgba(48, 209, 88, 0.1);
+    border: 1px solid var(--success);
+}
+
+.step-pending {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+}
+
+.step-number {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 0.9rem;
+}
+
+.step-complete .step-number {
+    background: var(--success);
+    color: var(--bg-primary);
+}
+
+.step-pending .step-number {
+    background: var(--border);
+    color: var(--text-secondary);
+}
+
+.step-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    text-align: center;
+    font-weight: 600;
+}
+
+.network-nodes {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.network-node {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    transition: all 0.3s ease;
+}
+
+.network-node:hover {
+    border-color: var(--info);
+    transform: translateX(5px);
+}
+
+.node-status {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+}
+
+.node-status.connected {
+    background: var(--success);
+    box-shadow: 0 0 10px rgba(48, 209, 88, 0.5);
+}
+
+.node-info {
+    flex: 1;
+}
+
+.node-name {
+    color: var(--text-primary);
+    font-size: 0.9rem;
+    font-weight: 600;
+    margin-bottom: 0.25rem;
+}
+
+.node-status-text {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .flow-step {
+        flex-direction: column;
+        text-align: center;
+        gap: 0.5rem;
+    }
+    
+    .step-arrow {
+        transform: rotate(90deg);
+    }
+    
+    .metadata-grid {
+        grid-template-columns: 1fr;
+    }
+    
+    .hash-actions, .tracking-actions {
+        flex-direction: column;
+    }
+    
+    .history-timeline {
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        padding-bottom: 0.5rem;
+    }
+    
+    .timeline-step {
+        min-width: 70px;
+    }
+}
+</style>
+
+<script>
+// Tab management (same as verify page)
+function openTab(tabName) {
+    // Hide all tab contents
+    document.querySelectorAll('.tab-content').forEach(tab => {
+        tab.classList.remove('active');
+    });
+    
+    // Show selected tab
+    document.getElementById(tabName).classList.add('active');
+    
+    // Update tab buttons
+    document.querySelectorAll('.tab-button').forEach(button => {
+        button.classList.remove('active');
+    });
+    
+    // Find and activate the clicked button
+    const buttons = document.querySelectorAll('.tab-button');
+    for (let button of buttons) {
+        if (button.getAttribute('onclick').includes(tabName)) {
+            button.classList.add('active');
+            break;
+        }
+    }
+    
+    // Store the active tab in sessionStorage
+    sessionStorage.setItem('transactionActiveTab', tabName);
+}
+
+// Copy to clipboard function
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        // Find the clicked button
+        const copyBtn = event.target.closest('button');
+        if (copyBtn) {
+            const originalHTML = copyBtn.innerHTML;
+            
+            copyBtn.innerHTML = '<span class="copy-icon">✅</span>';
+            copyBtn.style.background = 'var(--success)';
+            copyBtn.style.borderColor = 'var(--success)';
+            copyBtn.style.color = 'var(--bg-primary)';
+            
+            setTimeout(() => {
+                copyBtn.innerHTML = originalHTML;
+                copyBtn.style.background = '';
+                copyBtn.style.borderColor = '';
+                copyBtn.style.color = '';
+            }, 2000);
+        }
+    }).catch(err => {
+        console.error('Failed to copy:', err);
+        alert('Failed to copy to clipboard');
+    });
+}
+
+// Download JSON function
+function downloadJSON() {
+    const data = {{ transaction|tojson|safe }};
+    const dataStr = JSON.stringify(data, null, 2);
+    const dataBlob = new Blob([dataStr], {type: 'application/json'});
+    
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `transaction-{{ transaction.hash[:16] }}.json`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+}
+
+// Refresh transaction data
+function refreshTransaction() {
+    const refreshBtn = event.target.closest('button');
+    if (refreshBtn) {
+        const originalHTML = refreshBtn.innerHTML;
+        refreshBtn.innerHTML = '<span>Refreshing...</span><div class="btn-icon">🔄</div>';
+        refreshBtn.disabled = true;
+        
+        // Simulate refresh (you can replace with actual API call)
+        setTimeout(() => {
+            location.reload();
+        }, 1000);
+    }
+}
+
+// Auto-refresh toggle
+let autoRefreshInterval = null;
+function startAutoRefresh() {
+    const btn = document.getElementById('autoRefreshText');
+    if (!autoRefreshInterval) {
+        autoRefreshInterval = setInterval(() => {
+            // Update last updated time
+            const now = new Date();
+            document.getElementById('lastUpdated').textContent = 
+                now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
+            
+            // You can add actual refresh logic here
+            console.log('Auto-refreshing transaction data...');
+        }, 10000); // Refresh every 10 seconds
+        
+        btn.textContent = 'Disable Auto-Refresh';
+    } else {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+        btn.textContent = 'Enable Auto-Refresh';
+    }
+}
+
+// Restore active tab on page load
+document.addEventListener('DOMContentLoaded', function() {
+    const activeTab = sessionStorage.getItem('transactionActiveTab') || 'overview';
+    openTab(activeTab);
+    
+    // Update last updated time
+    document.getElementById('lastUpdated').textContent = 
+        new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit'});
+});
+</script>
+{% endblock %}

@@ -18,7 +18,6 @@ import pyotp
 import qrcode
 import io
 import base64
-from pyzbar.pyzbar import decode as qr_decode
 from flask import flash, redirect, url_for
 from sqlalchemy import desc
 from models import db, User, GenerationTask, Banknote, SerialNumber
@@ -28,7 +27,6 @@ from sqlalchemy.exc import IntegrityError
 import sys
 import cv2
 import numpy as np
-from qreader import QReader
 from urllib.parse import urlparse, parse_qs
 import time
 import queue
@@ -44,7 +42,6 @@ GENERATION_LOCK = threading.Lock()
 GENERATION_THREADS = {}
 
 # Initialize the advanced QR reader
-qreader = QReader()
 
 # =============================================================================
 # TASK QUEUE SYSTEM (NEW)
