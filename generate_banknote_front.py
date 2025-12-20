@@ -1371,7 +1371,7 @@ def generate_fantasy_banknote(seed_text: str, input_image_path: str, outfile_svg
                                width_mm: float = 160.0, height_mm: float = 60.0,
                                title: str = "灵国国库", subtitle: str = "天圆地方", serial_id: str = "SERIALID", timestamp:str = "TIMESTAMP",
                                denomination: str = "100 卢纳币", specimen: bool = True,
-                               fonts = {}):
+                               fonts = {}, bg_dir: str = "./backgrounds"):
     timestamp_ms = timestamp or generate_timestamp_ms_precise()
     serial_id = serial_id or generate_serial_id_with_checksum()
     W = mm_to_px(width_mm)
@@ -1386,7 +1386,7 @@ def generate_fantasy_banknote(seed_text: str, input_image_path: str, outfile_svg
     
     border_info = add_qr_like_border(dwg, seed_text, W, H, serial_id, timestamp_ms)
     
-    add_vectorized_background(dwg=dwg, W=W, H=H, seed_text=seed_text, bg_dir="./backgrounds", margin=60, n_segments=1024, 
+    add_vectorized_background(dwg=dwg, W=W, H=H, seed_text=seed_text, bg_dir=bg_dir, margin=60, n_segments=1024, 
                               background_prompt=generate_kawaii_mural_from_background(denomination=denom_exponent, filename="background_prompt.txt"), denomination=denomination)
     print("Generated:", path)
     
@@ -1883,7 +1883,9 @@ def add_decorative_border(dwg, W:int, H:int, border_info:dict, denom_value: int,
 
 
 def generate_single_banknote(seed_text, input_image_path, single_denom, outfile=None, 
-                           specimen=False, serial_id=None, timestamp=None):
+                           specimen=False, serial_id=None, timestamp=None,
+                           width_mm=160.0, height_mm=60.0, title="灵国国库", subtitle="天圆地方",
+                           font_dir="./fonts", bg_dir="./backgrounds", dpi=300.0):
     """
     Generate a single banknote with a specific denomination.
     
@@ -1895,10 +1897,21 @@ def generate_single_banknote(seed_text, input_image_path, single_denom, outfile=
         specimen: Add SPECIMEN overlay
         serial_id: Serial ID
         timestamp: Timestamp String
+        width_mm: Width in mm
+        height_mm: Height in mm
+        title: Title text
+        subtitle: Subtitle text
+        font_dir: Directory containing font files
+        bg_dir: Directory containing background images
+        dpi: Resolution in DPI
     
     Returns:
         Path to the generated SVG file
     """
+    # Update global DPI
+    global MM_TO_PX
+    MM_TO_PX = dpi / 25.4
+    
     # Set default outfile if not provided
     if outfile is None:
         timestamp_str = timestamp or datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -1909,7 +1922,7 @@ def generate_single_banknote(seed_text, input_image_path, single_denom, outfile=
     os.makedirs(outfile_dir, exist_ok=True)
     
     # Load fonts
-    fonts_obj = load_fonts("./fonts")
+    fonts_obj = load_fonts(font_dir)
     
     # Generate the single banknote
     denomination_str = f"{single_denom} 卢纳币"
@@ -1918,18 +1931,25 @@ def generate_single_banknote(seed_text, input_image_path, single_denom, outfile=
         seed_text=seed_text,
         input_image_path=input_image_path,
         outfile_svg=outfile,
+        width_mm=width_mm,
+        height_mm=height_mm,
+        title=title,
+        subtitle=subtitle,
         specimen=specimen,
         denomination=denomination_str,
         fonts=fonts_obj,
         serial_id=serial_id,
-        timestamp=timestamp
+        timestamp=timestamp,
+        bg_dir=bg_dir
     )
     
     print(f"[+] Single bill generated: {outfile}")
     return outfile
 
 def generate_multiple_banknotes(seed_text, input_image_path, copies=1, yen_model=False, 
-                              specimen=False, serial_id=None, timestamp=None):
+                              specimen=False, serial_id=None, timestamp=None,
+                              width_mm=160.0, height_mm=60.0, title="灵国国库", subtitle="天圆地方",
+                              font_dir="./fonts", bg_dir="./backgrounds", dpi=300.0):
     """
     Generate multiple banknotes with different denominations.
     
@@ -1941,10 +1961,21 @@ def generate_multiple_banknotes(seed_text, input_image_path, copies=1, yen_model
         specimen: Add SPECIMEN overlay
         serial_id: Serial ID
         timestamp: Timestamp String
+        width_mm: Width in mm
+        height_mm: Height in mm
+        title: Title text
+        subtitle: Subtitle text
+        font_dir: Directory containing font files
+        bg_dir: Directory containing background images
+        dpi: Resolution in DPI
     
     Returns:
         List of paths to generated SVG files
     """
+    # Update global DPI
+    global MM_TO_PX
+    MM_TO_PX = dpi / 25.4
+    
     # Generate denominations
     if yen_model:
         base_denoms = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000]
@@ -1952,7 +1983,7 @@ def generate_multiple_banknotes(seed_text, input_image_path, copies=1, yen_model
     else:
         denominations = [100 * (i + 1) for i in range(9)]  # default 9 denominations
 
-    fonts_obj = load_fonts("./fonts")
+    fonts_obj = load_fonts(font_dir)
     generated_files = []
 
     for i in tqdm(range(copies), desc="Generating banknotes"):
@@ -1971,11 +2002,16 @@ def generate_multiple_banknotes(seed_text, input_image_path, copies=1, yen_model
                 seed_text=f"{new_seed}_{i}",  # keep unique seed for generation
                 input_image_path=input_image_path,
                 outfile_svg=outfile_svg,
+                width_mm=width_mm,
+                height_mm=height_mm,
+                title=title,
+                subtitle=subtitle,
                 specimen=specimen,
                 denomination=denomination_str,
                 fonts=fonts_obj,
                 serial_id=serial_id,
-                timestamp=timestamp_str
+                timestamp=timestamp_str,
+                bg_dir=bg_dir
             )
             
             generated_files.append(outfile_svg)
@@ -1994,6 +2030,13 @@ def single_bill_run():
     parser.add_argument("--specimen", action="store_true", help="Add SPECIMEN overlay")
     parser.add_argument("--serial_id", type=str, help="Serial ID")
     parser.add_argument("--timestamp", type=str, help="Timestamp String")
+    parser.add_argument("--width-mm", type=float, default=160.0, help="Width in mm (default: 160.0)")
+    parser.add_argument("--height-mm", type=float, default=60.0, help="Height in mm (default: 60.0)")
+    parser.add_argument("--title", type=str, default="灵国国库", help="Title text (default: 灵国国库)")
+    parser.add_argument("--subtitle", type=str, default="天圆地方", help="Subtitle text (default: 天圆地方)")
+    parser.add_argument("--font-dir", type=str, default="./fonts", help="Directory containing font files (default: ./fonts)")
+    parser.add_argument("--bg-dir", type=str, default="./backgrounds", help="Directory containing background images (default: ./backgrounds)")
+    parser.add_argument("--dpi", type=float, default=300.0, help="Resolution in DPI (default: 300.0)")
     
     args = parser.parse_args()
     
@@ -2004,7 +2047,14 @@ def single_bill_run():
         outfile=args.outfile,
         specimen=args.specimen,
         serial_id=args.serial_id,
-        timestamp=args.timestamp
+        timestamp=args.timestamp,
+        width_mm=args.width_mm,
+        height_mm=args.height_mm,
+        title=args.title,
+        subtitle=args.subtitle,
+        font_dir=args.font_dir,
+        bg_dir=args.bg_dir,
+        dpi=args.dpi
     )
 
 def multi_bill_run():
@@ -2020,6 +2070,13 @@ def multi_bill_run():
     parser.add_argument("--yen_model", action="store_true", help="Use 1-100,000,000 denominations")
     parser.add_argument("--serial_id", type=str, help="Serial ID")
     parser.add_argument("--timestamp", type=str, help="Timestamp String")
+    parser.add_argument("--width-mm", type=float, default=160.0, help="Width in mm (default: 160.0)")
+    parser.add_argument("--height-mm", type=float, default=60.0, help="Height in mm (default: 60.0)")
+    parser.add_argument("--title", type=str, default="灵国国库", help="Title text (default: 灵国国库)")
+    parser.add_argument("--subtitle", type=str, default="天圆地方", help="Subtitle text (default: 天圆地方)")
+    parser.add_argument("--font-dir", type=str, default="./fonts", help="Directory containing font files (default: ./fonts)")
+    parser.add_argument("--bg-dir", type=str, default="./backgrounds", help="Directory containing background images (default: ./backgrounds)")
+    parser.add_argument("--dpi", type=float, default=300.0, help="Resolution in DPI (default: 300.0)")
     
     args = parser.parse_args()
 
@@ -2030,7 +2087,14 @@ def multi_bill_run():
         yen_model=args.yen_model,
         specimen=args.specimen,
         serial_id=args.serial_id,
-        timestamp=args.timestamp
+        timestamp=args.timestamp,
+        width_mm=args.width_mm,
+        height_mm=args.height_mm,
+        title=args.title,
+        subtitle=args.subtitle,
+        font_dir=args.font_dir,
+        bg_dir=args.bg_dir,
+        dpi=args.dpi
     )
 
 # Main execution

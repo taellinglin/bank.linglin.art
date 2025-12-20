@@ -520,10 +520,6 @@ class BlockchainDaemon:
     def sync_with_network(self):
         """Sync with network blockchain, but PRESERVE LOCAL DATA"""
         try:
-            # Test network connection first
-            if not self.mempool_mgr.test_connection():
-                self.logger.warning("Network unavailable, using local data only")
-                return
             
             self.logger.info("Network connection available, syncing (preserving local data)...")
             
@@ -1879,6 +1875,387 @@ class BlockchainDaemon:
             import traceback
             self.logger.error(traceback.format_exc())
             return False
+        
+    def get_block(self, block_identifier: any) -> Optional[Dict]:
+        """
+        Get block by hash, height (index), or latest block.
+        
+        Args:
+            block_identifier: Can be:
+                - int: Block height/index (e.g., 701)
+                - str: Block hash (e.g., "00003ac6a611a0e6c0545afc729eb01c6d0c4b5273a8af6022d8bbbf05b42490")
+                - "latest": Get the latest block
+                - "first": Get the first/oldest block
+                - "genesis": Get the genesis block (index 0)
+                
+        Returns:
+            dict: Block data with enhanced information or None if not found
+        """
+        try:
+            if not self.blockchain:
+                self.logger.warning("Blockchain is empty")
+                return None
+            
+            # Handle "latest" request
+            if block_identifier == "latest":
+                block = self.blockchain[-1] if self.blockchain else None
+                return self._enhance_block_data(block) if block else None
+            
+            # Handle "first" request (not necessarily genesis)
+            if block_identifier == "first":
+                block = self.blockchain[0] if self.blockchain else None
+                return self._enhance_block_data(block) if block else None
+            
+            # Handle "genesis" request
+            if block_identifier == "genesis":
+                for block in self.blockchain:
+                    if block.get('index') == 0:
+                        return self._enhance_block_data(block)
+                return None
+            
+            # Check if it's a block hash (string starting with 0 or has specific pattern)
+            if isinstance(block_identifier, str):
+                # Check if it looks like a block hash
+                if len(block_identifier) >= 16 and all(c in '0123456789abcdefABCDEF' for c in block_identifier):
+                    # Search by hash
+                    for block in self.blockchain:
+                        if block.get('hash') == block_identifier:
+                            return self._enhance_block_data(block)
+                
+                # Try to parse as int for height
+                try:
+                    block_height = int(block_identifier)
+                    block_identifier = block_height
+                except ValueError:
+                    pass
+            
+            # Handle block height/index
+            if isinstance(block_identifier, int):
+                block_height = block_identifier
+                
+                # Check bounds
+                if block_height < 0 or block_height >= len(self.blockchain):
+                    # Try to get from network if not found locally
+                    network_block = self._get_block_from_network(block_height)
+                    if network_block:
+                        self.logger.info(f"Found block #{block_height} from network")
+                        # Add to local blockchain if it's the next block
+                        if block_height == len(self.blockchain):
+                            self.blockchain.append(network_block)
+                            self.save_blockchain()
+                        return self._enhance_block_data(network_block)
+                    return None
+                
+                block = self.blockchain[block_height]
+                return self._enhance_block_data(block)
+            
+            self.logger.warning(f"Invalid block identifier: {block_identifier}")
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error getting block {block_identifier}: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            return None
+
+    def _enhance_block_data(self, block: Dict) -> Dict:
+        """
+        Enhance block data with additional calculated fields.
+        
+        Args:
+            block: Raw block data
+            
+        Returns:
+            dict: Enhanced block data
+        """
+        if not block:
+            return None
+        
+        enhanced_block = block.copy()
+        
+        # Calculate some statistics
+        transactions = block.get('transactions', [])
+        
+        # Count transaction types
+        tx_types = {}
+        for tx in transactions:
+            tx_type = tx.get('type', 'unknown')
+            tx_types[tx_type] = tx_types.get(tx_type, 0) + 1
+        
+        # Calculate total value in block
+        total_value = 0
+        for tx in transactions:
+            if tx.get('type') == 'transfer':
+                total_value += tx.get('amount', 0)
+            elif tx.get('type') == 'reward':
+                total_value += tx.get('amount', 0)
+        
+        # Calculate reward amount
+        reward_amount = block.get('reward', 0)
+        
+        # Add enhancement fields
+        enhanced_block['transaction_count'] = len(transactions)
+        enhanced_block['transaction_types'] = tx_types
+        enhanced_block['total_value'] = total_value
+        enhanced_block['reward_amount'] = reward_amount
+        
+        # Add confirmation count (if block is in blockchain)
+        try:
+            block_index = block.get('index')
+            if block_index is not None and self.blockchain:
+                confirmations = len(self.blockchain) - block_index - 1
+                enhanced_block['confirmations'] = max(0, confirmations)
+        except:
+            enhanced_block['confirmations'] = 0
+        
+        # Add timestamp in human-readable format
+        timestamp = block.get('timestamp')
+        if timestamp:
+            try:
+                from datetime import datetime
+                dt = datetime.fromtimestamp(timestamp)
+                enhanced_block['timestamp_formatted'] = dt.strftime('%Y-%m-%d %H:%M:%S')
+                enhanced_block['timestamp_readable'] = dt.strftime('%B %d, %Y at %I:%M %p')
+                enhanced_block['timestamp_relative'] = self._get_relative_time(dt)
+            except:
+                enhanced_block['timestamp_formatted'] = str(timestamp)
+        
+        # Add next and previous block info
+        block_index = block.get('index')
+        if block_index is not None and self.blockchain:
+            if block_index > 0:
+                prev_block = self.blockchain[block_index - 1] if block_index - 1 < len(self.blockchain) else None
+                if prev_block:
+                    enhanced_block['previous_block_hash'] = prev_block.get('hash')
+            else:
+                enhanced_block['previous_block_hash'] = '0' * 64  # Genesis
+            
+            if block_index + 1 < len(self.blockchain):
+                next_block = self.blockchain[block_index + 1]
+                if next_block:
+                    enhanced_block['next_block_hash'] = next_block.get('hash')
+                    enhanced_block['next_block_index'] = block_index + 1
+        
+        # Add miner info if available
+        miner = block.get('miner')
+        if miner:
+            enhanced_block['miner_address'] = miner
+            # You could add miner reputation/stats here if you track them
+        
+        # Add block size estimation
+        try:
+            block_size = len(json.dumps(block).encode('utf-8'))
+            enhanced_block['estimated_size_bytes'] = block_size
+            enhanced_block['estimated_size_kb'] = round(block_size / 1024, 2)
+        except:
+            enhanced_block['estimated_size_bytes'] = 0
+        
+        return enhanced_block
+
+    def _get_block_from_network(self, block_height: int) -> Optional[Dict]:
+        """
+        Try to get block from network if not found locally.
+        
+        Args:
+            block_height: Block height/index
+            
+        Returns:
+            dict: Block data from network or None
+        """
+        try:
+            if self.mempool_mgr.test_connection():
+                network_block = self.blockchain_mgr.get_block(block_height)
+                if network_block:
+                    # Verify the block is valid
+                    if self.validate_block(network_block):
+                        return network_block
+        except Exception as e:
+            self.logger.debug(f"Failed to get block #{block_height} from network: {e}")
+        
+        return None
+
+    def _get_relative_time(self, dt):
+        """Get relative time string (e.g., '2 hours ago')"""
+        from datetime import datetime
+        
+        try:
+            now = datetime.now()
+            diff = now - dt
+            
+            if diff.days > 365:
+                years = diff.days // 365
+                return f"{years} year{'s' if years > 1 else ''} ago"
+            elif diff.days > 30:
+                months = diff.days // 30
+                return f"{months} month{'s' if months > 1 else ''} ago"
+            elif diff.days > 0:
+                return f"{diff.days} day{'s' if diff.days > 1 else ''} ago"
+            elif diff.seconds > 3600:
+                hours = diff.seconds // 3600
+                return f"{hours} hour{'s' if hours > 1 else ''} ago"
+            elif diff.seconds > 60:
+                minutes = diff.seconds // 60
+                return f"{minutes} minute{'s' if minutes > 1 else ''} ago"
+            else:
+                return "just now"
+        except:
+            return "unknown time"
+
+    def get_block_range(self, start: int, end: int) -> List[Dict]:
+        """
+        Get a range of blocks.
+        
+        Args:
+            start: Start block index (inclusive)
+            end: End block index (exclusive)
+            
+        Returns:
+            list: List of blocks in the range
+        """
+        try:
+            if start < 0 or end > len(self.blockchain):
+                return []
+            
+            blocks = self.blockchain[start:end]
+            return [self._enhance_block_data(block) for block in blocks]
+        except Exception as e:
+            self.logger.error(f"Error getting block range {start}-{end}: {e}")
+            return []
+
+    def get_latest_blocks(self, count: int = 10) -> List[Dict]:
+        """
+        Get the latest N blocks.
+        
+        Args:
+            count: Number of blocks to return
+            
+        Returns:
+            list: List of latest blocks
+        """
+        try:
+            if not self.blockchain:
+                return []
+            
+            count = min(count, len(self.blockchain))
+            blocks = self.blockchain[-count:]
+            return [self._enhance_block_data(block) for block in reversed(blocks)]
+        except Exception as e:
+            self.logger.error(f"Error getting latest {count} blocks: {e}")
+            return []
+
+    def get_block_by_transaction(self, tx_hash: str) -> Optional[Dict]:
+        """
+        Find block containing a specific transaction.
+        
+        Args:
+            tx_hash: Transaction hash to search for
+            
+        Returns:
+            dict: Block containing the transaction or None
+        """
+        try:
+            for block in self.blockchain:
+                for tx in block.get('transactions', []):
+                    if tx.get('hash') == tx_hash:
+                        return self._enhance_block_data(block)
+            
+            # Check network
+            if self.mempool_mgr.test_connection():
+                for height in range(len(self.blockchain), len(self.blockchain) + 100):
+                    network_block = self._get_block_from_network(height)
+                    if network_block:
+                        for tx in network_block.get('transactions', []):
+                            if tx.get('hash') == tx_hash:
+                                return self._enhance_block_data(network_block)
+            
+            return None
+        except Exception as e:
+            self.logger.error(f"Error finding block for transaction {tx_hash}: {e}")
+            return None
+
+    def get_blockchain_stats(self) -> Dict:
+        """
+        Get blockchain statistics.
+        
+        Returns:
+            dict: Statistics about the blockchain
+        """
+        try:
+            stats = {
+                'total_blocks': len(self.blockchain),
+                'total_transactions': 0,
+                'total_value': 0,
+                'total_rewards': 0,
+                'genesis_block': None,
+                'latest_block': None,
+                'block_sizes': [],
+                'transaction_types': {},
+                'miners': {},
+                'difficulty_distribution': {}
+            }
+            
+            if self.blockchain:
+                stats['genesis_block'] = self.blockchain[0].get('hash') if self.blockchain else None
+                stats['latest_block'] = self.blockchain[-1].get('hash') if self.blockchain else None
+                
+                for block in self.blockchain:
+                    # Count transactions
+                    transactions = block.get('transactions', [])
+                    stats['total_transactions'] += len(transactions)
+                    
+                    # Sum values
+                    for tx in transactions:
+                        if tx.get('type') == 'transfer':
+                            stats['total_value'] += tx.get('amount', 0)
+                        elif tx.get('type') == 'reward':
+                            stats['total_rewards'] += tx.get('amount', 0)
+                    
+                    # Count transaction types
+                    for tx in transactions:
+                        tx_type = tx.get('type', 'unknown')
+                        stats['transaction_types'][tx_type] = stats['transaction_types'].get(tx_type, 0) + 1
+                    
+                    # Track miners
+                    miner = block.get('miner')
+                    if miner:
+                        stats['miners'][miner] = stats['miners'].get(miner, 0) + 1
+                    
+                    # Track difficulty
+                    difficulty = block.get('difficulty', 1)
+                    stats['difficulty_distribution'][difficulty] = stats['difficulty_distribution'].get(difficulty, 0) + 1
+                    
+                    # Estimate block size
+                    try:
+                        block_size = len(json.dumps(block).encode('utf-8'))
+                        stats['block_sizes'].append(block_size)
+                    except:
+                        pass
+            
+            # Calculate averages
+            if stats['block_sizes']:
+                stats['average_block_size'] = sum(stats['block_sizes']) / len(stats['block_sizes'])
+                stats['largest_block'] = max(stats['block_sizes'])
+                stats['smallest_block'] = min(stats['block_sizes'])
+            
+            # Add time-based stats
+            if self.blockchain:
+                first_block = self.blockchain[0]
+                last_block = self.blockchain[-1]
+                
+                first_timestamp = first_block.get('timestamp', 0)
+                last_timestamp = last_block.get('timestamp', 0)
+                
+                if first_timestamp and last_timestamp:
+                    time_span = last_timestamp - first_timestamp
+                    if time_span > 0:
+                        stats['blocks_per_hour'] = len(self.blockchain) / (time_span / 3600)
+                        stats['transactions_per_hour'] = stats['total_transactions'] / (time_span / 3600)
+            
+            return stats
+            
+        except Exception as e:
+            self.logger.error(f"Error getting blockchain stats: {e}")
+            return {}
     def remove_mined_transactions(self, mined_transactions: List[Dict]) -> int:
         """Remove mined transactions from mempool"""
         initial_count = len(self.mempool)

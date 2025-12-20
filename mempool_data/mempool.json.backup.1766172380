@@ -1,0 +1,16 @@
+[
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-99ykyPb97weDmg-iKw",
+    "denomination": 1.0,
+    "issued_to": "Sun and Moon",
+    "timestamp": 1766172346.2249575,
+    "signature": "WyWgSK+0XLrNqUyTNJ2k/hsMQbp4ORAmBNdl23DB7EZPS1h7cW9ttj+z/ExI3QEPFi13LoE5QkDlxr9R97Vx+WEcSKcE2b992Os016jEBNBTEu7jHZQpuDUDpBKct8LhX9EMjcjwhM5kjrDQ4zUL+CFORYitu2TAKXNQ7uKWn/MBIbqFbqJf+IPpcTlqOqb/bA8nmInQBIy2bdnFMW4AhLf/4S/B/HVSJVPGEuzOgAha2n/auexuqWy6+eRFzV/9PlusH71CYvm79udL4lQDhcu9SrLsqKzTD2V+RkKcUwXjkSS5xBnDHV5DZHymhbqus+tBjKpvB1p/d2ZFNiFBjQ==",
+    "public_key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAkXkoOwT52jdUwIRUkS4L\nigOb6+8uLprzW2Hz+D9gnE8D2ihe8GAXGnjknZfB9Co3ljcRjIeroHc5GAj/cIn6\ndrr2ldf6pq1dmGtvrF0PVrYZ0M2RVKMU2ByvKz+MZFIIe9AfntvX12R4oD0HNJIl\neBC8VRVIwqxv/xH23nO2UNkLGmCfyDepaMY9g+61RQcHoPidezw2gdtgoSfu2t4c\ntpAvhpPfjgGb5q+6VBJDawrP+F0cFAD5oPCgGncfTWDXHaK/vzip0DXeG87fGRYv\nXu8KwrKLho0fKZswIlQOnlX+pORJQIVX2QEqDkTdWhZRKEPsm5x/ua/UEYcagThb\n7QIDAQAB\n-----END PUBLIC KEY-----\n",
+    "metadata_hash": "7f673f4d495892982d5d3ca1b06cfa22e25abe234d51ab5c0673ef430d8ef96b",
+    "front_serial": "GTX1_1766172346115_277234e2",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "85b00a93476e74ff8ab49f4aeedb93710f954c81099a760bc916db5993ec1049"
+  }
+]

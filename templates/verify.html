@@ -23,8 +23,8 @@
                 </div>
                 {% if result and result.valid %}
                 <div class="profile-stat">
-                    <span class="stat-value">{{ result.type|title }}</span>
-                    <span class="stat-label">Format</span>
+                    <span class="stat-value">{{ signature_details.signature_type|default('Unknown')|title }}</span>
+                    <span class="stat-label">Signature Type</span>
                 </div>
                 {% endif %}
             </div>
@@ -41,6 +41,15 @@
             <span class="tab-icon">✅</span>
             <span class="tab-text">Validation Layers</span>
             <span class="tab-badge">5</span>
+        </button>
+        <button class="tab-button" onclick="openTab('signature')" {% if not result or not result.valid %}disabled{% endif %}>
+            <span class="tab-icon">🛡️</span>
+            <span class="tab-text">Digital Signature</span>
+            {% if signature_valid is not none %}
+                <span class="tab-badge {% if signature_valid %}success{% else %}error{% endif %}">
+                    {% if signature_valid %}✓{% else %}✗{% endif %}
+                </span>
+            {% endif %}
         </button>
         <button class="tab-button" onclick="openTab('details')" {% if not result or not result.valid %}disabled{% endif %}>
             <span class="tab-icon">📄</span>
@@ -199,6 +208,12 @@
                                             <span class="detail-value">{{ layer.verification_method }}</span>
                                         </div>
                                         {% endif %}
+                                        {% if layer.signature_type %}
+                                        <div class="detail-row">
+                                            <span class="detail-label">Type:</span>
+                                            <span class="detail-value">{{ layer.signature_type }}</span>
+                                        </div>
+                                        {% endif %}
                                     {% elif name == 'Mempool' %}
                                         <div class="detail-row">
                                             <span class="detail-label">Status:</span>
@@ -233,6 +248,183 @@
                 </div>
             </div>
         </div>
+    </div>
+
+    <!-- Digital Signature Tab -->
+    <div id="signature" class="tab-content">
+        {% if result and result.valid %}
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">🛡️</div>
+                <h3 class="header-title">Digital Signature Verification</h3>
+            </div>
+            
+            <div class="card-content">
+                {% if signature_valid is not none %}
+                <div class="signature-status {% if signature_valid %}signature-valid{% else %}signature-invalid{% endif %}">
+                    <div class="status-header">
+                        <div class="status-icon">{% if signature_valid %}🛡️{% else %}⚠️{% endif %}</div>
+                        <div class="status-info">
+                            <div class="status-title">{% if signature_valid %}Valid Digital Signature{% else %}Invalid Digital Signature{% endif %}</div>
+                            <div class="status-subtitle">Method: {{ signature_details.verification_method|default('Unknown') }}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="signature-details">
+                        <!-- SM2 Information -->
+                        {% if signature_details.signature_type == 'sm2' %}
+                        <div class="sm2-section">
+                            <h5 class="section-title">SM2 Cryptographic Signature</h5>
+                            <div class="detail-grid">
+                                <div class="detail-item">
+                                    <span class="detail-label">Public Key Format:</span>
+                                    <span class="detail-value code">{{ signature_details.sm2_info.public_key_format if signature_details.sm2_info else 'SM2 Uncompressed' }}</span>
+                                </div>
+                                <div class="detail-item">
+                                    <span class="detail-label">Signature Format:</span>
+                                    <span class="detail-value code">{{ signature_details.sm2_info.signature_format if signature_details.sm2_info else 'SM2 (r, s)' }}</span>
+                                </div>
+                                {% if signature_details.r and signature_details.s %}
+                                <div class="detail-item full-width">
+                                    <span class="detail-label">Signature Components:</span>
+                                    <div class="signature-components">
+                                        <div class="component">
+                                            <span class="component-label">r:</span>
+                                            <span class="component-value code">{{ signature_details.r }}</span>
+                                        </div>
+                                        <div class="component">
+                                            <span class="component-label">s:</span>
+                                            <span class="component-value code">{{ signature_details.s }}</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                        
+                        <!-- Basic Signature Information -->
+                        <div class="detail-section">
+                            <h5 class="section-title">Signature Information</h5>
+                            <div class="detail-grid">
+                                <div class="detail-item">
+                                    <span class="detail-label">Type:</span>
+                                    <span class="detail-value badge {% if signature_details.signature_type == 'sm2' %}success{% elif signature_details.signature_type == 'mock' %}warning{% else %}secondary{% endif %}">
+                                        {{ signature_details.signature_type|default('Unknown')|upper }}
+                                    </span>
+                                </div>
+                                <div class="detail-item">
+                                    <span class="detail-label">Public Key:</span>
+                                    <span class="detail-value code" title="{{ signature_details.public_key|default('N/A') }}">
+                                        {{ signature_details.public_key_short|default('N/A') }}
+                                    </span>
+                                </div>
+                                <div class="detail-item">
+                                    <span class="detail-label">Signature:</span>
+                                    <span class="detail-value code" title="{{ signature_details.signature|default('N/A') }}">
+                                        {{ signature_details.signature_short|default('N/A') }}
+                                    </span>
+                                </div>
+                                <div class="detail-item">
+                                    <span class="detail-label">Timestamp:</span>
+                                    <span class="detail-value">{{ signature_details.timestamp_readable|default('N/A') }}</span>
+                                </div>
+                                <div class="detail-item">
+                                    <span class="detail-label">Issued To:</span>
+                                    <span class="detail-value">{{ signature_details.issued_to|default('N/A') }}</span>
+                                </div>
+                                <div class="detail-item">
+                                    <span class="detail-label">Denomination:</span>
+                                    <span class="detail-value">{{ signature_details.denomination|default('N/A') }} 卢纳币</span>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <!-- Hash Information -->
+                        {% if signature_details.metadata_hash %}
+                        <div class="detail-section">
+                            <h5 class="section-title">Cryptographic Hashes</h5>
+                            <div class="detail-grid">
+                                <div class="detail-item full-width">
+                                    <span class="detail-label">Metadata Hash:</span>
+                                    <span class="detail-value code" title="{{ signature_details.metadata_hash }}">
+                                        {{ signature_details.metadata_hash[:50] }}...
+                                    </span>
+                                </div>
+                                {% if signature_details.calculated_hash %}
+                                <div class="detail-item full-width">
+                                    <span class="detail-label">Calculated Hash:</span>
+                                    <span class="detail-value code" title="{{ signature_details.calculated_hash }}">
+                                        {{ signature_details.calculated_hash[:50] }}...
+                                    </span>
+                                </div>
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% endif %}
+                        
+                        <!-- Verification Notes -->
+                        <div class="verification-notes">
+                            {% if signature_details.verification_method == 'mock_signature' %}
+                            <div class="note warning">
+                                <div class="note-icon">⚠️</div>
+                                <div class="note-content">
+                                    <strong>Note:</strong> This is a mock signature generated when SM2 was not available. 
+                                    For full cryptographic security, regenerate this banknote with SM2 enabled.
+                                </div>
+                            </div>
+                            {% elif signature_details.verification_method == 'fallback_accept' %}
+                            <div class="note warning">
+                                <div class="note-icon">⚠️</div>
+                                <div class="note-content">
+                                    <strong>Note:</strong> Using fallback acceptance based on blockchain confirmation.
+                                </div>
+                            </div>
+                            {% elif signature_details.verification_method == 'sm2' or signature_details.signature_type == 'sm2' %}
+                            <div class="note success">
+                                <div class="note-icon">✅</div>
+                                <div class="note-content">
+                                    <strong>Note:</strong> This signature uses SM2 cryptographic algorithm (Chinese National Standard GB/T 32918).
+                                </div>
+                            </div>
+                            {% endif %}
+                            
+                            {% if sm2_available %}
+                            <div class="note info">
+                                <div class="note-icon">ℹ️</div>
+                                <div class="note-content">
+                                    <strong>SM2 Available:</strong> The SM2 cryptographic library is loaded and ready for verification.
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+                {% else %}
+                <div class="empty-state">
+                    <div class="empty-icon">🔍</div>
+                    <p>No signature data available for this serial</p>
+                    {% if not banknote.transaction_data %}
+                    <p class="small-text">This banknote was generated without digital signature data.</p>
+                    {% endif %}
+                </div>
+                {% endif %}
+            </div>
+        </div>
+        {% else %}
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">🛡️</div>
+                <h3 class="header-title">Digital Signature</h3>
+            </div>
+            <div class="card-content">
+                <div class="empty-state">
+                    <div class="empty-icon">🔍</div>
+                    <p>Enter a valid serial number to view digital signature details</p>
+                </div>
+            </div>
+        </div>
+        {% endif %}
     </div>
 
     <!-- Details Tab -->
@@ -293,9 +485,9 @@
                     <div class="detail-card">
                         <div class="detail-icon">🛡️</div>
                         <div class="detail-content">
-                            <div class="detail-label">Signature</div>
-                            <div class="detail-value {% if banknote.signature_verified %}success{% else %}error{% endif %}">
-                                {{ 'Verified' if banknote.signature_verified else 'Not Verified' }}
+                            <div class="detail-label">Digital Signature</div>
+                            <div class="detail-value {% if signature_valid %}success{% else %}error{% endif %}">
+                                {{ 'Verified' if signature_valid else 'Not Verified' }}
                             </div>
                         </div>
                     </div>
@@ -308,61 +500,6 @@
                 {% endif %}
             </div>
         </div>
-
-        <!-- Signature Details -->
-        {% if signature_valid is not none %}
-        <div class="info-card">
-            <div class="card-header">
-                <div class="header-icon">🔐</div>
-                <h3 class="header-title">Digital Signature</h3>
-            </div>
-            
-            <div class="card-content">
-                <div class="signature-status {% if signature_valid %}signature-valid{% else %}signature-invalid{% endif %}">
-                    <div class="status-header">
-                        <div class="status-icon">{% if signature_valid %}🛡️{% else %}⚠️{% endif %}</div>
-                        <div class="status-info">
-                            <div class="status-title">{% if signature_valid %}Valid Signature{% else %}Invalid Signature{% endif %}</div>
-                            <div class="status-subtitle">Method: {{ signature_details.verification_method }}</div>
-                        </div>
-                    </div>
-                    
-                    <div class="signature-details">
-                        <div class="detail-row">
-                            <span class="detail-label">Public Key:</span>
-                            <span class="detail-value code" title="{{ signature_details.public_key_short }}">
-                                {{ signature_details.public_key_short }}
-                            </span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">Signature:</span>
-                            <span class="detail-value code" title="{{ signature_details.signature_short }}">
-                                {{ signature_details.signature_short }}
-                            </span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">Timestamp:</span>
-                            <span class="detail-value">{{ signature_details.timestamp_readable }}</span>
-                        </div>
-                        <div class="detail-row">
-                            <span class="detail-label">Metadata Hash:</span>
-                            <span class="detail-value code" title="{{ signature_details.metadata_hash }}">
-                                {{ signature_details.metadata_hash }}
-                            </span>
-                        </div>
-                        {% if signature_details.calculated_hash %}
-                        <div class="detail-row">
-                            <span class="detail-label">Calculated Hash:</span>
-                            <span class="detail-value code" title="{{ signature_details.calculated_hash }}">
-                                {{ signature_details.calculated_hash }}
-                            </span>
-                        </div>
-                        {% endif %}
-                    </div>
-                </div>
-            </div>
-        </div>
-        {% endif %}
 
         <!-- Serial Information -->
         <div class="info-card">
@@ -491,30 +628,6 @@
         {% endif %}
     </div>
 </div>
-
-<!-- Image Modal -->
-<div id="imageModal" class="modal">
-    <div class="modal-content">
-        <div class="modal-header">
-            <h3 id="modalTitle"></h3>
-            <button class="modal-close" onclick="closeImageModal()">×</button>
-        </div>
-        <div class="modal-body">
-            <img id="modalImage" src="" alt="" class="modal-image">
-        </div>
-        <div class="modal-footer">
-            <a id="modalDownload" href="" download class="action-btn cyan">
-                <span>Download</span>
-                <div class="btn-icon">⬇️</div>
-            </a>
-            <button class="action-btn secondary" onclick="closeImageModal()">
-                <span>Close</span>
-                <div class="btn-icon">✕</div>
-            </button>
-        </div>
-    </div>
-</div>
-
 <style>
 /* Base Variables - Match profile style */
 :root {

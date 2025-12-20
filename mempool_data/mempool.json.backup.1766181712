@@ -1,0 +1,16 @@
+[
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-tQlCX6M12WolBQ-T7g",
+    "denomination": 1000000.0,
+    "issued_to": "I Love You",
+    "timestamp": 1766181669.4284885,
+    "signature": "fE9/raHz6siozaAMxG1EVloI0J1fXU6WLcH7ndea8L+CTz0zi/ljZeXE7ULGDYnAZtQcTFL7VlMhiZsrT7eQPRMO+bSWJL7KhoOet8SMjf5zbf/d+LEhvk4Rl7fN/D8cId/td5vuyoCM0vIgsKGlroburo2K72vqRsAKhgZvEHod2P6rhjtLZ7joMGnHkS8AYJFwfksneUruo66qinYSNjBjhx+yMJdodO2rfneexxH19XwYcY8GueTXc5FXm/wfM8AarsrlZ1C+e6ZDFRjtbrDEOZzxOb4wus4N53uxh2XztLAvj7IPzhFBn/9ewUGT/OUSh3Ph/0Ep5td7TO2uyw==",
+    "public_key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAw6TnBR5K56EGBgd9vAtb\nByxdeA5RhWiCQclCQufw3nwnbFc7psxaEKqxKOCajwCdagD615ZqxSziVyAxRqz4\nHTuwvUTMYvBGKatYh5bJphE5aVjkiXH4b4q3Mt3PIh/UBB5QIp3H2Z6L0gjJnOzT\nVHyFMlR7gWWTVmBWPqZgvC0B5igo2y/yc/eHyyOmJMGKKV0FRubJ9YaZnf24w3yB\nhPIxO16X1DMzWfDzQgQHLpWaqi1K1ev3d3Tb7+v3kyurIVaP7LBtytAlKKCVf8ac\ndn6ZXfDqTv4NKxqI9R61PjN/NDNuCo0Q+TJW/E32dt8DfeDiQudHuuJQJsfG86Ft\nYQIDAQAB\n-----END PUBLIC KEY-----\n",
+    "metadata_hash": "30add5a8edbba03b05687e050f6bbce6f8b4fdd4c3fe15b38dd812ba386c0b33",
+    "front_serial": "GTX1000000_1766181669339_89512a5f",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "d6d2a30010a9d498a1ffeabd1ef2b06bcd35dcb41aa70bff0cda95d53e597f4b"
+  }
+]

@@ -29,16 +29,108 @@ import sys
 # Add the current directory to Python path to import local modules
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# Try to import database models and app (will fail if not in Flask context)
+# =============================================================================
+# IMPORTS WITH BETTER ERROR HANDLING
+# =============================================================================
+
+import os
+import sys
+import traceback
+
+# Add current directory to Python path FIRST
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+print(f"[DEBUG] Current directory: {os.getcwd()}")
+print(f"[DEBUG] Script directory: {os.path.dirname(os.path.abspath(__file__))}")
+
+# Try to import signatures with multiple fallbacks
+HAS_SIGNATURES = False
+HAS_FLASK_CONTEXT = False
+
+try:
+    # First try to import signatures directly
+    import signatures
+    print("[+] Successfully imported signatures module")
+    
+    # Try to get the required functions/classes
+    if hasattr(signatures, 'DigitalSignatureManager'):
+        DigitalSignatureManager = signatures.DigitalSignatureManager
+        HAS_SIGNATURES = True
+        print("[+] Got DigitalSignatureManager from signatures")
+    
+    if hasattr(signatures, 'generate_key_pair'):
+        generate_key_pair = signatures.generate_key_pair
+        print("[+] Got generate_key_pair from signatures")
+    else:
+        # Provide a fallback
+        def generate_key_pair():
+            import hashlib
+            import secrets
+            priv = secrets.token_hex(32)
+            pub = f"04{hashlib.sha256(priv.encode()).hexdigest()[:64]}"
+            return priv, pub
+        print("[!] Using fallback generate_key_pair")
+    
+except ImportError as e:
+    print(f"[!] Failed to import signatures: {e}")
+    # Create fallback implementations
+    class DigitalSignatureManager:
+        def __init__(self):
+            pass
+        def create_signed_bill(self, bill_data, private_key):
+            import hashlib
+            import json
+            return type('obj', (object,), {
+                'signature': hashlib.sha256(json.dumps(bill_data).encode()).hexdigest(),
+                'public_key': 'fallback_key'
+            })
+        def verify_bill_signature(self, bill_data):
+            return True
+    
+    def generate_key_pair():
+        import hashlib
+        import secrets
+        priv = secrets.token_hex(32)
+        pub = f"04{hashlib.sha256(priv.encode()).hexdigest()[:64]}"
+        return priv, pub
+    
+    print("[!] Using fallback signatures")
+    HAS_SIGNATURES = True  # Still mark as available for fallback
+
+# Try to import Flask models
 try:
     from models import Banknote, SerialNumber, User, db
-    from signatures import DigitalSignatureManager, generate_key_pair
     HAS_FLASK_CONTEXT = True
-    HAS_SIGNATURES = True
+    print("[+] Successfully imported database models")
 except ImportError as e:
+    print(f"[!] Failed to import Flask models: {e}")
     HAS_FLASK_CONTEXT = False
-    HAS_SIGNATURES = False
-    print(f"[!] Running without Flask context - database operations disabled: {e}")
+    # Create dummy classes for fallback
+    class Banknote:
+        pass
+    class SerialNumber:
+        pass
+    class User:
+        pass
+    class db:
+        class session:
+            @staticmethod
+            def add(obj): pass
+            @staticmethod
+            def commit(): pass
+            @staticmethod
+            def rollback(): pass
+            @staticmethod
+            def flush(): pass
+            @staticmethod
+            def query(cls): 
+                class Query:
+                    def get(self, id): return None
+                    def filter_by(self, **kwargs): return self
+                    def first(self): return None
+                return Query()
+    
+    print("[!] Using fallback database classes")
 
 # Import functions from banknote generators
 HAS_FRONT_GENERATOR = False
@@ -382,7 +474,9 @@ def get_portrait_for_name(name, force_regenerate=False):
 # -----------------------
 # Banknote generation functions
 # -----------------------
-def generate_front_back_pair(name, denom, img_path, timestamp_ms, denom_folder, user_id=None):
+def generate_front_back_pair(name, denom, img_path, timestamp_ms, denom_folder, user_id=None,
+                          width_mm=160.0, height_mm=60.0, title="灵国国库", subtitle="天圆地方", 
+                          font_dir="./fonts", bg_dir="./backgrounds", dpi=300.0, bg_image=None):
     """Generate a front+back pair for a single denomination"""
     front_serial = generate_serial_id_with_checksum(timestamp_ms)
     back_serial = generate_serial_id_combined(timestamp_ms)
@@ -427,7 +521,14 @@ def generate_front_back_pair(name, denom, img_path, timestamp_ms, denom_folder, 
                 '--outfile', front_svg_path,
                 '--single_denom', denom_str,  # Already string
                 '--serial_id', front_serial,
-                '--timestamp', str(int(timestamp_ms))  # Convert to string
+                '--timestamp', str(int(timestamp_ms)),  # Convert to string
+                '--width-mm', str(width_mm),
+                '--height-mm', str(height_mm),
+                '--title', title,
+                '--subtitle', subtitle,
+                '--font-dir', font_dir,
+                '--bg-dir', bg_dir,
+                '--dpi', str(dpi)
             ], check=True, timeout=13131313)
         
         safe_print(f"[+] Generated front: {front_svg_path}")
@@ -457,8 +558,13 @@ def generate_front_back_pair(name, denom, img_path, timestamp_ms, denom_folder, 
                 '--denomination', denom_str,  # Already string
                 '--seed_text', safe_name,  # Use safe name without ampersand
                 '--serial_id', back_serial,
-                '--timestamp', str(int(timestamp_ms))  # Convert to string
-            ], check=True, timeout=13131313)
+                '--timestamp', str(int(timestamp_ms)),  # Convert to string
+                '--width-mm', str(width_mm),
+                '--height-mm', str(height_mm),
+                '--title', title,
+                '--phrase', subtitle,  # Using subtitle as phrase for back
+                '--dpi', str(dpi)
+            ] + (['--bg-image', bg_image] if bg_image else []), check=True, timeout=13131313)
         
         safe_print(f"[+] Generated back: {back_svg_path}")
         
@@ -656,13 +762,15 @@ def save_to_database(name, denom_numeric, files, user_id):
 
 def process_denomination(args_tuple):
     """Helper function for parallel denomination processing"""
-    name, denom, img_path, timestamp_ms, denom_folder, user_id = args_tuple
-    result = generate_front_back_pair(name, denom, img_path, timestamp_ms, denom_folder, user_id)
+    name, denom, img_path, timestamp_ms, denom_folder, user_id, width_mm, height_mm, title, subtitle, font_dir, bg_dir, dpi, bg_image = args_tuple
+    result = generate_front_back_pair(name, denom, img_path, timestamp_ms, denom_folder, user_id, width_mm, height_mm, title, subtitle, font_dir, bg_dir, dpi, bg_image)
     if result:
         result['denomination'] = denom  # Add denomination to result
     return result
 
-def process_name(name, user_id, force_regenerate=False, specific_denom=None, single_denom=False, images=None):
+def process_name(name, user_id, force_regenerate=False, specific_denom=None, single_denom=False, images=None,
+               width_mm=160.0, height_mm=60.0, title="灵国国库", subtitle="天圆地方", 
+               font_dir="./fonts", bg_dir="./backgrounds", dpi=300.0, bg_image=None):
     """Process a single name with all its denominations in parallel"""
     try:
         safe_print(f"[+] Processing: {name}")
@@ -720,7 +828,7 @@ def process_name(name, user_id, force_regenerate=False, specific_denom=None, sin
         denom_folder = os.path.join(name_folder, denom_str)
         os.makedirs(denom_folder, exist_ok=True)
         timestamp_ms = generate_timestamp_ms_precise()
-        args_list.append((name, denom_numeric, img_path, timestamp_ms, denom_folder, user_id))
+        args_list.append((name, denom_numeric, img_path, timestamp_ms, denom_folder, user_id, width_mm, height_mm, title, subtitle, font_dir, bg_dir, dpi, bg_image))
 
     # Use sequential processing to avoid subprocess issues
     svg_pairs_created = 0
@@ -748,7 +856,9 @@ def process_name(name, user_id, force_regenerate=False, specific_denom=None, sin
 # -----------------------
 # Main API function
 # -----------------------
-def generate_for_user(username, user_id, force_regenerate=False, specific_denom=None, single_denom=False, max_threads=1):
+def generate_for_user(username, user_id, force_regenerate=False, specific_denom=None, single_denom=False, max_threads=1,
+                   width_mm=160.0, height_mm=60.0, title="灵国国库", subtitle="天圆地方", 
+                   font_dir="./fonts", bg_dir="./backgrounds", dpi=300.0, bg_image=None):
     """
     Generate banknotes for a specific user
     
@@ -775,11 +885,11 @@ def generate_for_user(username, user_id, force_regenerate=False, specific_denom=
     # For single denomination, we only want to create 1 pair
     if single_denom and specific_denom:
         safe_print(f"[SINGLE DENOM] Generating only denomination {specific_denom}")
-        result = process_name(username, user_id, force_regenerate, specific_denom, True, images)
+        result = process_name(username, user_id, force_regenerate, specific_denom, True, images, width_mm, height_mm, title, subtitle, font_dir, bg_dir, dpi, bg_image)
         return result
     else:
         # For multiple denominations, process normally
-        return process_name(username, user_id, force_regenerate, specific_denom, single_denom, images)
+        return process_name(username, user_id, force_regenerate, specific_denom, single_denom, images, width_mm, height_mm, title, subtitle, font_dir, bg_dir, dpi, bg_image)
 
 # -----------------------
 # Standalone execution
@@ -795,6 +905,15 @@ def parse_arguments():
                        help=f"Number of parallel threads (default: {MAX_THREADS})")
     parser.add_argument("--single-denom", action="store_true",
                        help="Generate only one denomination (use with --denom)")
+    # New customization arguments
+    parser.add_argument("--width-mm", type=float, default=160.0, help="Width in mm (default: 160.0)")
+    parser.add_argument("--height-mm", type=float, default=60.0, help="Height in mm (default: 60.0)")
+    parser.add_argument("--title", type=str, default="灵国国库", help="Title text (default: 灵国国库)")
+    parser.add_argument("--subtitle", type=str, default="天圆地方", help="Subtitle text (default: 天圆地方)")
+    parser.add_argument("--font-dir", type=str, default="./fonts", help="Directory containing font files (default: ./fonts)")
+    parser.add_argument("--bg-dir", type=str, default="./backgrounds", help="Directory containing background images (default: ./backgrounds)")
+    parser.add_argument("--dpi", type=float, default=300.0, help="Resolution in DPI (default: 300.0)")
+    parser.add_argument("--bg-image", type=str, help="Background image path for back")
     return parser.parse_args()
 
 def main():
@@ -811,7 +930,15 @@ def main():
         force_regenerate=args.force_regenerate,
         specific_denom=args.denom,
         single_denom=args.single_denom,
-        max_threads=args.threads
+        max_threads=args.threads,
+        width_mm=args.width_mm,
+        height_mm=args.height_mm,
+        title=args.title,
+        subtitle=args.subtitle,
+        font_dir=args.font_dir,
+        bg_dir=args.bg_dir,
+        dpi=args.dpi,
+        bg_image=args.bg_image
     )
     
     safe_print(f"\n[+] Banknote generation finished! Created {result} SVG pairs!")

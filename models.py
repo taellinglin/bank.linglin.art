@@ -191,13 +191,13 @@ class Settings(db.Model):
     
     id = db.Column(db.Integer, primary_key=True)
     system_name = db.Column(db.String(100), default="灵国国库")
-    max_banknotes = db.Column(db.Integer, default=100)
-    cooldown_days = db.Column(db.Integer, default=7)
+    max_banknotes = db.Column(db.Integer, default=108)
+    cooldown_days = db.Column(db.Integer, default=31)
     maintenance_mode = db.Column(db.Boolean, default=False)
     allow_registrations = db.Column(db.Boolean, default=True)
-    max_file_size = db.Column(db.Integer, default=10)  # MB
-    blockchain_difficulty = db.Column(db.Integer, default=4)
-    mining_reward = db.Column(db.Float, default=50.0)
+    max_file_size = db.Column(db.Integer, default=512)  # MB
+    blockchain_difficulty = db.Column(db.Integer, default=6)
+    mining_reward = db.Column(db.Float, default=1.0)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     def __repr__(self):

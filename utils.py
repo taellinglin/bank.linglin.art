@@ -20,7 +20,6 @@ import io
 import base64
 from flask import flash, redirect, url_for
 from sqlalchemy import desc
-from models import db, User, GenerationTask, Banknote, SerialNumber
 import bleach
 from bleach.sanitizer import ALLOWED_TAGS, ALLOWED_ATTRIBUTES
 from sqlalchemy.exc import IntegrityError
@@ -69,6 +68,8 @@ class GenerationQueue:
         self.lock = threading.Lock()
     
     def add_task(self, user_id: int, username: str) -> Optional[int]:
+        from models import db, GenerationTask
+
         """Add a generation task - returns immediately"""
         try:
             from app import app
@@ -97,7 +98,10 @@ class GenerationQueue:
         """Launch generation in a thread with proper app context"""
         def run_generation():
             try:
-                from app import app
+                # Import create_app to create Flask application
+                from app import app as create_app
+                app = create_app
+                
                 with app.app_context():
                     from generate import generate_for_user
                     from models import GenerationTask, db
@@ -141,6 +145,8 @@ class GenerationQueue:
                         except Exception as e:
                             error_msg = f"Error generating {denom}: {str(e)}"
                             print(f"[GENERATION ERROR] {error_msg}")
+                            import traceback
+                            traceback.print_exc()
                             results.append({
                                 'denom': denom,
                                 'success': False,
@@ -187,6 +193,7 @@ class GenerationQueue:
                             del self.active_tasks[user_id]
                     
                     from app import app
+                    app = create_app
                     with app.app_context():
                         from models import GenerationTask, db
                         task = GenerationTask.query.get(task_id)
@@ -195,8 +202,8 @@ class GenerationQueue:
                             task.message = f"Thread error: {str(e)}"
                             task.completed_at = datetime.utcnow()
                             db.session.commit()
-                except:
-                    pass
+                except Exception as inner_e:
+                    print(f"[FAILED TO MARK AS FAILED] {inner_e}")
         
         # Start the thread
         thread = threading.Thread(target=run_generation, daemon=True)
@@ -206,6 +213,8 @@ class GenerationQueue:
             self.active_tasks[user_id] = task_id
     
     def _mark_task_failed(self, task_id: int, error_msg: str):
+        from models import db, GenerationTask
+
         """Mark a task as failed"""
         try:
             from app import app
@@ -249,6 +258,8 @@ def get_generation_queue_status() -> Dict:
     return generation_queue.get_queue_status()
 
 def mark_generation_complete(user_id: int, task_id: int, status: str, message: str):
+    from models import db, GenerationTask
+
     """Mark a generation task as complete (called by worker process)"""
     generation_queue.cleanup_completed_task(user_id, task_id)
     
@@ -562,8 +573,10 @@ def clean_html(html_content, allowed_tags, clean_attributes_func):
     return cleaner.get_clean_html()
 # Add CSS styles for rainbow and flash effects to your template
 
-
+from models import User
 def get_user_by_username(username: str) -> Optional[User]:
+    
+
     """Get user object by username"""
     return User.query.filter_by(username=username).first()
 
@@ -597,6 +610,8 @@ def get_initials(username: str) -> str:
 
 def get_current_user():
     """Get current user from session"""
+    from models import User
+
     from flask import session
     if 'user_id' in session:
         user = User.query.get(session['user_id'])
@@ -640,6 +655,8 @@ def generate_pdf(svg_path: str, pdf_path: str) -> bool:
 
 def add_banknote(user_id: int, username: str, denom: str, side: str, serial_number: str, svg_path: str) -> int:
     """Add a banknote to the database with associated files"""
+    from models import db, Banknote, SerialNumber
+
     print(f"[ADD BANKNOTE] {serial_number} ({side}) for {username}")
     
     # Check if banknote already exists
@@ -708,6 +725,8 @@ def add_banknote(user_id: int, username: str, denom: str, side: str, serial_numb
 
 def has_banknotes(user_id: int) -> bool:
     """Check if a user has any banknotes"""
+    from models import Banknote
+
     return Banknote.query.filter_by(user_id=user_id).first() is not None
 
 def validate_serial_id(serial_id: str) -> Dict:

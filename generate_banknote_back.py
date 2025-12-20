@@ -2766,7 +2766,15 @@ def fractal_stamp(
 def run_single_denomination(outdir: str = ".", base_name: str = "banknote", denomination: int = 1, 
                            width_mm: float = 160.0, height_mm: float = 60.0,
                            title_text: str = "灵国国库", phrase_text: str = "灵之意志，天下共识", seed_text: str = "Username", serial_id: str = "SNB-", timestamp: str = None,
-                           png: bool = False):
+                           png: bool = False, dpi: float = 300.0, bg_image: str = None):
+    # Update global DPI
+    global MM_TO_PX
+    MM_TO_PX = dpi / 25.4
+    
+    # Set background image if provided
+    if bg_image:
+        load_background(bg_image)
+    
     W = mm_to_px(width_mm)
     H = mm_to_px(height_mm)
     os.makedirs(outdir, exist_ok=True)
@@ -2789,7 +2797,15 @@ def run_single_denomination(outdir: str = ".", base_name: str = "banknote", deno
 # Then modify the argument parsing to accept a denomination parameter
 def run_batch(outdir: str = ".", base_name: str = "banknote", width_mm: float = 160.0, height_mm: float = 60.0,
               title_text: str = "灵国国库", phrase_text: str = "灵之意志，天下共识", seed_text: str = "Username", serial_id: str = "FRONT", timestamp: str = None,
-              png: bool = False):
+              png: bool = False, dpi: float = 300.0, bg_image: str = None):
+    # Update global DPI
+    global MM_TO_PX
+    MM_TO_PX = dpi / 25.4
+    
+    # Set background image if provided
+    if bg_image:
+        load_background(bg_image)
+    
     denoms = [10**i for i in range(0,9)]
     W = mm_to_px(width_mm)
     H = mm_to_px(height_mm)
@@ -2798,7 +2814,7 @@ def run_batch(outdir: str = ".", base_name: str = "banknote", width_mm: float = 
         # Include denomination in the filename to avoid overwriting
         fname = f"{base_name}_{d}.svg"  # Add denomination to filename
         path = os.path.join(outdir, fname)
-        generate_backside_svg(path, d, title_text, phrase_text, seed_text, serial_id, timestamp, (W,H))
+        generate_backside_svg(path, d, title_text, phrase_text, (W,H), serial_id, timestamp, seed_text)
         
         if png:
             if not CAIROSVG_AVAILABLE:
@@ -2823,12 +2839,14 @@ if __name__ == "__main__":
     parser.add_argument("--serial_id", type=str, default="Name", help="serial_id")
     parser.add_argument("--timestamp", type=int, help="Datetime Stamp precisely on the microsecond")
     parser.add_argument("--png", action="store_true", help="Attempt to output PNGs (requires cairosvg)")
+    parser.add_argument("--dpi", type=float, default=300.0, help="Resolution in DPI (default: 300.0)")
+    parser.add_argument("--bg-image", type=str, help="Background image path")
     args = parser.parse_args()
 
     if args.denomination:
         run_single_denomination(outdir=args.outdir, base_name=args.basename, denomination=args.denomination,
                                width_mm=args.width_mm, height_mm=args.height_mm,
-                               title_text=args.title, phrase_text=args.phrase,seed_text=args.seed_text, serial_id=args.serial_id, timestamp=args.timestamp, png=args.png)
+                               title_text=args.title, phrase_text=args.phrase, seed_text=args.seed_text, serial_id=args.serial_id, timestamp=args.timestamp, png=args.png, dpi=args.dpi, bg_image=args.bg_image)
     else:
         run_batch(outdir=args.outdir, base_name=args.basename, width_mm=args.width_mm, height_mm=args.height_mm,
-                  title_text=args.title, phrase_text=args.phrase,seed_text=args.seed_text, serial_id=args.serial_id, timstamp=args.timestamp, png=args.png)
+                  title_text=args.title, phrase_text=args.phrase, seed_text=args.seed_text, serial_id=args.serial_id, timestamp=args.timestamp, png=args.png, dpi=args.dpi, bg_image=args.bg_image)

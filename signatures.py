@@ -1,23 +1,28 @@
-# signatures.py
+# signatures.py - UPDATED TO USE SM2 INSTEAD OF RSA
 import hashlib
 import json
 import time
 import base64
 
+# Import SM2 implementation
+from sm2 import SM2, generate_sm2_keypair, sign_message, verify_message
+
 try:
+    # Keep optional cryptography for compatibility
     from cryptography.hazmat.primitives import hashes
     from cryptography.hazmat.primitives.asymmetric import rsa, padding
     from cryptography.hazmat.primitives import serialization
     from cryptography.exceptions import InvalidSignature
     CRYPTOGRAPHY_AVAILABLE = True
 except ImportError:
-    print("Warning: cryptography library not available. Using fallback methods.")
+    print("Warning: cryptography library not available. Using SM2 only.")
     CRYPTOGRAPHY_AVAILABLE = False
 
 
 class DigitalBill:
     """
-    Represents a digitally signed banknote/bill with cryptographic verification
+    Represents a digitally signed banknote/bill with SM2 cryptographic verification
+    Handles both ASCII and Unicode encoding for verification
     """
     
     def __init__(self, bill_type, front_serial, back_serial, metadata_hash, 
@@ -32,6 +37,9 @@ class DigitalBill:
         self.public_key = public_key
         self.signature = signature
         
+        # Track which encoding was used for signing
+        self.signing_encoding = None  # Will be 'ascii' or 'unicode'
+    
     def to_dict(self):
         """Convert bill data to dictionary for hashing/serialization"""
         return {
@@ -44,163 +52,116 @@ class DigitalBill:
             'denomination': self.denomination
         }
     
-    def calculate_hash(self):
-        """Calculate SHA-256 hash of the bill data"""
-        bill_string = json.dumps(self.to_dict(), sort_keys=True)
-        return hashlib.sha256(bill_string.encode()).hexdigest()
+    def to_json_string(self, encoding='auto'):
+        """Convert to JSON string with specified encoding"""
+        if encoding == 'ascii':
+            return json.dumps(self.to_dict(), sort_keys=True, ensure_ascii=True)
+        elif encoding == 'unicode':
+            return json.dumps(self.to_dict(), sort_keys=True, ensure_ascii=False)
+        else:  # auto - try to detect based on issued_to
+            # If issued_to contains non-ASCII, use unicode, else ascii
+            if self.issued_to and any(ord(c) > 127 for c in self.issued_to):
+                return json.dumps(self.to_dict(), sort_keys=True, ensure_ascii=False)
+            else:
+                return json.dumps(self.to_dict(), sort_keys=True, ensure_ascii=True)
     
-    def sign(self, private_key):
-        """Sign the bill data with a private key"""
-        if not CRYPTOGRAPHY_AVAILABLE:
-            return self._sign_fallback(private_key)
-            
-        bill_hash = self.calculate_hash()
+    def sign(self, private_key_hex, encoding='ascii'):
+        """Sign the bill data with SM2 private key"""
+        if encoding not in ['ascii', 'unicode']:
+            encoding = 'ascii'  # Default to ascii for backward compatibility
+        
+        bill_string = self.to_json_string(encoding=encoding)
+        self.signing_encoding = encoding
         
         try:
-            # Load private key if it's in string format
-            if isinstance(private_key, str):
-                private_key_obj = serialization.load_pem_private_key(
-                    private_key.encode('utf-8'),
-                    password=None
-                )
-            else:
-                private_key_obj = private_key
+            sm2 = SM2()
             
-            # Sign the hash
-            signature = private_key_obj.sign(
-                bill_hash.encode(),
-                padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH
-                ),
-                hashes.SHA256()
-            )
+            # Generate signature
+            signature_hex = sm2.sign(bill_string.encode(), private_key_hex)
+            self.signature = signature_hex
             
-            self.signature = base64.b64encode(signature).decode('utf-8')
+            # Generate public key from private key
+            private_key_int = int(private_key_hex, 16)
+            sm2.private_key = private_key_int
+            
+            curve = sm2.curve
+            Px, Py = curve.point_multiply(private_key_int, curve.Gx, curve.Gy)
+            self.public_key = f"04{Px:064x}{Py:064x}"
+            
+            print(f"[SIGN] Signed with {encoding} encoding")
+            print(f"[SIGN] JSON: {bill_string[:50]}...")
+            
             return self.signature
+            
         except Exception as e:
-            print(f"Cryptographic signing failed, using fallback: {e}")
-            return self._sign_fallback(private_key)
-    
-    def _sign_fallback(self, private_key):
-        """Fallback signing method using hashes"""
-        bill_hash = self.calculate_hash()
-        # Simple hash-based "signature" for when cryptography is unavailable
-        if isinstance(private_key, str):
-            signature_input = f"{private_key}{bill_hash}"
-        else:
-            signature_input = f"fallback_key{bill_hash}"
-        
-        self.signature = hashlib.sha256(signature_input.encode()).hexdigest()
-        return self.signature
+            print(f"[SIGN ERROR] {e}")
+            raise
     
     def verify(self):
-        """Verify signature using the exact same method as creation"""
+        """Verify SM2 signature ONLY - no fallbacks, no mock signatures"""
         if not self.public_key or not self.signature:
+            print(f"[VERIFY] Missing public_key or signature")
             return False
-            
-        # Handle mock signatures (from your fallback in create_digital_banknote_signature)
-        if self.signature.startswith('mock_signature_'):
-            # Verify mock signature by recalculating
-            expected_mock = 'mock_signature_' + hashlib.md5(
-                f"{getattr(self, 'issued_to', '')}{getattr(self, 'denomination', '')}{getattr(self, 'front_serial', '')}".encode()
-            ).hexdigest()
-            return self.signature == expected_mock
         
-        # Handle fallback signatures (from your exception handling)
-        if self.public_key == 'fallback_public_key':
-            expected_fallback = hashlib.sha256(
-                f"{getattr(self, 'issued_to', '')}{getattr(self, 'denomination', '')}{getattr(self, 'front_serial', '')}{getattr(self, 'timestamp', 0)}".encode()
-            ).hexdigest()
-            return self.signature == expected_fallback
-        
-        # Handle metadata_hash based signatures (from your main signature creation)
-        if hasattr(self, 'metadata_hash') and self.metadata_hash:
-            # This should match the logic in create_digital_banknote_signature
-            verification_data = f"{self.public_key}{self.metadata_hash}"
-            expected_signature = hashlib.sha256(verification_data.encode()).hexdigest()
-            return self.signature == expected_signature
-        
-        # Final fallback - accept any signature that looks valid
-        return len(self.signature) > 0
-    
-    def _verify_fallback(self):
-        """Fallback verification method"""
-        if not self.public_key or not self.signature:
+        # Validate signature format - must be 128 hex chars for SM2
+        if len(self.signature) != 128 or not all(c in '0123456789abcdefABCDEF' for c in self.signature):
+            print(f"[VERIFY] Invalid signature format: expected 128 hex chars, got {len(self.signature)}")
             return False
+        
+        # Validate public key format - must start with '04' for uncompressed SM2
+        if not self.public_key.startswith('04'):
+            print(f"[VERIFY] Invalid public key format: expected '04' prefix")
+            return False
+        
+        # Validate public key length - should be 130 hex chars for uncompressed (04 + 64 + 64)
+        if len(self.public_key) != 130:
+            print(f"[VERIFY] Invalid public key length: expected 130 hex chars, got {len(self.public_key)}")
+            return False
+        
+        try:
+            # Get the exact data that should be signed
+            bill_string = self.to_json_string()
             
-        current_hash = self.calculate_hash()
-        
-        # For fallback, recreate the signature and compare
-        if isinstance(self.public_key, str):
-            signature_input = f"{self.public_key}{current_hash}"
-        else:
-            signature_input = f"fallback_key{current_hash}"
-        
-        expected_signature = hashlib.sha256(signature_input.encode()).hexdigest()
-        return self.signature == expected_signature
-    
-    @staticmethod
-    def load_public_key(public_key_str):
-        """Load public key from PEM string"""
-        if not CRYPTOGRAPHY_AVAILABLE:
-            return public_key_str  # Return as-is for fallback
+            # Create SM2 instance
+            sm2 = SM2()
             
-        return serialization.load_pem_public_key(
-            public_key_str.encode('utf-8')
-        )
-    
-    @staticmethod
-    def generate_key_pair():
-        """Generate a new RSA key pair for signing"""
-        if not CRYPTOGRAPHY_AVAILABLE:
-            return DigitalBill._generate_fallback_key_pair()
+            # Verify using SM2
+            print(f"[VERIFY] Verifying SM2 signature for bill {self.front_serial}")
             
-        private_key = rsa.generate_private_key(
-            public_exponent=65537,
-            key_size=2048
-        )
-        
-        # Get public key
-        public_key = private_key.public_key()
-        
-        # Serialize keys
-        private_pem = private_key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.PKCS8,
-            encryption_algorithm=serialization.NoEncryption()
-        )
-        
-        public_pem = public_key.public_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PublicFormat.SubjectPublicKeyInfo
-        )
-        
-        return private_pem.decode('utf-8'), public_pem.decode('utf-8')
-    
-    @staticmethod
-    def _generate_fallback_key_pair():
-        """Generate fallback key pair using hashes"""
-        import random
-        import string
-        
-        # Generate random strings as "keys"
-        private_key = ''.join(random.choices(string.ascii_letters + string.digits, k=64))
-        public_key = hashlib.sha256(private_key.encode()).hexdigest()
-        
-        return private_key, public_key
-
-
+            is_valid = sm2.verify(
+                bill_string.encode(),
+                self.signature,
+                self.public_key
+            )
+            
+            if is_valid:
+                print(f"[VERIFY] ✓ SM2 signature verified for bill {self.front_serial}")
+            else:
+                print(f"[VERIFY] ✗ SM2 signature verification failed for bill {self.front_serial}")
+                
+                # Debug: Show what's being verified
+                print(f"[VERIFY DEBUG] JSON being verified: {bill_string}")
+                print(f"[VERIFY DEBUG] Public key: {self.public_key}")
+                print(f"[VERIFY DEBUG] Signature: {self.signature}")
+            
+            return is_valid
+            
+        except Exception as e:
+            print(f"[VERIFY ERROR] SM2 verification error: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 class DigitalSignatureManager:
     """
-    Manager class for handling digital signatures across the application
+    Manager class for handling digital signatures using SM2
     """
     
     def __init__(self):
         self.key_cache = {}  # Cache for loaded keys
+        self.sm2_instance = SM2()  # Reusable SM2 instance
     
-    def create_signed_bill(self, bill_data, private_key_pem):
-        """Create a new digitally signed bill"""
+    def create_signed_bill(self, bill_data, private_key_hex):
+        """Create a new digitally signed bill using SM2"""
         # Create bill object
         bill = DigitalBill(
             bill_type=bill_data.get('type', 'banknote'),
@@ -212,39 +173,17 @@ class DigitalSignatureManager:
             denomination=bill_data.get('denomination', '')
         )
         
-        # Sign the bill
-        signature = bill.sign(private_key_pem)
+        # Sign the bill with SM2
+        signature = bill.sign(private_key_hex)
         
-        # Get public key for verification
-        if CRYPTOGRAPHY_AVAILABLE and not isinstance(private_key_pem, str):
-            try:
-                private_key = serialization.load_pem_private_key(
-                    private_key_pem.encode('utf-8'),
-                    password=None
-                )
-                public_key = private_key.public_key()
-                public_pem = public_key.public_bytes(
-                    encoding=serialization.Encoding.PEM,
-                    format=serialization.PublicFormat.SubjectPublicKeyInfo
-                )
-                bill.public_key = public_pem.decode('utf-8')
-            except Exception:
-                # If we can't get the public key properly, use a fallback
-                if isinstance(private_key_pem, str) and len(private_key_pem) > 32:
-                    bill.public_key = hashlib.sha256(private_key_pem.encode()).hexdigest()
-                else:
-                    bill.public_key = "fallback_public_key"
-        else:
-            # Fallback: derive public key from private key
-            if isinstance(private_key_pem, str) and len(private_key_pem) > 32:
-                bill.public_key = hashlib.sha256(private_key_pem.encode()).hexdigest()
-            else:
-                bill.public_key = "fallback_public_key"
+        print(f"Created SM2-signed bill: {bill.front_serial}")
+        print(f"  Signature: {signature[:16]}...")
+        print(f"  Public Key: {bill.public_key[:16]}...")
         
         return bill
     
     def verify_bill_signature(self, bill_data):
-        """Verify a bill's digital signature"""
+        """Verify a bill's SM2 digital signature"""
         if isinstance(bill_data, dict):
             # Create bill object from dictionary
             bill = DigitalBill(
@@ -263,102 +202,166 @@ class DigitalSignatureManager:
             
         return bill.verify()
     
-    def create_transaction_signature(self, transaction_data, private_key_pem):
-        """Create signature for blockchain transactions"""
+    def create_transaction_signature(self, transaction_data, private_key_hex):
+        """Create SM2 signature for blockchain transactions"""
         # Sort transaction data for consistent hashing
         sorted_data = json.dumps(transaction_data, sort_keys=True)
-        transaction_hash = hashlib.sha256(sorted_data.encode()).hexdigest()
-        
-        if not CRYPTOGRAPHY_AVAILABLE:
-            # Fallback signature
-            if isinstance(private_key_pem, str):
-                signature_input = f"{private_key_pem}{transaction_hash}"
-            else:
-                signature_input = f"fallback_key{transaction_hash}"
-            return hashlib.sha256(signature_input.encode()).hexdigest()
         
         try:
-            # Load private key
-            if isinstance(private_key_pem, str):
-                private_key = serialization.load_pem_private_key(
-                    private_key_pem.encode('utf-8'),
-                    password=None
-                )
-            else:
-                private_key = private_key_pem
-            
-            # Sign the hash
-            signature = private_key.sign(
-                transaction_hash.encode(),
-                padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH
-                ),
-                hashes.SHA256()
-            )
-            
-            return base64.b64encode(signature).decode('utf-8')
+            # Use SM2 to sign the transaction data
+            signature_hex = sign_message(sorted_data, private_key_hex)
+            print(f"Created SM2 transaction signature: {signature_hex[:16]}...")
+            return signature_hex
             
         except Exception as e:
-            print(f"Transaction signing failed, using fallback: {e}")
-            # Fallback
-            if isinstance(private_key_pem, str):
-                signature_input = f"{private_key_pem}{transaction_hash}"
-            else:
-                signature_input = f"fallback_key{transaction_hash}"
+            print(f"SM2 transaction signing failed, using fallback: {e}")
+            # Fallback to hash-based signature
+            transaction_hash = hashlib.sha256(sorted_data.encode()).hexdigest()
+            signature_input = f"{private_key_hex}{transaction_hash}"
             return hashlib.sha256(signature_input.encode()).hexdigest()
     
-    def verify_transaction_signature(self, transaction_data, public_key_pem, signature):
-        """Verify signature for blockchain transactions"""
+    def verify_transaction_signature(self, transaction_data, public_key_hex, signature_hex):
+        """Verify SM2 signature for blockchain transactions"""
         try:
-            # Calculate hash
+            # Sort transaction data (must match signing order)
+            sorted_data = json.dumps(transaction_data, sort_keys=True)
+            
+            # Use SM2 to verify the signature
+            is_valid = verify_message(sorted_data, signature_hex, public_key_hex)
+            
+            if is_valid:
+                print(f"✓ SM2 transaction signature verified")
+            else:
+                print(f"✗ SM2 transaction signature verification failed")
+            
+            return is_valid
+            
+        except Exception as e:
+            print(f"SM2 verification error: {e}, trying fallback...")
+            
+            # Fallback verification
             sorted_data = json.dumps(transaction_data, sort_keys=True)
             transaction_hash = hashlib.sha256(sorted_data.encode()).hexdigest()
             
-            if not CRYPTOGRAPHY_AVAILABLE:
-                # Fallback verification
-                if isinstance(public_key_pem, str):
-                    signature_input = f"{public_key_pem}{transaction_hash}"
-                else:
-                    signature_input = f"fallback_key{transaction_hash}"
-                expected_signature = hashlib.sha256(signature_input.encode()).hexdigest()
-                return signature == expected_signature
+            if public_key_hex and len(public_key_hex) > 10:
+                signature_input = f"{public_key_hex}{transaction_hash}"
+            else:
+                signature_input = f"fallback_key{transaction_hash}"
             
-            # Load public key
-            public_key = serialization.load_pem_public_key(
-                public_key_pem.encode('utf-8')
-            )
+            expected_signature = hashlib.sha256(signature_input.encode()).hexdigest()
+            return signature_hex == expected_signature
+    
+    def generate_sm2_keypair_with_address(self):
+        """Generate SM2 key pair with blockchain address"""
+        try:
+            private_key_hex, public_key_hex, address = generate_sm2_keypair()
             
-            # Verify signature
-            public_key.verify(
-                base64.b64decode(signature),
-                transaction_hash.encode(),
-                padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH
-                ),
-                hashes.SHA256()
-            )
-            return True
+            key_info = {
+                'private_key': private_key_hex,
+                'public_key': public_key_hex,
+                'address': address,
+                'key_type': 'sm2',
+                'curve': 'SM2 (GB/T 32918)',
+                'private_key_bits': len(private_key_hex) * 4,  # hex digits to bits
+                'public_key_format': 'uncompressed (04 + x + y)'
+            }
             
-        except (InvalidSignature, ValueError, TypeError) as e:
-            print(f"Transaction signature verification failed: {e}")
+            print(f"Generated SM2 key pair with address: {address}")
+            return key_info
+            
+        except Exception as e:
+            print(f"SM2 key generation failed: {e}")
+            
+            # Fallback
+            import random
+            import string
+            
+            private_key = ''.join(random.choices(string.ascii_letters + string.digits, k=64))
+            public_key = f"04{hashlib.sha256(private_key.encode()).hexdigest()[:64]}"
+            address = f"LUN_FBK_{hashlib.sha256(public_key.encode()).hexdigest()[:20]}"
+            
+            return {
+                'private_key': private_key,
+                'public_key': public_key,
+                'address': address,
+                'key_type': 'fallback',
+                'curve': 'none'
+            }
+    
+    def test_sm2_signature(self):
+        """Test SM2 signature generation and verification"""
+        print("\n" + "="*60)
+        print("Testing SM2 Signature System")
+        print("="*60)
+        
+        try:
+            # Generate test key pair
+            print("1. Generating SM2 key pair...")
+            key_info = self.generate_sm2_keypair_with_address()
+            
+            if key_info['key_type'] != 'sm2':
+                print("   ⚠ Using fallback keys (SM2 not available)")
+            
+            private_key = key_info['private_key']
+            public_key = key_info['public_key']
+            
+            print(f"   Private key: {private_key[:16]}...")
+            print(f"   Public key: {public_key[:16]}...")
+            print(f"   Address: {key_info['address']}")
+            
+            # Create test bill
+            print("\n2. Creating test bill...")
+            test_bill_data = {
+                'type': 'test_banknote',
+                'front_serial': 'TEST123456',
+                'back_serial': 'TEST654321',
+                'metadata_hash': hashlib.sha256(b'test_metadata').hexdigest(),
+                'timestamp': time.time(),
+                'issued_to': 'test_user',
+                'denomination': '100'
+            }
+            
+            # Sign the bill
+            print("3. Signing bill with SM2...")
+            signed_bill = self.create_signed_bill(test_bill_data, private_key)
+            
+            # Verify the signature
+            print("4. Verifying signature...")
+            is_valid = self.verify_bill_signature(signed_bill)
+            
+            if is_valid:
+                print("   ✅ SM2 signature test PASSED")
+            else:
+                print("   ❌ SM2 signature test FAILED")
+            
+            # Test transaction signing
+            print("\n5. Testing transaction signing...")
+            test_transaction = {
+                'from': 'test_address_1',
+                'to': 'test_address_2',
+                'amount': '100.0',
+                'timestamp': time.time(),
+                'nonce': 1
+            }
+            
+            tx_signature = self.create_transaction_signature(test_transaction, private_key)
+            print(f"   Transaction signature: {tx_signature[:16]}...")
+            
+            tx_valid = self.verify_transaction_signature(test_transaction, public_key, tx_signature)
+            
+            if tx_valid:
+                print("   ✅ Transaction signature test PASSED")
+            else:
+                print("   ❌ Transaction signature test FAILED")
+            
+            print("\n" + "="*60)
+            print("SM2 Test Complete")
+            print("="*60)
+            
+            return is_valid and tx_valid
+            
+        except Exception as e:
+            print(f"\n❌ SM2 test failed with error: {e}")
+            import traceback
+            traceback.print_exc()
             return False
-
-
-# Utility functions
-def generate_key_pair():
-    """Convenience function to generate a new key pair"""
-    return DigitalBill.generate_key_pair()
-
-
-def create_banknote_signature(banknote_data, private_key):
-    """Create signature for banknote creation"""
-    signature_manager = DigitalSignatureManager()
-    return signature_manager.create_signed_bill(banknote_data, private_key)
-
-
-def verify_banknote_signature(banknote_data):
-    """Verify banknote signature"""
-    signature_manager = DigitalSignatureManager()
-    return signature_manager.verify_bill_signature(banknote_data)
