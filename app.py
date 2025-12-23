@@ -1,5 +1,6 @@
 # app.py
 import os
+import time
 from flask import Flask, render_template, send_from_directory, url_for, request, redirect, flash, session, abort, jsonify, g
 from typing import Dict
 from flask_migrate import Migrate
@@ -103,19 +104,20 @@ db.init_app(app)
 migrate = Migrate(app, db)
 # In app.py, near the top with other initializations
 blockchain_daemon_instance = None
-
-# In app.py, ensure you have this pattern:
-blockchain_daemon_instance = None
+blockchain_daemon_initialized = False
 
 def init_blockchain_daemon():
-    global blockchain_daemon_instance
-    if blockchain_daemon_instance is None:
+    global blockchain_daemon_instance, blockchain_daemon_initialized
+    if not blockchain_daemon_initialized:
         blockchain_daemon_instance = BlockchainDaemon(
             blockchain_file="blockchain_data/blockchain.json",
             mempool_file="mempool_data/mempool.json",
             endpoint_url="https://bank.linglin.art"
         )
-        print("[BLOCKCHAIN] Blockchain daemon initialized")
+        # Start the daemon after creation
+        blockchain_daemon_instance.start_daemon()
+        blockchain_daemon_initialized = True
+        print("[BLOCKCHAIN] Blockchain daemon initialized and started")
     return blockchain_daemon_instance
 
 # Call this ONCE during app initialization
@@ -1286,6 +1288,218 @@ def blockchain_viewer(page=1):
                             title="Blockchain Viewer - Error")
 
 
+@app.route("/api/blockchain-timeline/<timeframe>")
+def get_blockchain_timeline(timeframe):
+    """Get blockchain timeline data for charts with caching"""
+    try:
+        # Validate timeframe
+        valid_timeframes = ['1d', '7d', '30d', '90d', '1y', 'all']
+        if timeframe not in valid_timeframes:
+            return jsonify({"error": f"Invalid timeframe. Valid options: {', '.join(valid_timeframes)}"}), 400
+
+        # Check cache first
+        cache_key = f"timeline_{timeframe}"
+        if hasattr(app, 'timeline_cache') and cache_key in app.timeline_cache:
+            cached_data = app.timeline_cache[cache_key]
+            # Check if cache is still valid (5 minutes)
+            if time.time() - cached_data['timestamp'] < 300:
+                return jsonify(cached_data['data'])
+
+        # Get blockchain data
+        if blockchain_daemon_instance is None:
+            return jsonify({"error": "Blockchain daemon not available"}), 503
+
+        all_blocks = blockchain_daemon_instance.blockchain
+        if not all_blocks:
+            return jsonify({"error": "No blockchain data available"}), 404
+
+        # Filter blocks based on timeframe
+        current_time = time.time()
+        filtered_blocks = []
+
+        if timeframe == 'all':
+            filtered_blocks = all_blocks
+        else:
+            # Parse timeframe
+            if timeframe.endswith('d'):
+                days = int(timeframe[:-1])
+                cutoff_time = current_time - (days * 24 * 60 * 60)
+            elif timeframe.endswith('y'):
+                years = int(timeframe[:-1])
+                cutoff_time = current_time - (years * 365 * 24 * 60 * 60)
+            else:
+                return jsonify({"error": "Unsupported timeframe format"}), 400
+
+            # Filter blocks by timestamp
+            for block in all_blocks:
+                if isinstance(block, dict):
+                    block_time = block.get('timestamp', 0)
+                    if isinstance(block_time, str):
+                        try:
+                            block_time = float(block_time)
+                        except:
+                            continue
+                    if block_time >= cutoff_time:
+                        filtered_blocks.append(block)
+
+        # Sort by timestamp (oldest first for timeline)
+        filtered_blocks.sort(key=lambda x: x.get('timestamp', 0))
+
+        # Prepare timeline data
+        timeline_data = []
+        for block in filtered_blocks:
+            if isinstance(block, dict):
+                transactions = block.get('transactions', [])
+                if not isinstance(transactions, list):
+                    transactions = []
+
+                # Count transaction types
+                genesis_count = sum(1 for tx in transactions if isinstance(tx, dict) and tx.get('type') in ['genesis', 'GTX_Genesis'])
+                transfer_count = sum(1 for tx in transactions if isinstance(tx, dict) and tx.get('type') == 'transfer')
+                reward_count = sum(1 for tx in transactions if isinstance(tx, dict) and tx.get('type') == 'reward')
+
+                timeline_data.append({
+                    'index': block.get('index', 0),
+                    'timestamp': block.get('timestamp', 0),
+                    'total_txs': len(transactions),
+                    'genesis_txs': genesis_count,
+                    'transfer_txs': transfer_count,
+                    'reward_txs': reward_count,
+                    'miner': block.get('miner', 'Unknown'),
+                    'hash': block.get('hash', 'N/A')[:12] + '...'
+                })
+
+        # Calculate statistics
+        stats = {
+            'total_blocks': len(timeline_data),
+            'total_transactions': sum(block['total_txs'] for block in timeline_data),
+            'avg_txs_per_block': round(sum(block['total_txs'] for block in timeline_data) / max(len(timeline_data), 1), 2),
+            'peak_txs': max((block['total_txs'] for block in timeline_data), default=0),
+            'timeframe': timeframe
+        }
+
+        result = {
+            'timeline': timeline_data,
+            'stats': stats
+        }
+
+        # Cache the result
+        if not hasattr(app, 'timeline_cache'):
+            app.timeline_cache = {}
+        app.timeline_cache[cache_key] = {
+            'data': result,
+            'timestamp': time.time()
+        }
+
+        return jsonify(result)
+
+    except Exception as e:
+        print(f"Error in get_blockchain_timeline: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/blockchain-stats")
+def get_blockchain_stats():
+    """Get comprehensive blockchain statistics"""
+    try:
+        if blockchain_daemon_instance is None:
+            return jsonify({"error": "Blockchain daemon not available"}), 503
+
+        all_blocks = blockchain_daemon_instance.blockchain
+        if not all_blocks:
+            return jsonify({"error": "No blockchain data available"}), 404
+
+        # Calculate comprehensive stats
+        current_time = time.time()
+        stats = {
+            'total_blocks': len(all_blocks),
+            'total_transactions': 0,
+            'genesis_count': 0,
+            'transfer_count': 0,
+            'reward_count': 0,
+            'unique_miners': set(),
+            'avg_block_time': 0,
+            'chain_age_days': 0,
+            'blocks_per_day': 0,
+            'txs_per_day': 0,
+            'avg_denomination': 0,
+            'total_value': 0
+        }
+
+        # Process all blocks
+        timestamps = []
+        denominations = []
+
+        for block in all_blocks:
+            if isinstance(block, dict):
+                # Count transactions
+                transactions = block.get('transactions', [])
+                if isinstance(transactions, list):
+                    stats['total_transactions'] += len(transactions)
+
+                    for tx in transactions:
+                        if isinstance(tx, dict):
+                            tx_type = tx.get('type', '')
+                            if tx_type in ['genesis', 'GTX_Genesis']:
+                                stats['genesis_count'] += 1
+                                # Try to get denomination
+                                if 'denomination' in tx:
+                                    try:
+                                        denom = float(tx['denomination'])
+                                        denominations.append(denom)
+                                        stats['total_value'] += denom
+                                    except:
+                                        pass
+                            elif tx_type == 'transfer':
+                                stats['transfer_count'] += 1
+                            elif tx_type == 'reward':
+                                stats['reward_count'] += 1
+
+                # Track miners
+                miner = block.get('miner', '')
+                if miner:
+                    stats['unique_miners'].add(miner)
+
+                # Track timestamps
+                timestamp = block.get('timestamp', 0)
+                if isinstance(timestamp, str):
+                    try:
+                        timestamp = float(timestamp)
+                    except:
+                        timestamp = 0
+                if timestamp > 0:
+                    timestamps.append(timestamp)
+
+        # Calculate derived stats
+        stats['unique_miners'] = len(stats['unique_miners'])
+
+        if len(timestamps) > 1:
+            timestamps.sort()
+            time_diffs = [timestamps[i+1] - timestamps[i] for i in range(len(timestamps)-1)]
+            stats['avg_block_time'] = round(sum(time_diffs) / len(time_diffs), 2)
+
+            # Chain age in days
+            chain_age_seconds = current_time - timestamps[0]
+            stats['chain_age_days'] = round(chain_age_seconds / (24 * 60 * 60), 2)
+
+            if stats['chain_age_days'] > 0:
+                stats['blocks_per_day'] = round(stats['total_blocks'] / stats['chain_age_days'], 2)
+                stats['txs_per_day'] = round(stats['total_transactions'] / stats['chain_age_days'], 2)
+
+        if denominations:
+            stats['avg_denomination'] = round(sum(denominations) / len(denominations), 2)
+
+        return jsonify(stats)
+
+    except Exception as e:
+        print(f"Error in get_blockchain_stats: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 import subprocess
 import json
 import sys
@@ -1566,6 +1780,98 @@ def get_blockchain_range():
             "success": False,
             "error": str(e)
         }), 500
+@app.route('/api/blockchain-timeline-range', methods=['GET'])
+def get_blockchain_timeline_range():
+    """Get timeline data for a specific block range with caching"""
+    try:
+        start = request.args.get('start', type=int, default=0)
+        end = request.args.get('end', type=int)
+        
+        if blockchain_daemon_instance is None:
+            return jsonify({"error": "Blockchain daemon not available"}), 503
+        
+        all_blocks = blockchain_daemon_instance.blockchain
+        if not all_blocks:
+            return jsonify({"error": "No blockchain data available"}), 404
+        
+        total_blocks = len(all_blocks)
+        
+        start = max(0, start)
+        if end is None:
+            end = total_blocks - 1
+        else:
+            end = min(end, total_blocks - 1)
+        
+        if start > end:
+            return jsonify({"error": "Start index cannot be greater than end index"}), 400
+        
+        cache_key = f"timeline_range_{start}_{end}"
+        if hasattr(app, 'timeline_cache') and cache_key in app.timeline_cache:
+            cached_data = app.timeline_cache[cache_key]
+            if time.time() - cached_data['timestamp'] < 300:
+                return jsonify(cached_data['data'])
+        
+        blocks_range = all_blocks[start:end+1]
+        timeline_data = []
+        
+        for block in blocks_range:
+            if isinstance(block, dict):
+                transactions = block.get('transactions', [])
+                if not isinstance(transactions, list):
+                    transactions = []
+                
+                genesis_count = sum(1 for tx in transactions if isinstance(tx, dict) and tx.get('type') in ['genesis', 'GTX_Genesis'])
+                transfer_count = sum(1 for tx in transactions if isinstance(tx, dict) and tx.get('type') == 'transfer')
+                reward_count = sum(1 for tx in transactions if isinstance(tx, dict) and tx.get('type') == 'reward')
+                
+                timeline_data.append({
+                    'index': block.get('index', 0),
+                    'timestamp': block.get('timestamp', 0),
+                    'total_txs': len(transactions),
+                    'genesis_txs': genesis_count,
+                    'transfer_txs': transfer_count,
+                    'reward_txs': reward_count,
+                    'miner': block.get('miner', 'Unknown'),
+                    'hash': block.get('hash', 'N/A')[:12] + '...' if block.get('hash') else 'N/A',
+                    'difficulty': block.get('difficulty', 0)
+                })
+        
+        stats = {
+            'total_blocks': len(timeline_data),
+            'total_transactions': sum(block['total_txs'] for block in timeline_data),
+            'avg_txs_per_block': round(sum(block['total_txs'] for block in timeline_data) / max(len(timeline_data), 1), 2),
+            'peak_txs': max((block['total_txs'] for block in timeline_data), default=0),
+            'genesis_txs': sum(block['genesis_txs'] for block in timeline_data),
+            'transfer_txs': sum(block['transfer_txs'] for block in timeline_data),
+            'reward_txs': sum(block['reward_txs'] for block in timeline_data)
+        }
+        
+        result = {
+            'timeline': timeline_data,
+            'stats': stats,
+            'range': {
+                'start': start,
+                'end': end,
+                'total_blocks_in_chain': total_blocks
+            }
+        }
+        
+        if not hasattr(app, 'timeline_cache'):
+            app.timeline_cache = {}
+        app.timeline_cache[cache_key] = {
+            'data': result,
+            'timestamp': time.time()
+        }
+        
+        return jsonify(result)
+    
+    except Exception as e:
+        print(f"Error in get_blockchain_timeline_range: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route('/blockchain/status', methods=['GET'])
 def blockchain_status():
     """Get current blockchain status and statistics"""
@@ -2478,19 +2784,29 @@ def transaction_explorer(transaction_hash):
             'unknown': {'icon': '❓', 'color': 'secondary', 'label': 'Unknown'}
         }
         
-        status_key = transaction['status'].lower() if transaction['status'] else 'unknown'
+        status_key = transaction.get('status', 'unknown') or 'unknown'
+        if isinstance(status_key, str):
+            status_key = status_key.lower()
+        else:
+            status_key = 'unknown'
+            
         transaction['status_icon'] = status_info.get(status_key, status_info['unknown'])['icon']
         transaction['status_color'] = status_info.get(status_key, status_info['unknown'])['color']
         transaction['status_label'] = status_info.get(status_key, status_info['unknown'])['label']
         
-        # Calculate confirmation percentage (capped at 100%)
-        confirmation_percentage = min(100, (transaction['confirmations'] / 6) * 100)
+        # Set default status if not set
+        if 'status' not in transaction or not transaction['status']:
+            if transaction['block_height']:
+                transaction['status'] = 'confirmed'
+            else:
+                transaction['status'] = 'pending'
         
         return render_template('transaction_viewer.html',
                              transaction=transaction,
                              transaction_age=transaction_age,
                              confirmation_percentage=confirmation_percentage,
-                             title=f"Transaction {transaction_hash[:12]}...")
+                             title=f"Transaction {transaction_hash[:12]}...",
+                             current_user=get_current_user())
         
     except Exception as e:
         flash(f'Error fetching transaction: {str(e)}', 'error')
@@ -3528,53 +3844,108 @@ def get_system_status():
         "memory_usage": 0,
         "cpu_usage": 0,
         "disk_usage": 0,
-        "last_sync": None
+        "last_sync": None,
+        "blockchain_height": 0,
+        "mempool_size": 0,
+        "total_transactions": 0
     }
     
-    # Check if blockchain daemon is running
+    # Check if blockchain daemon instance is running and has data
+    daemon_instance = None
     try:
-        for proc in psutil.process_iter(['name', 'cmdline']):
+        global blockchain_daemon_instance
+        if blockchain_daemon_instance and hasattr(blockchain_daemon_instance, 'is_running'):
+            status["daemon_running"] = blockchain_daemon_instance.is_running
+            daemon_instance = blockchain_daemon_instance
+        else:
+            # Try to create a temporary daemon instance to get stats
             try:
-                if 'python' in proc.info['name'].lower():
-                    cmdline = ' '.join(proc.info['cmdline'] or [])
-                    if 'blockchain_daemon' in cmdline:
-                        status["daemon_running"] = True
-                        break
-            except (psutil.NoSuchProcess, psutil.AccessDenied):
-                pass
-    except:
-        pass
+                from blockchain_daemon import BlockchainDaemon
+                daemon_instance = BlockchainDaemon()
+                status["daemon_running"] = True  # If we can create it, assume it's working
+            except Exception as e:
+                print(f"Could not create blockchain daemon: {e}")
+        
+        # Get real blockchain stats if daemon is available
+        if daemon_instance:
+            # Get blockchain height
+            if hasattr(daemon_instance, 'blockchain') and daemon_instance.blockchain:
+                status["blockchain_height"] = len(daemon_instance.blockchain)
+                status["total_transactions"] = sum(len(block.get('transactions', [])) for block in daemon_instance.blockchain)
+                
+                # Get last sync time from latest block
+                if daemon_instance.blockchain:
+                    last_block = daemon_instance.blockchain[-1]
+                    timestamp = last_block.get('timestamp', time.time())
+                    status["last_sync"] = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamp))
+            
+            # Get mempool size
+            if hasattr(daemon_instance, 'mempool'):
+                status["mempool_size"] = len(daemon_instance.mempool)
+            
+            # Clean up if we created a temporary instance
+            if daemon_instance != blockchain_daemon_instance:
+                daemon_instance.stop_daemon()
+                    
+    except Exception as e:
+        print(f"Error checking blockchain daemon status: {e}")
+        # Fallback: check if daemon process is running
+        try:
+            for proc in psutil.process_iter(['name', 'cmdline']):
+                try:
+                    if 'python' in proc.info['name'].lower():
+                        cmdline = ' '.join(proc.info['cmdline'] or [])
+                        if 'blockchain_daemon' in cmdline:
+                            status["daemon_running"] = True
+                            break
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+        except:
+            pass
     
-    # Check network connectivity
+    # Check network connectivity (more comprehensive check)
     try:
         import socket
-        socket.setdefaulttimeout(3)
+        import requests
+        
+        # Test basic connectivity
+        socket.setdefaulttimeout(5)
         socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect(("8.8.8.8", 53))
-        status["network_online"] = True
+        
+        # Test blockchain endpoint if daemon is supposed to be running
+        if status["daemon_running"]:
+            try:
+                response = requests.get("https://bank.linglin.art/system/health", timeout=5)
+                if response.status_code == 200:
+                    status["network_online"] = True
+                else:
+                    status["network_online"] = False
+            except:
+                status["network_online"] = False
+        else:
+            status["network_online"] = True  # Basic connectivity works
+            
     except:
         status["network_online"] = False
     
-    # Get system resource usage
+    # Get accurate system resource usage
     try:
-        status["memory_usage"] = round(psutil.virtual_memory().percent, 1)
-        status["cpu_usage"] = round(psutil.cpu_percent(interval=0.1), 1)
-        status["disk_usage"] = round(psutil.disk_usage('/').percent, 1)
-    except:
+        # Memory usage (physical RAM)
+        memory = psutil.virtual_memory()
+        status["memory_usage"] = round(memory.percent, 1)
+        
+        # CPU usage (average over 1 second for accuracy)
+        status["cpu_usage"] = round(psutil.cpu_percent(interval=1.0), 1)
+        
+        # Disk usage (root filesystem)
+        disk = psutil.disk_usage('/')
+        status["disk_usage"] = round(disk.percent, 1)
+        
+    except Exception as e:
+        print(f"Error getting system resources: {e}")
         status["memory_usage"] = 0
         status["cpu_usage"] = 0
         status["disk_usage"] = 0
-    
-    # Get last blockchain sync time
-    try:
-        from blockchain_daemon import BlockchainDaemon
-        daemon = BlockchainDaemon()
-        if daemon.blockchain:
-            last_block = daemon.blockchain[-1]
-            timestamp = last_block.get('timestamp', time.time())
-            status["last_sync"] = time.strftime('%Y-%m-%d %H:%M:%S', time.localtime(timestamp))
-        daemon.stop_daemon()
-    except:
-        status["last_sync"] = "Never"
     
     return status
 
@@ -4011,6 +4382,17 @@ def admin_settings():
             settings.allow_registrations = 'allow_registrations' in request.form
             settings.max_file_size = int(request.form.get('max_file_size', 10))
             
+            # Banknote generation settings
+            settings.portrait_prompt = request.form.get('portrait_prompt', settings.portrait_prompt)
+            settings.background_prompt = request.form.get('background_prompt', settings.background_prompt)
+            settings.bill_width_mm = float(request.form.get('bill_width_mm', settings.bill_width_mm))
+            settings.bill_height_mm = float(request.form.get('bill_height_mm', settings.bill_height_mm))
+            settings.bill_title = request.form.get('bill_title', settings.bill_title)
+            settings.bill_subtitle = request.form.get('bill_subtitle', settings.bill_subtitle)
+            settings.bill_dpi = float(request.form.get('bill_dpi', settings.bill_dpi))
+            settings.font_dir = request.form.get('font_dir', settings.font_dir)
+            settings.bg_dir = request.form.get('bg_dir', settings.bg_dir)
+            
             db.session.commit()
             flash('Settings updated successfully!', 'success')
         except ValueError:
@@ -4025,7 +4407,13 @@ def admin_settings():
                          settings=settings,
                          users=User.query.all(),  # You might want to paginate this
                          banknotes=Banknote.query.all(),
-                         current_user=get_current_user())# You might want to paginate this
+                         current_user=get_current_user(),
+                         stats=get_admin_stats(),
+                         system_stats=get_system_status(),
+                         recent_activity=get_recent_activity(),
+                         tasks=GenerationTask.query.order_by(GenerationTask.created_at.desc()).all(),
+                         serials=SerialNumber.query.order_by(SerialNumber.created_at.desc()).all(),
+                         queue_status=get_generation_queue_status())
 
 @app.route("/admin/reset-user/<int:user_id>", methods=["POST"])
 @admin_required
@@ -4212,9 +4600,32 @@ def serve_static(filename):
     return send_from_directory('.', filename)
 @app.route("/gallery")
 def gallery_index():
-    # Get all users from the database instead of folder names
-    users = User.query.order_by(User.username).all()
-    return render_template('gallery_index.html', users=users, title="Members", current_user=get_current_user())
+    # Get page parameter, default to 1
+    page = request.args.get('page', 1, type=int)
+    per_page = 50
+    
+    # Get paginated users from the database
+    users_pagination = User.query.order_by(User.username).paginate(page=page, per_page=per_page, error_out=False)
+    
+    # Calculate total stats for all users
+    total_users = User.query.count()
+    total_balance = db.session.query(db.func.sum(User.balance)).scalar() or 0
+    total_banknotes = Banknote.query.count()
+    
+    # Get current year for "New This Year" stat
+    from datetime import datetime
+    current_year = datetime.now().year
+    new_this_year = User.query.filter(db.extract('year', User.created_at) == current_year).count()
+    
+    return render_template('gallery_index.html', 
+                         users=users_pagination.items, 
+                         pagination=users_pagination,
+                         total_users=total_users,
+                         total_balance=total_balance,
+                         total_banknotes=total_banknotes,
+                         new_this_year=new_this_year,
+                         title="Members", 
+                         current_user=get_current_user())
 
 @app.route("/gallery/<name>")
 def show_name(name):
@@ -4533,6 +4944,7 @@ def transaction_viewer(tx_hash):
         transaction = {
             'hash': tx_hash,
             'block_height': tx_data.get('block_height') or tx_data.get('index'),
+            'block_hash': tx_data.get('block_hash'),
             'confirmations': tx_data.get('confirmations', 0),
             'timestamp': tx_data.get('timestamp'),
             'size': tx_data.get('size', 0),
@@ -4675,6 +5087,7 @@ def transaction_viewer(tx_hash):
                 }
             },
             'transaction_type': {
+                'found': True,  # Transaction type is always present
                 'type': transaction.get('type', 'unknown'),
                 'is_reward': is_reward_tx,
                 'description': get_transaction_type_description(transaction.get('type', 'transfer'))
@@ -4732,7 +5145,38 @@ def transaction_viewer(tx_hash):
                 'previous_hash': transaction.get('previous_hash')
             }
         
+        # Determine status icon and color
+        status_info = {
+            'pending': {'icon': '⏳', 'color': 'warning', 'label': 'Pending'},
+            'confirmed': {'icon': '✅', 'color': 'success', 'label': 'Confirmed'},
+            'failed': {'icon': '❌', 'color': 'danger', 'label': 'Failed'},
+            'unknown': {'icon': '❓', 'color': 'secondary', 'label': 'Unknown'}
+        }
+        
+        status_key = transaction.get('status', 'unknown') or 'unknown'
+        if isinstance(status_key, str):
+            status_key = status_key.lower()
+        else:
+            status_key = 'unknown'
+            
+        transaction['status_icon'] = status_info.get(status_key, status_info['unknown'])['icon']
+        transaction['status_color'] = status_info.get(status_key, status_info['unknown'])['color']
+        transaction['status_label'] = status_info.get(status_key, status_info['unknown'])['label']
+        
+        # Set default status if not set
+        if 'status' not in transaction or not transaction['status']:
+            if transaction['block_height']:
+                transaction['status'] = 'confirmed'
+            else:
+                transaction['status'] = 'pending'
+        
         # Prepare template context
+        # Calculate transaction age
+        transaction_age = int(time.time()) - (transaction['timestamp'] if transaction['timestamp'] else int(time.time()))
+        
+        # Calculate confirmation percentage
+        confirmation_percentage = min(100, (transaction['confirmations'] / 6) * 100) if transaction['confirmations'] else 0
+        
         context = {
             'transaction': transaction,
             'validation_score': validation_score,
@@ -4744,7 +5188,10 @@ def transaction_viewer(tx_hash):
             'banknote_serial': banknote_serial,
             'mempool_status': mempool_status,
             'is_reward_tx': is_reward_tx,
-            'tx_type': tx_type
+            'tx_type': tx_type,
+            'current_user': get_current_user(),
+            'transaction_age': transaction_age,
+            'confirmation_percentage': confirmation_percentage
         }
         
         # Add reward-specific context
@@ -4754,7 +5201,7 @@ def transaction_viewer(tx_hash):
             context['difficulty'] = transaction.get('difficulty')
             context['nonce'] = transaction.get('nonce')
         
-        return render_template('transaction-viewer.html', **context)
+        return render_template('transaction_viewer.html', **context)
     
     except Exception as e:
         print(f"Error viewing transaction: {str(e)}")

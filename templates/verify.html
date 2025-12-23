@@ -11,7 +11,6 @@
         </div>
         
         <div class="profile-info-section">
-            <h1 class="profile-username">Verify Serial</h1>
             <div class="profile-stats">
                 <div class="profile-stat">
                     <span class="stat-value">{{ validation_score }}/5</span>
@@ -104,9 +103,9 @@
                 <div class="format-guide">
                     <h4>Valid Format Examples:</h4>
                     <div class="format-examples">
-                        <code class="format-example">SN-ABC123-DEF456</code>
-                        <code class="format-example">SN-USERNAME-100FRONT</code>
-                        <code class="format-example">SN-2023-09-15-ABCDEF</code>
+                        <code class="format-example">Checksum[Usually the Front]: SN-dvmzkZr5C01cLA-rRY</code>
+                        <code class="format-example">3-Segment[Usually the back]: SN-hIGC-VK0t-C6u1</code>
+                        <code class="format-example">With Hyphens/Underscores: SN-UyJ_-9IGR-f28p</code>
                     </div>
                 </div>
             </div>
@@ -732,10 +731,6 @@
     font-size: 1.75rem;
     font-weight: 700;
     margin: 0 0 0.75rem 0;
-    background: linear-gradient(135deg, var(--info), var(--purple));
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
 }
 
 .profile-stats {

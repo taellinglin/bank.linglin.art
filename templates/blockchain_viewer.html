@@ -293,19 +293,45 @@
         <div class="graph-section">
             <div class="graph-header">
                 <h3>Block Activity Timeline</h3>
-                <div class="timeframe-selector">
-                    {% set timeframes = {
-                        '10b': 'Last 10 Blocks',
-                        '25b': 'Last 25 Blocks', 
-                        '50b': 'Last 50 Blocks',
-                        'all': 'All Blocks'
-                    } %}
-                    {% for tf_key, tf_label in timeframes.items() %}
-                        <button class="timeframe-btn {% if selected_timeframe == tf_key %}active{% endif %}" 
-                                onclick="changeTimeframe('{{ tf_key }}')">
-                            {{ tf_label }}
-                        </button>
-                    {% endfor %}
+                <div class="timeline-controls">
+                    <!-- Timeframe Buttons -->
+                    <div class="timeframe-selector">
+                        {% set timeframes = {
+                            '1d': 'Last 24 Hours',
+                            '7d': 'Last 7 Days', 
+                            '30d': 'Last 30 Days',
+                            'all': 'All Time'
+                        } %}
+                        {% for tf_key, tf_label in timeframes.items() %}
+                            <button class="timeframe-btn {% if selected_timeframe == tf_key %}active{% endif %}" 
+                                    onclick="changeTimeframe('{{ tf_key }}')">
+                                {{ tf_label }}
+                            </button>
+                        {% endfor %}
+                    </div>
+                    
+                    <!-- Block Range Selector -->
+                    <div class="block-range-selector">
+                        <div class="range-header">
+                            <label for="startBlock">Block Range:</label>
+                            <span class="range-info" id="rangeInfo"></span>
+                        </div>
+                        <div class="range-inputs">
+                            <div class="range-input-group">
+                                <label for="startBlock">From:</label>
+                                <input type="number" id="startBlock" min="0" placeholder="Start block" value="0">
+                            </div>
+                            <div class="range-input-group">
+                                <label for="endBlock">To:</label>
+                                <input type="number" id="endBlock" placeholder="End block">
+                            </div>
+                            <button class="range-apply-btn" onclick="applyBlockRange()">Apply Range</button>
+                            <button class="range-reset-btn" onclick="resetBlockRange()">Reset</button>
+                        </div>
+                        <div class="range-slider-container">
+                            <input type="range" id="blockSlider" min="0" max="100" value="0" class="range-slider" oninput="updateBlockRangeFromSlider()">
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -326,6 +352,10 @@
                 <div class="graph-stat">
                     <span class="stat-label">Total Blocks:</span>
                     <span class="stat-value" id="totalValue">{{ total_blocks|default(0) }}</span>
+                </div>
+                <div class="graph-stat">
+                    <span class="stat-label">Blocks in View:</span>
+                    <span class="stat-value" id="viewBlockCount">0</span>
                 </div>
             </div>
         </div>
@@ -1071,6 +1101,164 @@
     color: white;
 }
 
+/* Timeline Controls */
+.timeline-controls {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    width: 100%;
+}
+
+.block-range-selector {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.range-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.range-header label {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.range-info {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Roboto Mono', monospace;
+}
+
+.range-inputs {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-end;
+    flex-wrap: wrap;
+}
+
+.range-input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+}
+
+.range-input-group label {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    font-weight: 500;
+}
+
+.range-input-group input {
+    padding: 0.5rem 0.75rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    color: var(--text-primary);
+    font-size: 0.875rem;
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', 'Roboto Mono', monospace;
+    width: 100px;
+    outline: none;
+    transition: all 0.2s ease;
+}
+
+.range-input-group input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2);
+}
+
+.range-apply-btn,
+.range-reset-btn {
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+}
+
+.range-apply-btn {
+    background: var(--primary);
+    color: white;
+    border-color: var(--primary);
+}
+
+.range-apply-btn:hover {
+    background: var(--primary-light);
+    transform: translateY(-2px);
+    box-shadow: var(--shadow);
+}
+
+.range-reset-btn {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+}
+
+.range-reset-btn:hover {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-color: var(--border-light);
+}
+
+.range-slider-container {
+    width: 100%;
+    padding: 0.5rem 0;
+}
+
+.range-slider {
+    width: 100%;
+    height: 6px;
+    background: var(--bg-tertiary);
+    border-radius: 3px;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+}
+
+.range-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--primary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 2px solid var(--primary);
+}
+
+.range-slider::-webkit-slider-thumb:hover {
+    transform: scale(1.2);
+    background: var(--primary-light);
+    border-color: var(--primary-light);
+}
+
+.range-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--primary);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 2px solid var(--primary);
+}
+
+.range-slider::-moz-range-thumb:hover {
+    transform: scale(1.2);
+    background: var(--primary-light);
+    border-color: var(--primary-light);
+}
+
 .line-graph-container {
     height: 250px;
     background: var(--bg-secondary);
@@ -1647,62 +1835,159 @@ function closeModal() {
 }
 
 // Timeframe Management
-let selectedTimeframe = '25b';
+let selectedTimeframe = '7d';
 let activityChart = null;
+let blockRangeMode = false;
+let totalBlocksInChain = 0;
+let timelineDataCache = {};
 
 function changeTimeframe(timeframe) {
     selectedTimeframe = timeframe;
+    blockRangeMode = false;
     loadActivityData();
     updateTimeframeButtons();
+}
+
+function applyBlockRange() {
+    const startBlock = parseInt(document.getElementById('startBlock').value) || 0;
+    const endBlock = parseInt(document.getElementById('endBlock').value);
+    
+    if (isNaN(endBlock)) {
+        alert('Please enter a valid end block number');
+        return;
+    }
+    
+    if (startBlock > endBlock) {
+        alert('Start block must be less than or equal to end block');
+        return;
+    }
+    
+    if (startBlock < 0) {
+        alert('Start block must be greater than or equal to 0');
+        return;
+    }
+    
+    blockRangeMode = true;
+    loadActivityData(startBlock, endBlock);
+}
+
+function resetBlockRange() {
+    document.getElementById('startBlock').value = '0';
+    document.getElementById('endBlock').value = totalBlocksInChain ? totalBlocksInChain - 1 : '';
+    document.getElementById('blockSlider').max = totalBlocksInChain || 100;
+    document.getElementById('blockSlider').value = 0;
+    document.getElementById('rangeInfo').textContent = '';
+    blockRangeMode = false;
+    loadActivityData();
+}
+
+function updateBlockRangeFromSlider() {
+    const slider = document.getElementById('blockSlider');
+    const startBlock = parseInt(slider.value);
+    const window = Math.max(50, Math.floor(totalBlocksInChain / 10));
+    const endBlock = Math.min(startBlock + window, totalBlocksInChain - 1);
+    
+    document.getElementById('startBlock').value = startBlock;
+    document.getElementById('endBlock').value = endBlock;
+    blockRangeMode = true;
+    loadActivityData(startBlock, endBlock);
 }
 
 function updateTimeframeButtons() {
     document.querySelectorAll('.timeframe-btn').forEach(btn => {
         btn.classList.remove('active');
-        if (btn.textContent.toLowerCase().includes(selectedTimeframe.replace('b', ' blocks')) || 
-            btn.getAttribute('onclick')?.includes(selectedTimeframe)) {
+        if (btn.getAttribute('onclick')?.includes(selectedTimeframe)) {
             btn.classList.add('active');
         }
     });
 }
 
 // Load Activity Data
-async function loadActivityData() {
+async function loadActivityData(startBlock = null, endBlock = null) {
     try {
-        const blocks = {{ blocks|tojson|safe }};
-        const totalBlocks = {{ total_blocks|default(0) }};
+        // Show loading state
+        document.getElementById('activityChart').style.opacity = '0.5';
+
+        let data;
+        let cacheKey;
         
-        // Prepare data based on timeframe
-        let displayBlocks = [];
-        if (selectedTimeframe === 'all') {
-            displayBlocks = blocks;
+        if (blockRangeMode && startBlock !== null && endBlock !== null) {
+            cacheKey = `range_${startBlock}_${endBlock}`;
+            
+            if (timelineDataCache[cacheKey] && 
+                Date.now() - timelineDataCache[cacheKey].timestamp < 300000) {
+                data = timelineDataCache[cacheKey].data;
+            } else {
+                const response = await fetch(`/api/blockchain-timeline-range?start=${startBlock}&end=${endBlock}`);
+                if (!response.ok) {
+                    throw new Error(`API request failed: ${response.status}`);
+                }
+                data = await response.json();
+                timelineDataCache[cacheKey] = {
+                    data: data,
+                    timestamp: Date.now()
+                };
+            }
+            
+            totalBlocksInChain = data.range.total_blocks_in_chain;
+            document.getElementById('blockSlider').max = totalBlocksInChain - 1;
+            document.getElementById('rangeInfo').textContent = `Showing blocks ${startBlock} to ${endBlock} of ${totalBlocksInChain}`;
         } else {
-            const limit = parseInt(selectedTimeframe.replace('b', ''));
-            displayBlocks = blocks.slice(0, Math.min(limit, blocks.length));
+            cacheKey = `timeframe_${selectedTimeframe}`;
+            
+            if (timelineDataCache[cacheKey] && 
+                Date.now() - timelineDataCache[cacheKey].timestamp < 300000) {
+                data = timelineDataCache[cacheKey].data;
+            } else {
+                const timeframeMap = {
+                    '1d': '1d',
+                    '7d': '7d',
+                    '30d': '30d',
+                    'all': 'all'
+                };
+                
+                const apiTimeframe = timeframeMap[selectedTimeframe] || '7d';
+                const response = await fetch(`/api/blockchain-timeline/${apiTimeframe}`);
+                if (!response.ok) {
+                    throw new Error(`API request failed: ${response.status}`);
+                }
+                data = await response.json();
+                timelineDataCache[cacheKey] = {
+                    data: data,
+                    timestamp: Date.now()
+                };
+            }
+            
+            document.getElementById('rangeInfo').textContent = '';
         }
-        
-        // Reverse for chronological order
-        const chronologicalBlocks = [...displayBlocks].reverse();
-        
-        // Prepare chart data
-        const labels = chronologicalBlocks.map(block => `#${block.index}`);
-        const txCounts = chronologicalBlocks.map(block => block.transaction_count || 0);
-        const genesisCounts = chronologicalBlocks.map(block => block.genesis_count || 0);
-        const transferCounts = chronologicalBlocks.map(block => block.transfer_count || 0);
-        const rewardCounts = chronologicalBlocks.map(block => block.reward_count || 0);
-        
-        // Update stats
-        const peakTXs = Math.max(...txCounts);
-        const avgTXs = txCounts.length > 0 ? Math.round(txCounts.reduce((a, b) => a + b) / txCounts.length) : 0;
-        
-        document.getElementById('peakValue').textContent = `${peakTXs}`;
-        document.getElementById('avgValue').textContent = `${avgTXs}`;
-        document.getElementById('totalValue').textContent = `${displayBlocks.length}`;
-        
-        // Render chart
+
+        if (!data.timeline || data.timeline.length === 0) {
+            throw new Error('No timeline data available');
+        }
+
+        document.getElementById('peakValue').textContent = data.stats.peak_txs;
+        document.getElementById('avgValue').textContent = data.stats.avg_txs_per_block;
+        document.getElementById('viewBlockCount').textContent = data.stats.total_blocks;
+
+        const labels = data.timeline.map(block => `#${block.index}`);
+        const txCounts = data.timeline.map(block => block.total_txs);
+        const genesisCounts = data.timeline.map(block => block.genesis_txs);
+        const transferCounts = data.timeline.map(block => block.transfer_txs);
+        const rewardCounts = data.timeline.map(block => block.reward_txs);
+
         renderActivityChart(labels, txCounts, genesisCounts, transferCounts, rewardCounts);
+
+        document.getElementById('activityChart').style.opacity = '1';
+
     } catch (error) {
         console.error('Error loading activity data:', error);
+        document.getElementById('activityChart').style.opacity = '1';
+        const ctx = document.getElementById('activityCanvas').getContext('2d');
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+        ctx.fillStyle = 'var(--text-tertiary)';
+        ctx.font = '14px monospace';
+        ctx.textAlign = 'center';
+        ctx.fillText('Error: ' + error.message, ctx.canvas.width / 2, ctx.canvas.height / 2);
     }
 }
 
@@ -1835,45 +2120,57 @@ function renderActivityChart(labels, txCounts, genesisCounts, transferCounts, re
 // Calculate Statistics
 async function calculateStatistics() {
     try {
-        const blocks = {{ blocks|tojson|safe }};
-        
-        if (blocks.length === 0) {
-            return;
+        // Show loading state
+        const statElements = [
+            'avgBlockTime', 'blocksPerDay', 'chainAge',
+            'avgDenomination', 'totalBanknoteValue', 'activeMiners',
+            'uniqueAddresses', 'txsPerDay'
+        ];
+        statElements.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) element.textContent = 'Loading...';
+        });
+
+        // Fetch comprehensive stats from API
+        const response = await fetch('/api/blockchain-stats');
+        if (!response.ok) {
+            throw new Error(`API request failed: ${response.status}`);
         }
-        
-        // Calculate block time statistics
-        const sortedBlocks = [...blocks].sort((a, b) => a.index - b.index);
-        let totalBlockTime = 0;
-        let blockTimeCount = 0;
-        
-        for (let i = 1; i < sortedBlocks.length; i++) {
-            const prevTime = sortedBlocks[i - 1].timestamp || 0;
-            const currTime = sortedBlocks[i].timestamp || 0;
-            if (prevTime > 0 && currTime > 0) {
-                const timeDiff = currTime - prevTime;
-                if (timeDiff > 0 && timeDiff < 3600) { // Filter outliers (max 1 hour between blocks)
-                    totalBlockTime += timeDiff;
-                    blockTimeCount++;
-                }
-            }
-        }
-        
-        const avgBlockTime = blockTimeCount > 0 ? (totalBlockTime / blockTimeCount).toFixed(2) : 'N/A';
-        const blocksPerDay = avgBlockTime !== 'N/A' ? (86400 / avgBlockTime).toFixed(1) : 'N/A';
-        
-        // Calculate chain age
-        const firstBlock = sortedBlocks[0];
-        const latestBlock = sortedBlocks[sortedBlocks.length - 1];
-        const chainAgeSeconds = latestBlock.timestamp - firstBlock.timestamp;
-        const chainAgeDays = (chainAgeSeconds / 86400).toFixed(1);
-        
-        // Update statistics
-        document.getElementById('avgBlockTime').textContent = avgBlockTime === 'N/A' ? 'N/A' : `${avgBlockTime}s`;
-        document.getElementById('blocksPerDay').textContent = blocksPerDay;
-        document.getElementById('chainAge').textContent = `${chainAgeDays} days`;
-        
+
+        const stats = await response.json();
+
+        // Update statistics display
+        document.getElementById('avgBlockTime').textContent =
+            stats.avg_block_time > 0 ? `${stats.avg_block_time}s` : 'N/A';
+        document.getElementById('blocksPerDay').textContent =
+            stats.blocks_per_day > 0 ? stats.blocks_per_day : 'N/A';
+        document.getElementById('chainAge').textContent =
+            stats.chain_age_days > 0 ? `${stats.chain_age_days} days` : 'N/A';
+
+        // Banknote stats
+        document.getElementById('avgDenomination').textContent =
+            stats.avg_denomination > 0 ? `$${stats.avg_denomination}` : 'N/A';
+        document.getElementById('totalBanknoteValue').textContent =
+            stats.total_value > 0 ? `$${stats.total_value.toLocaleString()}` : 'N/A';
+
+        // Network stats
+        document.getElementById('activeMiners').textContent = stats.unique_miners;
+        document.getElementById('uniqueAddresses').textContent = 'N/A'; // Not implemented yet
+        document.getElementById('txsPerDay').textContent =
+            stats.txs_per_day > 0 ? stats.txs_per_day : 'N/A';
+
     } catch (error) {
         console.error('Error calculating statistics:', error);
+        // Show error state
+        const statElements = [
+            'avgBlockTime', 'blocksPerDay', 'chainAge',
+            'avgDenomination', 'totalBanknoteValue', 'activeMiners',
+            'uniqueAddresses', 'txsPerDay'
+        ];
+        statElements.forEach(id => {
+            const element = document.getElementById(id);
+            if (element) element.textContent = 'Error';
+        });
     }
 }
 
@@ -1904,6 +2201,19 @@ function refreshNow() {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', function() {
+    // Get total blocks from page
+    const totalBlocksElement = document.getElementById('totalValue');
+    if (totalBlocksElement) {
+        totalBlocksInChain = parseInt(totalBlocksElement.textContent) || 0;
+    }
+    
+    // Initialize range selector controls
+    if (totalBlocksInChain > 0) {
+        document.getElementById('blockSlider').max = totalBlocksInChain - 1;
+        document.getElementById('endBlock').placeholder = String(totalBlocksInChain - 1);
+        document.getElementById('endBlock').value = totalBlocksInChain - 1;
+    }
+    
     // Restore active tab
     const activeTab = sessionStorage.getItem('blockchainActiveTab') || 'blocks';
     openTab(activeTab);

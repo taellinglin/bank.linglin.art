@@ -1162,7 +1162,7 @@ import re
 # Modified add_vectorized_background to accept encoded seed
 def add_vectorized_background(dwg, W, H, seed_text="", bg_dir="./backgrounds", margin=60, n_segments=1024, background_prompt="", denomination=None):
     """
-    Enhanced version that generates background using prompt from background_prompt.txt
+    Enhanced version that generates background using provided prompt
     with retry logic for file synchronization
     """
     import os
@@ -1177,15 +1177,10 @@ def add_vectorized_background(dwg, W, H, seed_text="", bg_dir="./backgrounds", m
     
     background_path = None
     
-    # Read background prompt from file
-    prompt_file = "./background_prompt.txt"
-    if os.path.exists(prompt_file):
-        with open(prompt_file, 'r') as f:
-            background_prompt = f.read().strip()
-        print(f"[+] Using prompt from file: {background_prompt}")
-    else:
+    # Use provided background prompt or default
+    if not background_prompt:
         background_prompt = "kawaii oekaki Chinese DMT Studio Ghibli style banknote background"
-        print(f"[!] Prompt file not found, using default: {background_prompt}")
+        print(f"[!] No background prompt provided, using default: {background_prompt}")
     
     # Generate background using the prompt
     background_path = generate_sd_background(
@@ -1371,7 +1366,7 @@ def generate_fantasy_banknote(seed_text: str, input_image_path: str, outfile_svg
                                width_mm: float = 160.0, height_mm: float = 60.0,
                                title: str = "灵国国库", subtitle: str = "天圆地方", serial_id: str = "SERIALID", timestamp:str = "TIMESTAMP",
                                denomination: str = "100 卢纳币", specimen: bool = True,
-                               fonts = {}, bg_dir: str = "./backgrounds"):
+                               fonts = {}, bg_dir: str = "./backgrounds", background_prompt: str = ""):
     timestamp_ms = timestamp or generate_timestamp_ms_precise()
     serial_id = serial_id or generate_serial_id_with_checksum()
     W = mm_to_px(width_mm)
@@ -1387,7 +1382,7 @@ def generate_fantasy_banknote(seed_text: str, input_image_path: str, outfile_svg
     border_info = add_qr_like_border(dwg, seed_text, W, H, serial_id, timestamp_ms)
     
     add_vectorized_background(dwg=dwg, W=W, H=H, seed_text=seed_text, bg_dir=bg_dir, margin=60, n_segments=1024, 
-                              background_prompt=generate_kawaii_mural_from_background(denomination=denom_exponent, filename="background_prompt.txt"), denomination=denomination)
+                              background_prompt=background_prompt, denomination=denomination)
     print("Generated:", path)
     
     add_subtle_frame_and_microgrid(dwg, W, H, border_info, denom_value, timestamp_ms, to_bytes(seed_hash))
@@ -1885,7 +1880,7 @@ def add_decorative_border(dwg, W:int, H:int, border_info:dict, denom_value: int,
 def generate_single_banknote(seed_text, input_image_path, single_denom, outfile=None, 
                            specimen=False, serial_id=None, timestamp=None,
                            width_mm=160.0, height_mm=60.0, title="灵国国库", subtitle="天圆地方",
-                           font_dir="./fonts", bg_dir="./backgrounds", dpi=300.0):
+                           font_dir="./fonts", bg_dir="./backgrounds", dpi=300.0, background_prompt=""):
     """
     Generate a single banknote with a specific denomination.
     
@@ -1940,7 +1935,8 @@ def generate_single_banknote(seed_text, input_image_path, single_denom, outfile=
         fonts=fonts_obj,
         serial_id=serial_id,
         timestamp=timestamp,
-        bg_dir=bg_dir
+        bg_dir=bg_dir,
+        background_prompt=background_prompt
     )
     
     print(f"[+] Single bill generated: {outfile}")
@@ -1949,7 +1945,7 @@ def generate_single_banknote(seed_text, input_image_path, single_denom, outfile=
 def generate_multiple_banknotes(seed_text, input_image_path, copies=1, yen_model=False, 
                               specimen=False, serial_id=None, timestamp=None,
                               width_mm=160.0, height_mm=60.0, title="灵国国库", subtitle="天圆地方",
-                              font_dir="./fonts", bg_dir="./backgrounds", dpi=300.0):
+                              font_dir="./fonts", bg_dir="./backgrounds", dpi=300.0, background_prompt=""):
     """
     Generate multiple banknotes with different denominations.
     
@@ -2011,7 +2007,8 @@ def generate_multiple_banknotes(seed_text, input_image_path, copies=1, yen_model
                 fonts=fonts_obj,
                 serial_id=serial_id,
                 timestamp=timestamp_str,
-                bg_dir=bg_dir
+                bg_dir=bg_dir,
+                background_prompt=background_prompt
             )
             
             generated_files.append(outfile_svg)
@@ -2037,6 +2034,7 @@ def single_bill_run():
     parser.add_argument("--font-dir", type=str, default="./fonts", help="Directory containing font files (default: ./fonts)")
     parser.add_argument("--bg-dir", type=str, default="./backgrounds", help="Directory containing background images (default: ./backgrounds)")
     parser.add_argument("--dpi", type=float, default=300.0, help="Resolution in DPI (default: 300.0)")
+    parser.add_argument("--background-prompt", type=str, help="Background generation prompt")
     
     args = parser.parse_args()
     
@@ -2054,7 +2052,8 @@ def single_bill_run():
         subtitle=args.subtitle,
         font_dir=args.font_dir,
         bg_dir=args.bg_dir,
-        dpi=args.dpi
+        dpi=args.dpi,
+        background_prompt=args.background_prompt
     )
 
 def multi_bill_run():
@@ -2077,6 +2076,7 @@ def multi_bill_run():
     parser.add_argument("--font-dir", type=str, default="./fonts", help="Directory containing font files (default: ./fonts)")
     parser.add_argument("--bg-dir", type=str, default="./backgrounds", help="Directory containing background images (default: ./backgrounds)")
     parser.add_argument("--dpi", type=float, default=300.0, help="Resolution in DPI (default: 300.0)")
+    parser.add_argument("--background-prompt", type=str, help="Background generation prompt")
     
     args = parser.parse_args()
 
@@ -2094,7 +2094,8 @@ def multi_bill_run():
         subtitle=args.subtitle,
         font_dir=args.font_dir,
         bg_dir=args.bg_dir,
-        dpi=args.dpi
+        dpi=args.dpi,
+        background_prompt=args.background_prompt
     )
 
 # Main execution

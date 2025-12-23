@@ -8,7 +8,7 @@
                 <span class="stat-icon">👥</span>
                 <span class="stat-label">Total Members</span>
             </div>
-            <div class="stat-value">{{ users|length|default(0)|int }}</div>
+            <div class="stat-value">{{ total_users|default(0)|int }}</div>
             <div class="stat-trend">
                 <span class="trend-indicator up">▲</span>
                 <span class="trend-value">Active Community</span>
@@ -21,17 +21,13 @@
                 <span class="stat-label">Total Balance</span>
             </div>
             <div class="stat-value">
-                {% set total_balance = [] %}
-                {% for user in users %}
-                    {% set _ = total_balance.append(user.balance|default(0)|int) %}
-                {% endfor %}
-                ${{ total_balance|sum|default(0)|int }}
+                ${{ "{:,.0f}".format(total_balance|default(0)) }}
             </div>
             <div class="stat-subtext">
                 <span class="subtext-label">Average:</span>
                 <span class="subtext-value">
-                    {% if users|length > 0 %}
-                        ${{ (total_balance|sum / users|length)|round|int }}
+                    {% if total_users > 0 %}
+                        ${{ (total_balance / total_users)|round|int }}
                     {% else %}
                         $0
                     {% endif %}
@@ -45,23 +41,13 @@
                 <span class="stat-label">Banknotes</span>
             </div>
             <div class="stat-value">
-                {% set total_notes = [] %}
-                {% for user in users %}
-                    {% set banknotes_count = 0 %}
-                    {% if user.banknotes is callable %}
-                        {% set banknotes_count = user.banknotes()|length|default(0) %}
-                    {% elif user.banknotes %}
-                        {% set banknotes_count = user.banknotes|length|default(0) %}
-                    {% endif %}
-                    {% set _ = total_notes.append(banknotes_count) %}
-                {% endfor %}
-                {{ total_notes|sum|default(0)|int }}
+                {{ total_banknotes|default(0)|int }}
             </div>
             <div class="stat-subtext">
                 <span class="subtext-label">Per Member:</span>
                 <span class="subtext-value">
-                    {% if users|length > 0 %}
-                        {{ (total_notes|sum / users|length)|round|int }}
+                    {% if total_users > 0 %}
+                        {{ (total_banknotes / total_users)|round|int }}
                     {% else %}
                         0
                     {% endif %}
@@ -75,18 +61,11 @@
                 <span class="stat-label">New This Year</span>
             </div>
             <div class="stat-value">
-                {% set current_year = now.year if now else 2024 %}
-                {% set active_count = [] %}
-                {% for user in users %}
-                    {% if user.created_at and user.created_at.year == current_year %}
-                        {% set _ = active_count.append(1) %}
-                    {% endif %}
-                {% endfor %}
-                {{ active_count|sum|default(0)|int }}
+                {{ new_this_year|default(0)|int }}
             </div>
             <div class="stat-subtext">
                 <span class="subtext-label">Total:</span>
-                <span class="subtext-value">{{ users|length|default(0)|int }}</span>
+                <span class="subtext-value">{{ total_users|default(0)|int }}</span>
             </div>
         </div>
     </div>
@@ -268,32 +247,50 @@
     {% endif %}
 
     <!-- Pagination -->
-    {% if users and users|length > 12 %}
+    {% if pagination and pagination.pages > 1 %}
     <div class="pagination-section">
         <div class="pagination-info">
-            Showing <strong>1-12</strong> of <strong>{{ users|length|default(0)|int }}</strong> members
+            Showing <strong>{{ ((pagination.page - 1) * 50) + 1 }}-{{ min(pagination.page * 50, pagination.total) }}</strong> of <strong>{{ pagination.total }}</strong> members
         </div>
         <div class="pagination-controls">
+            {% if pagination.has_prev %}
+            <a href="{{ url_for('gallery_index', page=pagination.prev_num) }}" class="btn btn-outline">
+                <span class="btn-icon">←</span>
+                <span class="btn-text">Previous</span>
+            </a>
+            {% else %}
             <span class="btn btn-outline disabled">
                 <span class="btn-icon">←</span>
                 <span class="btn-text">Previous</span>
             </span>
+            {% endif %}
             
             <div class="page-numbers">
-                <span class="page-number active">1</span>
-                {% if users|length > 12 %}
-                <a href="?page=2" class="page-number">2</a>
-                {% endif %}
-                {% if users|length > 24 %}
+                {% if pagination.page > 3 %}
+                <a href="{{ url_for('gallery_index', page=1) }}" class="page-number">1</a>
+                {% if pagination.page > 4 %}
                 <span class="page-ellipsis">...</span>
-                <a href="?page={{ (users|length / 12)|round(0, 'ceil')|int }}" class="page-number">
-                    {{ (users|length / 12)|round(0, 'ceil')|int }}
-                </a>
+                {% endif %}
+                {% endif %}
+                
+                {% for page_num in range(max(1, pagination.page - 2), min(pagination.pages + 1, pagination.page + 3)) %}
+                {% if page_num == pagination.page %}
+                <span class="page-number active">{{ page_num }}</span>
+                {% else %}
+                <a href="{{ url_for('gallery_index', page=page_num) }}" class="page-number">{{ page_num }}</a>
+                {% endif %}
+                {% endfor %}
+                
+                {% if pagination.page < pagination.pages - 2 %}
+                {% if pagination.page < pagination.pages - 3 %}
+                <span class="page-ellipsis">...</span>
+                {% endif %}
+                <a href="{{ url_for('gallery_index', page=pagination.pages) }}" class="page-number">{{ pagination.pages }}</a>
                 {% endif %}
             </div>
             
-            {% if users|length > 12 %}
-            <a href="?page=2" class="btn btn-outline">
+            {% if pagination.has_next %}
+            <a href="{{ url_for('gallery_index', page=pagination.next_num) }}" class="btn btn-outline">
                 <span class="btn-text">Next</span>
                 <span class="btn-icon">→</span>
             </a>

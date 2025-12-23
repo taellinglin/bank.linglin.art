@@ -18,10 +18,21 @@ from lunalib.gtx.digital_bill import DigitalBill
 from lunalib.gtx.bill_registry import BillRegistry
 
 class BlockchainDaemon:
+    _instance = None
+    
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+    
     def __init__(self, 
                  blockchain_file="blockchain_data/blockchain.json", 
                  mempool_file="mempool_data/mempool.json",
                  endpoint_url="https://bank.linglin.art"):
+        if hasattr(self, '_initialized'):
+            return
+        self._initialized = True
+        
         self.blockchain_file = blockchain_file
         self.mempool_file = mempool_file
         self.endpoint_url = endpoint_url
@@ -236,8 +247,8 @@ class BlockchainDaemon:
             # Let the daemon handle syncing separately
             self.logger.info("Using local blockchain data only on startup")
             
-            # Instead of automatic sync, we'll start the daemon separately
-            self.start_daemon()
+            # Daemon will be started separately by the app
+            # self.start_daemon()
             
         except Exception as e:
             self.logger.error(f"Error loading data: {e}")
@@ -2296,8 +2307,39 @@ class BlockchainDaemon:
         
         return {"status": "not found"}
 
+    def get_mempool_transaction(self, tx_hash: str) -> Optional[Dict]:
+        """
+        Get transaction details from mempool by hash
+        Returns transaction data if found in mempool, None otherwise
+        """
+        try:
+            for tx in self.mempool:
+                if tx.get("hash") == tx_hash:
+                    # Return transaction with mempool-specific metadata
+                    return {
+                        'found': True,
+                        'transaction': tx,
+                        'status': 'pending',
+                        'confirmations': 0,
+                        'time_in_mempool': time.time() - tx.get('timestamp', time.time()),
+                        'priority': tx.get('priority', 'normal'),
+                        'size': len(json.dumps(tx)),
+                        'fee': tx.get('fee', 0)
+                    }
+            
+            # Not found in mempool
+            return None
+            
+        except Exception as e:
+            self.logger.error(f"Error getting mempool transaction: {e}")
+            return None
+
     def start_daemon(self):
         """Start the background daemon"""
+        if self.is_running:
+            self.logger.info("Blockchain daemon is already running")
+            return
+            
         self.is_running = True
         
         def daemon_loop():

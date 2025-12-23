@@ -198,6 +198,18 @@ class Settings(db.Model):
     max_file_size = db.Column(db.Integer, default=512)  # MB
     blockchain_difficulty = db.Column(db.Integer, default=6)
     mining_reward = db.Column(db.Float, default=1.0)
+    
+    # Banknote generation settings
+    portrait_prompt = db.Column(db.Text, default="A professional portrait of a person, high quality, detailed face, neutral background")
+    background_prompt = db.Column(db.Text, default="A beautiful fantasy landscape with mountains and rivers, mystical atmosphere")
+    bill_width_mm = db.Column(db.Float, default=160.0)
+    bill_height_mm = db.Column(db.Float, default=60.0)
+    bill_title = db.Column(db.String(100), default="灵国国库")
+    bill_subtitle = db.Column(db.String(100), default="天圆地方")
+    bill_dpi = db.Column(db.Float, default=300.0)
+    font_dir = db.Column(db.String(255), default="./fonts")
+    bg_dir = db.Column(db.String(255), default="./backgrounds")
+    
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     def __repr__(self):

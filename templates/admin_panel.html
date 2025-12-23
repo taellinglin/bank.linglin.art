@@ -14,6 +14,33 @@
                     <span class="status-dot {% if system_stats.daemon_running %}online{% else %}offline{% endif %}"></span>
                     {{ 'Online' if system_stats.daemon_running else 'Offline' }}
                 </p>
+                {% if system_stats.last_sync %}
+                <p class="system-status sync-time">
+                    <small>Last sync: {{ system_stats.last_sync }}</small>
+                </p>
+                {% endif %}
+                
+                <!-- Quick Stats in Header -->
+                <div class="header-quick-stats">
+                    <div class="header-stat">
+                        <small>Blocks</small>
+                        <span>{{ system_stats.blockchain_height }}</span>
+                    </div>
+                    <div class="header-stat">
+                        <small>Mempool</small>
+                        <span>{{ system_stats.mempool_size }}</span>
+                    </div>
+                    <div class="header-stat">
+                        <small>TXs</small>
+                        <span>{{ system_stats.total_transactions }}</span>
+                    </div>
+                    <div class="header-stat">
+                        <small>Network</small>
+                        <span class="{% if system_stats.network_online %}text-success{% else %}text-danger{% endif %}">
+                            {{ '✓' if system_stats.network_online else '✗' }}
+                        </span>
+                    </div>
+                </div>
             </div>
             
             <nav class="sidebar-nav">
@@ -64,6 +91,10 @@
                     <div class="quick-stat">
                         <small>CPU:</small>
                         <span>{{ system_stats.cpu_usage }}%</span>
+                    </div>
+                    <div class="quick-stat">
+                        <small>Disk:</small>
+                        <span>{{ system_stats.disk_usage }}%</span>
                     </div>
                 </div>
             </div>
@@ -624,26 +655,68 @@
                     
                     <div class="card mt-3">
                         <div class="card-body">
-                            <h6 class="card-title">Feature Toggles</h6>
-                            <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="checkbox" name="maintenance_mode" 
-                                       {% if settings.maintenance_mode %}checked{% endif %}>
-                                <label class="form-check-label small">Maintenance Mode</label>
+                            <h6 class="card-title">Banknote Generation Settings</h6>
+                            
+                            <div class="form-row">
+                                <div class="col-md-6 mb-2">
+                                    <label class="small">Portrait Prompt</label>
+                                    <textarea class="form-control form-control-sm" name="portrait_prompt" rows="2" 
+                                              placeholder="Describe the portrait generation prompt">{{ settings.portrait_prompt if settings.portrait_prompt else 'A professional portrait of a person, high quality, detailed face, neutral background' }}</textarea>
+                                </div>
+                                <div class="col-md-6 mb-2">
+                                    <label class="small">Background Prompt</label>
+                                    <textarea class="form-control form-control-sm" name="background_prompt" rows="2" 
+                                              placeholder="Describe the background generation prompt">{{ settings.background_prompt if settings.background_prompt else 'A beautiful fantasy landscape with mountains and rivers, mystical atmosphere' }}</textarea>
+                                </div>
                             </div>
-                            <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="checkbox" name="allow_registrations" 
-                                       {% if settings.allow_registrations %}checked{% endif %}>
-                                <label class="form-check-label small">Allow Registrations</label>
+                            
+                            <div class="form-row">
+                                <div class="col-md-3 mb-2">
+                                    <label class="small">Bill Width (mm)</label>
+                                    <input type="number" step="0.1" class="form-control form-control-sm" name="bill_width_mm" 
+                                           value="{{ settings.bill_width_mm if settings.bill_width_mm else 160.0 }}">
+                                </div>
+                                <div class="col-md-3 mb-2">
+                                    <label class="small">Bill Height (mm)</label>
+                                    <input type="number" step="0.1" class="form-control form-control-sm" name="bill_height_mm" 
+                                           value="{{ settings.bill_height_mm if settings.bill_height_mm else 60.0 }}">
+                                </div>
+                                <div class="col-md-3 mb-2">
+                                    <label class="small">DPI</label>
+                                    <input type="number" step="0.1" class="form-control form-control-sm" name="bill_dpi" 
+                                           value="{{ settings.bill_dpi if settings.bill_dpi else 300.0 }}">
+                                </div>
+                                <div class="col-md-3 mb-2">
+                                    <label class="small">Max File Size (MB)</label>
+                                    <input type="number" class="form-control form-control-sm" name="max_file_size" 
+                                           value="{{ settings.max_file_size if settings.max_file_size else 512 }}">
+                                </div>
                             </div>
-                            <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="checkbox" name="enable_blockchain" 
-                                       {% if settings.enable_blockchain %}checked{% endif %}>
-                                <label class="form-check-label small">Enable Blockchain</label>
+                            
+                            <div class="form-row">
+                                <div class="col-md-4 mb-2">
+                                    <label class="small">Bill Title</label>
+                                    <input type="text" class="form-control form-control-sm" name="bill_title" 
+                                           value="{{ settings.bill_title if settings.bill_title else '灵国国库' }}">
+                                </div>
+                                <div class="col-md-4 mb-2">
+                                    <label class="small">Bill Subtitle</label>
+                                    <input type="text" class="form-control form-control-sm" name="bill_subtitle" 
+                                           value="{{ settings.bill_subtitle if settings.bill_subtitle else '天圆地方' }}">
+                                </div>
+                                <div class="col-md-4 mb-2">
+                                    <label class="small">Font Directory</label>
+                                    <input type="text" class="form-control form-control-sm" name="font_dir" 
+                                           value="{{ settings.font_dir if settings.font_dir else './fonts' }}">
+                                </div>
                             </div>
-                            <div class="form-check form-check-inline">
-                                <input class="form-check-input" type="checkbox" name="enable_mining" 
-                                       {% if settings.enable_mining %}checked{% endif %}>
-                                <label class="form-check-label small">Enable Mining</label>
+                            
+                            <div class="form-row">
+                                <div class="col-md-6 mb-2">
+                                    <label class="small">Background Directory</label>
+                                    <input type="text" class="form-control form-control-sm" name="bg_dir" 
+                                           value="{{ settings.bg_dir if settings.bg_dir else './backgrounds' }}">
+                                </div>
                             </div>
                         </div>
                     </div>
@@ -791,7 +864,13 @@ body {
     display: flex;
     align-items: center;
     gap: 6px;
-    margin: 0;
+    margin: 0 0 12px 0;
+}
+
+.sync-time {
+    margin: 4px 0 8px 0;
+    font-size: 10px;
+    color: var(--text-tertiary);
 }
 
 .status-dot {
@@ -809,6 +888,42 @@ body {
 .status-dot.offline {
     background: var(--danger);
     box-shadow: 0 0 0 2px rgba(220, 53, 69, 0.2);
+}
+
+/* Header Quick Stats */
+.header-quick-stats {
+    display: flex;
+    gap: 12px;
+    margin-top: 8px;
+}
+
+.header-stat {
+    text-align: center;
+    min-width: 50px;
+}
+
+.header-stat small {
+    display: block;
+    font-size: 9px;
+    color: var(--text-tertiary);
+    margin-bottom: 2px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.header-stat span {
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.header-stat span.text-success {
+    color: var(--success);
+}
+
+.header-stat span.text-danger {
+    color: var(--danger);
 }
 
 .sidebar-nav {

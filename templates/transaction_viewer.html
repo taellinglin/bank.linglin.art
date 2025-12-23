@@ -15,23 +15,23 @@
             <h1 class="profile-username">Transaction Explorer</h1>
             <div class="profile-stats">
                 <div class="profile-stat">
-                    <span class="stat-value">{{ transaction.status_icon }} {{ transaction.status_label }}</span>
-                    <span class="stat-label">Status</span>
+                    <span class="stat-value">{{ validation_score }}/5</span>
+                    <span class="stat-label">Validation Score</span>
                 </div>
+                <div class="profile-stat">
+                    <span class="stat-value">{{ validation_percentage|int }}%</span>
+                    <span class="stat-label">Authenticity</span>
+                </div>
+                {% if transaction.confirmations %}
                 <div class="profile-stat">
                     <span class="stat-value">{{ transaction.confirmations }}</span>
                     <span class="stat-label">Confirmations</span>
                 </div>
+                {% endif %}
                 {% if transaction.block_height %}
                 <div class="profile-stat">
                     <span class="stat-value">#{{ transaction.block_height }}</span>
                     <span class="stat-label">Block</span>
-                </div>
-                {% endif %}
-                {% if transaction.value %}
-                <div class="profile-stat">
-                    <span class="stat-value">{{ "%.6f"|format(transaction.value) }}</span>
-                    <span class="stat-label">Value</span>
                 </div>
                 {% endif %}
             </div>
@@ -44,6 +44,11 @@
             <span class="tab-icon">📊</span>
             <span class="tab-text">Overview</span>
         </button>
+        <button class="tab-button" onclick="openTab('validation')">
+            <span class="tab-icon">✅</span>
+            <span class="tab-text">Validation</span>
+            <span class="tab-badge">{{ validation_score }}</span>
+        </button>
         <button class="tab-button" onclick="openTab('details')">
             <span class="tab-icon">📄</span>
             <span class="tab-text">Details</span>
@@ -51,10 +56,6 @@
         <button class="tab-button" onclick="openTab('raw')">
             <span class="tab-icon">📝</span>
             <span class="tab-text">Raw Data</span>
-        </button>
-        <button class="tab-button" onclick="openTab('tracking')">
-            <span class="tab-icon">🔍</span>
-            <span class="tab-text">Tracking</span>
         </button>
     </div>
 
@@ -130,10 +131,17 @@
                     </button>
                 </div>
                 <div class="hash-actions">
-                    <a href="https://blockchain.info/tx/{{ transaction.hash }}" target="_blank" class="action-btn cyan small">
-                        <span>View on Blockchain Explorer</span>
-                        <div class="btn-icon">🌐</div>
+                    {% if transaction.block_hash %}
+                    <a href="{{ url_for('view_block_detail', block_hash=transaction.block_hash) }}" class="action-btn cyan small">
+                        <span>View Block #{{ transaction.block_height }}</span>
+                        <div class="btn-icon">🔗</div>
                     </a>
+                    {% else %}
+                    <a href="{{ url_for('blockchain_viewer') }}" class="action-btn cyan small">
+                        <span>View Blockchain</span>
+                        <div class="btn-icon">🔗</div>
+                    </a>
+                    {% endif %}
                     <button class="action-btn secondary small" onclick="openTab('raw')">
                         <span>View Raw Data</span>
                         <div class="btn-icon">📝</div>
@@ -167,8 +175,8 @@
                         <div class="step-info">
                             <div class="step-label">Amount</div>
                             <div class="step-amount">
-                                {% if transaction.value %}
-                                    {{ "%.6f"|format(transaction.value) }} BTC
+                                {% if transaction.total_value %}
+                                    {{ "%.6f"|format(transaction.total_value) }} LKC
                                 {% else %}
                                     N/A
                                 {% endif %}
@@ -218,6 +226,115 @@
             </div>
         </div>
         {% endif %}
+    </div>
+
+    <!-- Validation Tab -->
+    <div id="validation" class="tab-content">
+        <!-- Validation Score -->
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">✅</div>
+                <h3 class="header-title">Validation Score</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="validation-score-display">
+                    <div class="score-circle {{ 'success' if validation_score >= 4 else 'warning' if validation_score >= 3 else 'danger' }}">
+                        <div class="score-number">{{ validation_score }}</div>
+                        <div class="score-total">/5</div>
+                    </div>
+                    <div class="score-info">
+                        <div class="score-percentage">{{ validation_percentage|int }}% Authenticity</div>
+                        <div class="score-description">
+                            {% if validation_score >= 4 %}
+                                Highly Authentic Transaction
+                            {% elif validation_score >= 3 %}
+                                Valid Transaction
+                            {% elif validation_score >= 2 %}
+                                Partially Valid
+                            {% else %}
+                                Invalid or Unverified
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Validation Layers -->
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">📋</div>
+                <h3 class="header-title">Validation Layers</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="validation-layers">
+                    {% for layer, data in validation_results.items() %}
+                    <div class="validation-layer {{ 'valid' if data.get('found', False) else 'invalid' }}">
+                        <div class="layer-icon">
+                            {% if data.get('found', False) %}✅{% else %}❌{% endif %}
+                        </div>
+                        <div class="layer-info">
+                            <div class="layer-name">{{ layer|title|replace('_', ' ') }}</div>
+                            <div class="layer-status">
+                                {% if data.get('found', False) %}
+                                    Valid
+                                {% else %}
+                                    Not Found
+                                {% endif %}
+                            </div>
+                        </div>
+                        {% if layer == 'mempool' and data.get('found', False) and data.get('data') %}
+                        <div class="layer-details">
+                            <div class="detail-item">
+                                <span class="detail-key">Status:</span>
+                                <span class="detail-value">{{ data.data.get('status', 'pending')|title }}</span>
+                            </div>
+                            <div class="detail-item">
+                                <span class="detail-key">Confirmations:</span>
+                                <span class="detail-value">{{ data.data.get('confirmations', 0) }}</span>
+                            </div>
+                            {% if data.data.get('time_in_mempool') %}
+                            <div class="detail-item">
+                                <span class="detail-key">Time in Mempool:</span>
+                                <span class="detail-value">{{ (data.data.time_in_mempool / 60)|round(1) }} minutes</span>
+                            </div>
+                            {% endif %}
+                            {% if data.data.get('priority') %}
+                            <div class="detail-item">
+                                <span class="detail-key">Priority:</span>
+                                <span class="detail-value">{{ data.data.priority|title }}</span>
+                            </div>
+                            {% endif %}
+                            {% if data.data.get('fee') %}
+                            <div class="detail-item">
+                                <span class="detail-key">Fee:</span>
+                                <span class="detail-value">{{ data.data.fee }}</span>
+                            </div>
+                            {% endif %}
+                            {% if data.data.get('size') %}
+                            <div class="detail-item">
+                                <span class="detail-key">Size:</span>
+                                <span class="detail-value">{{ data.data.size }} bytes</span>
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% elif data.get('data') %}
+                        <div class="layer-details">
+                            {% for key, value in data.data.items() %}
+                                <div class="detail-item">
+                                    <span class="detail-key">{{ key|title|replace('_', ' ') }}:</span>
+                                    <span class="detail-value">{{ value }}</span>
+                                </div>
+                            {% endfor %}
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
     </div>
 
     <!-- Details Tab -->
@@ -313,7 +430,7 @@
                                 <span class="copy-icon">📋</span>
                                 Copy
                             </button>
-                            <a href="https://blockchain.info/address/{{ transaction.from_address }}" target="_blank" class="action-btn secondary small">
+                            <a href="https://www.blockchain.com/explorer/addresses/lkc/{{ transaction.from_address }}" target="_blank" class="action-btn secondary small">
                                 <span>View Address</span>
                                 <div class="btn-icon">🔍</div>
                             </a>
@@ -333,7 +450,7 @@
                                 <span class="copy-icon">📋</span>
                                 Copy
                             </button>
-                            <a href="https://blockchain.info/address/{{ transaction.to_address }}" target="_blank" class="action-btn secondary small">
+                            <a href="https://www.blockchain.com/explorer/addresses/btc/{{ transaction.to_address }}" target="_blank" class="action-btn secondary small">
                                 <span>View Address</span>
                                 <div class="btn-icon">🔍</div>
                             </a>
@@ -398,89 +515,492 @@
         </div>
     </div>
 
-    <!-- Tracking Tab -->
-    <div id="tracking" class="tab-content">
-        <!-- Live Tracking -->
-        <div class="info-card">
-            <div class="card-header">
-                <div class="header-icon">📡</div>
-                <h3 class="header-title">Live Tracking</h3>
-            </div>
-            
-            <div class="card-content">
-                <div class="tracking-info">
-                    <div class="tracking-status">
-                        <div class="status-icon">📡</div>
-                        <div class="status-details">
-                            <div class="status-title">Network Status</div>
-                            <div class="status-subtitle">Monitoring transaction in real-time</div>
-                        </div>
-                    </div>
-                    
-                    <div class="tracking-actions">
-                        <button class="action-btn primary" onclick="refreshTransaction()">
-                            <span>Refresh Status</span>
-                            <div class="btn-icon">🔄</div>
-                        </button>
-                        <button class="action-btn secondary" onclick="startAutoRefresh()">
-                            <span id="autoRefreshText">Enable Auto-Refresh</span>
-                            <div class="btn-icon">⏱️</div>
-                        </button>
-                    </div>
-                    
-                    <div class="last-updated">
-                        <span class="update-label">Last updated:</span>
-                        <span class="update-time" id="lastUpdated">{{ now.strftime('%H:%M:%S') }}</span>
-                    </div>
-                </div>
-                
-                <!-- Confirmation History -->
-                <div class="confirmation-history">
-                    <h4>Confirmation History</h4>
-                    <div class="history-timeline">
-                        {% for i in range(6) %}
-                        <div class="timeline-step {% if i < transaction.confirmations %}step-complete{% else %}step-pending{% endif %}">
-                            <div class="step-number">{{ i + 1 }}</div>
-                            <div class="step-label">
-                                {% if i < transaction.confirmations %}
-                                    Confirmed
-                                {% else %}
-                                    Pending
-                                {% endif %}
-                            </div>
-                        </div>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <!-- Network Nodes -->
-        <div class="info-card">
-            <div class="card-header">
-                <div class="header-icon">🌐</div>
-                <h3 class="header-title">Network Propagation</h3>
-            </div>
-            
-            <div class="card-content">
-                <div class="network-nodes">
-                    {% for node in ['Node 1', 'Node 2', 'Node 3', 'Node 4', 'Node 5'] %}
-                    <div class="network-node">
-                        <div class="node-status connected"></div>
-                        <div class="node-info">
-                            <div class="node-name">{{ node }}</div>
-                            <div class="node-status-text">Connected</div>
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-            </div>
-        </div>
     </div>
 </div>
 
 <style>
+/* Base Variables - Match verify page style */
+:root {
+    --bg-primary: #0f0f0f;
+    --bg-secondary: #151515;
+    --bg-tertiary: #1e1e1e;
+    --border: #2d2d2d;
+    --border-light: #3a3a3a;
+    --text-primary: #ffffff;
+    --text-secondary: #b0b0b0;
+    --text-tertiary: #888888;
+    --primary: #007aff;
+    --success: #30d158;
+    --warning: #ffd60a;
+    --danger: #ff453a;
+    --info: #32d7ee;
+    --purple: #bf5af2;
+}
+
+.profile-container {
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 1rem;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+}
+
+/* Profile Header Card */
+.profile-header-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    position: relative;
+    overflow: hidden;
+}
+
+.profile-header-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 4px;
+    background: linear-gradient(90deg, var(--info), var(--purple));
+}
+
+.avatar-section {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.avatar-wrapper {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    overflow: hidden;
+    border: 3px solid var(--info);
+    box-shadow: 0 4px 20px rgba(50, 215, 238, 0.3);
+    position: relative;
+    z-index: 2;
+}
+
+.avatar-initials {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(135deg, var(--info), var(--purple));
+    color: white;
+    font-size: 2rem;
+    font-weight: 700;
+}
+
+.avatar-glow {
+    position: absolute;
+    width: 100px;
+    height: 100px;
+    border-radius: 50%;
+    background: radial-gradient(circle, var(--info) 0%, transparent 70%);
+    opacity: 0.3;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); opacity: 0.3; }
+    50% { transform: scale(1.1); opacity: 0.5; }
+}
+
+.profile-info-section {
+    flex: 1;
+}
+
+.profile-username {
+    color: var(--text-primary);
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin: 0 0 0.75rem 0;
+}
+
+.profile-stats {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.profile-stat {
+    text-align: center;
+    padding: 0.75rem 1rem;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    min-width: 100px;
+    transition: all 0.3s ease;
+}
+
+.profile-stat:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    border-color: var(--info);
+}
+
+.stat-value {
+    display: block;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.stat-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Tab Navigation */
+.tab-navigation {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    padding: 0.5rem;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow-x: auto;
+}
+
+.tab-button {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1.25rem;
+    background: transparent;
+    border: none;
+    border-radius: 8px;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    white-space: nowrap;
+    flex: 1;
+    min-width: 120px;
+    justify-content: center;
+}
+
+.tab-button:hover {
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+}
+
+.tab-button.active {
+    background: var(--info);
+    color: var(--bg-primary);
+    box-shadow: 0 2px 8px rgba(50, 215, 238, 0.3);
+}
+
+.tab-icon {
+    font-size: 1rem;
+}
+
+.tab-text {
+    font-weight: 600;
+}
+
+.tab-badge {
+    background: var(--bg-secondary);
+    color: var(--text-secondary);
+    padding: 0.125rem 0.5rem;
+    border-radius: 12px;
+    font-size: 0.7rem;
+    font-weight: 700;
+    border: 1px solid var(--border);
+}
+
+.tab-button.active .tab-badge {
+    background: rgba(15, 15, 15, 0.8);
+    color: var(--text-primary);
+}
+
+/* Info Cards */
+.info-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 1.5rem;
+    overflow: hidden;
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem 1.5rem;
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+}
+
+.header-icon {
+    font-size: 1.25rem;
+}
+
+.header-title {
+    color: var(--text-primary);
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.card-content {
+    padding: 1.5rem;
+}
+
+/* Action Buttons */
+.action-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.5rem;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    border: none;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+.action-btn.primary {
+    background: var(--info);
+    color: var(--bg-primary);
+    border: 1px solid var(--info);
+}
+
+.action-btn.primary:hover {
+    background: var(--info);
+    filter: brightness(1.1);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(50, 215, 238, 0.3);
+}
+
+.action-btn.cyan {
+    background: rgba(50, 215, 238, 0.1);
+    color: var(--info);
+    border: 1px solid var(--info);
+}
+
+.action-btn.cyan:hover {
+    background: var(--info);
+    color: var(--bg-primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(50, 215, 238, 0.3);
+}
+
+.action-btn.purple {
+    background: rgba(191, 90, 242, 0.1);
+    color: var(--purple);
+    border: 1px solid var(--purple);
+}
+
+.action-btn.purple:hover {
+    background: var(--purple);
+    color: var(--bg-primary);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(191, 90, 242, 0.3);
+}
+
+.action-btn.secondary {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+}
+
+.action-btn.secondary:hover {
+    background: rgba(255, 255, 255, 0.2);
+    transform: translateY(-2px);
+}
+
+.action-btn.small {
+    padding: 0.6rem 1rem;
+    font-size: 0.8rem;
+}
+
+.btn-icon {
+    font-size: 0.9rem;
+}
+
+/* Copy Buttons */
+.copy-btn {
+    background: rgba(50, 215, 238, 0.1);
+    border: 1px solid var(--info);
+    border-radius: 8px;
+    padding: 0.75rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.copy-btn:hover {
+    background: var(--info);
+    transform: scale(1.05);
+}
+
+.copy-btn.small {
+    padding: 0.5rem;
+}
+
+.copy-icon {
+    font-size: 1rem;
+}
+
 /* Additional styles for transaction viewer */
+.validation-score-display {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+}
+
+.score-circle {
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    color: var(--bg-primary);
+}
+
+.score-circle.success {
+    background: var(--success);
+}
+
+.score-circle.warning {
+    background: var(--warning);
+    color: var(--bg-primary);
+}
+
+.score-circle.danger {
+    background: var(--danger);
+}
+
+.score-number {
+    font-size: 2rem;
+    line-height: 1;
+}
+
+.score-total {
+    font-size: 0.9rem;
+    opacity: 0.8;
+}
+
+.score-info {
+    flex: 1;
+}
+
+.score-percentage {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.score-description {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.validation-layers {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.validation-layer {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    padding: 1rem;
+    background: var(--bg-secondary);
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    transition: all 0.3s ease;
+}
+
+.validation-layer:hover {
+    border-color: var(--info);
+    transform: translateY(-2px);
+}
+
+.validation-layer.valid {
+    border-color: var(--success);
+    background: rgba(48, 209, 88, 0.1);
+}
+
+.validation-layer.invalid {
+    border-color: var(--danger);
+    background: rgba(255, 69, 58, 0.1);
+}
+
+.layer-icon {
+    font-size: 1.25rem;
+    flex-shrink: 0;
+    margin-top: 0.25rem;
+}
+
+.layer-info {
+    flex: 1;
+}
+
+.layer-name {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.layer-status {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.layer-details {
+    margin-top: 0.75rem;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 0.5rem;
+}
+
+.detail-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.25rem 0;
+}
+
+.detail-key {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    font-weight: 600;
+}
+
+.detail-value {
+    font-size: 0.8rem;
+    color: var(--text-primary);
+    font-family: 'SF Mono', Monaco, 'Cascadia Mono', monospace;
+    word-break: break-all;
+}
+
 .status-display {
     display: flex;
     flex-direction: column;

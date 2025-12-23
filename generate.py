@@ -99,7 +99,7 @@ except ImportError as e:
 
 # Try to import Flask models
 try:
-    from models import Banknote, SerialNumber, User, db
+    from models import Banknote, SerialNumber, User, Settings, db
     HAS_FLASK_CONTEXT = True
     print("[+] Successfully imported database models")
 except ImportError as e:
@@ -377,17 +377,19 @@ def generate_pdf_from_svg(svg_path, pdf_path):
 # Portrait generation functions
 # -----------------------
 def generate_character_portrait(name: str, width: int = 512, height: int = 512, 
-                               seed: int = -1, save_path: str = "./portraits"):
+                               seed: int = -1, save_path: str = "./portraits", portrait_prompt=None):
     """
     Generate a character portrait based on the name using Stable Diffusion API
     """
     os.makedirs(save_path, exist_ok=True)
     
-    # Read prompts from files
-    portrait_prompt = read_prompt_file(
-        "portrait_prompt.txt",
-        "portrait of {name}, elegant character, official portrait, banknote portrait, currency art, detailed face, professional, serious expression, high detail, official document style"
-    )
+    # Use provided prompt or read from file
+    if portrait_prompt is None:
+        portrait_prompt = read_prompt_file(
+            "portrait_prompt.txt",
+            "portrait of {name}, elegant character, official portrait, banknote portrait, currency art, detailed face, professional, serious expression, high detail, official document style"
+        )
+    
     negative_prompt = read_prompt_file(
         "negative_prompt.txt",
         "text, words, letters, numbers, blurry, low quality, watermark, signature, ugly, deformed, cartoon, anime, modern, casual"
@@ -438,7 +440,7 @@ def generate_character_portrait(name: str, width: int = 512, height: int = 512,
         safe_print(f"[!] Error generating portrait for {name}: {e}")
         return None
 
-def get_portrait_for_name(name, force_regenerate=False):
+def get_portrait_for_name(name, force_regenerate=False, portrait_prompt=None):
     """
     Get a portrait for the given name - use existing or generate new
     Returns the same portrait path for all denominations
@@ -469,14 +471,14 @@ def get_portrait_for_name(name, force_regenerate=False):
                 return existing_portraits[0]
     
     # Generate new portrait with consistent filename
-    return generate_character_portrait(name)
+    return generate_character_portrait(name, portrait_prompt=portrait_prompt)
 
 # -----------------------
 # Banknote generation functions
 # -----------------------
 def generate_front_back_pair(name, denom, img_path, timestamp_ms, denom_folder, user_id=None,
                           width_mm=160.0, height_mm=60.0, title="灵国国库", subtitle="天圆地方", 
-                          font_dir="./fonts", bg_dir="./backgrounds", dpi=300.0, bg_image=None):
+                          font_dir="./fonts", bg_dir="./backgrounds", dpi=300.0, bg_image=None, background_prompt=None):
     """Generate a front+back pair for a single denomination"""
     front_serial = generate_serial_id_with_checksum(timestamp_ms)
     back_serial = generate_serial_id_combined(timestamp_ms)
@@ -528,7 +530,8 @@ def generate_front_back_pair(name, denom, img_path, timestamp_ms, denom_folder, 
                 '--subtitle', subtitle,
                 '--font-dir', font_dir,
                 '--bg-dir', bg_dir,
-                '--dpi', str(dpi)
+                '--dpi', str(dpi),
+                '--background-prompt', background_prompt or ''
             ], check=True, timeout=13131313)
         
         safe_print(f"[+] Generated front: {front_svg_path}")
@@ -762,15 +765,15 @@ def save_to_database(name, denom_numeric, files, user_id):
 
 def process_denomination(args_tuple):
     """Helper function for parallel denomination processing"""
-    name, denom, img_path, timestamp_ms, denom_folder, user_id, width_mm, height_mm, title, subtitle, font_dir, bg_dir, dpi, bg_image = args_tuple
-    result = generate_front_back_pair(name, denom, img_path, timestamp_ms, denom_folder, user_id, width_mm, height_mm, title, subtitle, font_dir, bg_dir, dpi, bg_image)
+    name, denom, img_path, timestamp_ms, denom_folder, user_id, width_mm, height_mm, title, subtitle, font_dir, bg_dir, dpi, bg_image, background_prompt = args_tuple
+    result = generate_front_back_pair(name, denom, img_path, timestamp_ms, denom_folder, user_id, width_mm, height_mm, title, subtitle, font_dir, bg_dir, dpi, bg_image, background_prompt)
     if result:
         result['denomination'] = denom  # Add denomination to result
     return result
 
 def process_name(name, user_id, force_regenerate=False, specific_denom=None, single_denom=False, images=None,
                width_mm=160.0, height_mm=60.0, title="灵国国库", subtitle="天圆地方", 
-               font_dir="./fonts", bg_dir="./backgrounds", dpi=300.0, bg_image=None):
+               font_dir="./fonts", bg_dir="./backgrounds", dpi=300.0, bg_image=None, portrait_prompt=None, background_prompt=None):
     """Process a single name with all its denominations in parallel"""
     try:
         safe_print(f"[+] Processing: {name}")
@@ -781,7 +784,7 @@ def process_name(name, user_id, force_regenerate=False, specific_denom=None, sin
         safe_print("=" * 50)
 
     # Get or generate ONE portrait for this name
-    img_path = get_portrait_for_name(name, force_regenerate)
+    img_path = get_portrait_for_name(name, force_regenerate, portrait_prompt)
     if not img_path:
         safe_print(f"[!] Failed to get portrait for {name}, using random existing one")
         if images and isinstance(images, list) and len(images) > 0:
@@ -828,7 +831,7 @@ def process_name(name, user_id, force_regenerate=False, specific_denom=None, sin
         denom_folder = os.path.join(name_folder, denom_str)
         os.makedirs(denom_folder, exist_ok=True)
         timestamp_ms = generate_timestamp_ms_precise()
-        args_list.append((name, denom_numeric, img_path, timestamp_ms, denom_folder, user_id, width_mm, height_mm, title, subtitle, font_dir, bg_dir, dpi, bg_image))
+        args_list.append((name, denom_numeric, img_path, timestamp_ms, denom_folder, user_id, width_mm, height_mm, title, subtitle, font_dir, bg_dir, dpi, bg_image, background_prompt))
 
     # Use sequential processing to avoid subprocess issues
     svg_pairs_created = 0
@@ -857,8 +860,8 @@ def process_name(name, user_id, force_regenerate=False, specific_denom=None, sin
 # Main API function
 # -----------------------
 def generate_for_user(username, user_id, force_regenerate=False, specific_denom=None, single_denom=False, max_threads=1,
-                   width_mm=160.0, height_mm=60.0, title="灵国国库", subtitle="天圆地方", 
-                   font_dir="./fonts", bg_dir="./backgrounds", dpi=300.0, bg_image=None):
+                   width_mm=None, height_mm=None, title=None, subtitle=None, 
+                   font_dir=None, bg_dir=None, dpi=None, bg_image=None, background_prompt=None):
     """
     Generate banknotes for a specific user
     
@@ -869,42 +872,55 @@ def generate_for_user(username, user_id, force_regenerate=False, specific_denom=
         specific_denom (int): Specific denomination to generate (None for all)
         single_denom (bool): If True, generate only the specific denomination
         max_threads (int): Maximum number of parallel threads
-    
-    Returns:
-        int: Number of SVG pairs created (1 for single denomination, more for multiple)
+        width_mm, height_mm, title, subtitle, font_dir, bg_dir, dpi, bg_image: Override settings from database
     """
+    # Get settings from database
+    settings = Settings.query.first()
+    if settings:
+        # Use database settings as defaults, but allow overrides
+        width_mm = width_mm if width_mm is not None else settings.bill_width_mm
+        height_mm = height_mm if height_mm is not None else settings.bill_height_mm
+        title = title if title is not None else settings.bill_title
+        subtitle = subtitle if subtitle is not None else settings.bill_subtitle
+        font_dir = font_dir if font_dir is not None else settings.font_dir
+        bg_dir = bg_dir if bg_dir is not None else settings.bg_dir
+        dpi = dpi if dpi is not None else settings.bill_dpi
+        background_prompt = background_prompt if background_prompt is not None else settings.background_prompt
+        portrait_prompt = settings.portrait_prompt  # Always use database setting for portrait prompt
+    else:
+        # Fallback defaults if no settings in database
+        width_mm = width_mm or 160.0
+        height_mm = height_mm or 60.0
+        title = title or "灵国国库"
+        subtitle = subtitle or "天圆地方"
+        font_dir = font_dir or "./fonts"
+        bg_dir = bg_dir or "./backgrounds"
+        dpi = dpi or 300.0
+        background_prompt = background_prompt or "A beautiful fantasy landscape with mountains and rivers, mystical atmosphere"
+        portrait_prompt = "A professional portrait of a person, high quality, studio lighting, detailed face"
+
     # Load existing portraits
     images = []
     if os.path.exists(PORTRAITS_DIR):
         for ext in IMAGE_EXTS:
             pattern = os.path.join(PORTRAITS_DIR, f"*{ext}")
             images.extend(glob.glob(pattern))
-        images = [img for img in images if os.path.isfile(img)]
-        safe_print(f"[+] Found {len(images)} existing portraits")
 
-    # For single denomination, we only want to create 1 pair
-    if single_denom and specific_denom:
-        safe_print(f"[SINGLE DENOM] Generating only denomination {specific_denom}")
-        result = process_name(username, user_id, force_regenerate, specific_denom, True, images, width_mm, height_mm, title, subtitle, font_dir, bg_dir, dpi, bg_image)
-        return result
-    else:
-        # For multiple denominations, process normally
-        return process_name(username, user_id, force_regenerate, specific_denom, single_denom, images, width_mm, height_mm, title, subtitle, font_dir, bg_dir, dpi, bg_image)
+    # Process the name with all denominations
+    return process_name(username, user_id, force_regenerate, specific_denom, single_denom, images,
+                       width_mm, height_mm, title, subtitle, font_dir, bg_dir, dpi, bg_image, portrait_prompt, background_prompt)
 
 # -----------------------
-# Standalone execution
+# Command line argument parsing
 # -----------------------
 def parse_arguments():
-    parser = argparse.ArgumentParser(description="Generate banknotes for names")
-    parser.add_argument("--name", type=str, help="Generate notes for a specific name only")
-    parser.add_argument("--user_id", type=int, help="User ID")
-    parser.add_argument("--denom", type=int, help="Generate notes for a specific denomination only")
-    parser.add_argument("--force-regenerate", action="store_true", 
-                       help="Force regeneration of portraits even if they exist")
-    parser.add_argument("--threads", type=int, default=MAX_THREADS,
-                       help=f"Number of parallel threads (default: {MAX_THREADS})")
-    parser.add_argument("--single-denom", action="store_true",
-                       help="Generate only one denomination (use with --denom)")
+    parser = argparse.ArgumentParser(description="Generate banknotes for a user")
+    parser.add_argument("--name", required=True, help="Name for banknote generation")
+    parser.add_argument("--user-id", type=int, required=True, help="User ID for database association")
+    parser.add_argument("--force-regenerate", action="store_true", help="Force regeneration of portraits")
+    parser.add_argument("--denom", type=int, help="Specific denomination to generate")
+    parser.add_argument("--single-denom", action="store_true", help="Generate only the specific denomination")
+    parser.add_argument("--threads", type=int, default=1, help="Maximum number of threads")
     # New customization arguments
     parser.add_argument("--width-mm", type=float, default=160.0, help="Width in mm (default: 160.0)")
     parser.add_argument("--height-mm", type=float, default=60.0, help="Height in mm (default: 60.0)")
@@ -914,35 +930,37 @@ def parse_arguments():
     parser.add_argument("--bg-dir", type=str, default="./backgrounds", help="Directory containing background images (default: ./backgrounds)")
     parser.add_argument("--dpi", type=float, default=300.0, help="Resolution in DPI (default: 300.0)")
     parser.add_argument("--bg-image", type=str, help="Background image path for back")
+    parser.add_argument("--background-prompt", type=str, help="Background generation prompt")
     return parser.parse_args()
 
-def main():
-    args = parse_arguments()
-    
-    if not args.name or not args.user_id:
-        print("Error: --name and --user_id are required")
-        return 1
-    
-    # Use the API function
-    result = generate_for_user(
-        username=args.name,
-        user_id=args.user_id,
-        force_regenerate=args.force_regenerate,
-        specific_denom=args.denom,
-        single_denom=args.single_denom,
-        max_threads=args.threads,
-        width_mm=args.width_mm,
-        height_mm=args.height_mm,
-        title=args.title,
-        subtitle=args.subtitle,
-        font_dir=args.font_dir,
-        bg_dir=args.bg_dir,
-        dpi=args.dpi,
-        bg_image=args.bg_image
-    )
-    
-    safe_print(f"\n[+] Banknote generation finished! Created {result} SVG pairs!")
-    return 0
+    def main():
+        args = parse_arguments()
+        
+        if not args.name or not args.user_id:
+            print("Error: --name and --user_id are required")
+            return 1
+        
+        # Use the API function
+        result = generate_for_user(
+            username=args.name,
+            user_id=args.user_id,
+            force_regenerate=args.force_regenerate,
+            specific_denom=args.denom,
+            single_denom=args.single_denom,
+            max_threads=args.threads,
+            width_mm=args.width_mm,
+            height_mm=args.height_mm,
+            title=args.title,
+            subtitle=args.subtitle,
+            font_dir=args.font_dir,
+            bg_dir=args.bg_dir,
+            dpi=args.dpi,
+            bg_image=args.bg_image,
+            background_prompt=args.background_prompt
+        )
+        
+        safe_print(f"\n[+] Banknote generation finished! Created {result} SVG pairs!")
+        return 0
 
-if __name__ == "__main__":
-    sys.exit(main())
+    if __name__ == "__main__":
+        sys.exit(main())
