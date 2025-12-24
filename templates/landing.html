@@ -107,7 +107,7 @@
                         <div class="stat-icon">👥</div>
                         <div class="stat-info">
                             <div class="stat-value">{{ recent_users }}</div>
-                            <div class="stat-label">New Users (24h)</div>
+                            <div class="stat-label">New Users (7d)</div>
                         </div>
                     </div>
                     
@@ -150,7 +150,7 @@
                                 <strong>{{ top_collector.banknotes }}</strong> banknotes
                             </span>
                             <span class="collector-stat">
-                                <strong>${{ (top_collector.value|int / 2)|format_number }}</strong> total value
+                                <strong>${{ top_collector.value|int|format_number }}</strong> total value
                             </span>
                         </div>
                     </div>
@@ -209,7 +209,7 @@
                         <div class="activity-icon">📈</div>
                         <div class="activity-info">
                             <div class="activity-title">Network Growth</div>
-                            <div class="activity-subtitle">Last 24 Hours</div>
+                            <div class="activity-subtitle">Last 7 Days</div>
                         </div>
                         <div class="activity-stats">
                             <span class="activity-stat positive">+{{ recent_users }} users</span>
@@ -293,12 +293,12 @@
                     <div class="status-item">
                         <span class="status-dot active"></span>
                         <span class="status-label">Gallery</span>
-                        <span class="status-value">{{ total_banknotes if total_banknotes else '1,234' }}</span>
+                        <span class="status-value">{{ "{:,.0f}".format(total_banknotes) }}</span>
                     </div>
                     <div class="status-item">
                         <span class="status-dot active"></span>
                         <span class="status-label">Users</span>
-                        <span class="status-value">{{ total_users if total_users else '2,548' }}</span>
+                        <span class="status-value">{{ "{:,.0f}".format(total_users) }}</span>
                     </div>
                 </div>
             </div>

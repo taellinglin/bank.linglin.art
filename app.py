@@ -4475,9 +4475,11 @@ def landing():
     total_banknotes = Banknote.query.count()
     total_users = User.query.count()
     
-    # Calculate recent activity using created_at instead of last_seen
+    # Calculate recent activity (last 7d logins, fallback to creations)
     one_week_ago = datetime.utcnow() - timedelta(days=7)
-    recent_activity = User.query.filter(User.created_at >= one_week_ago).count()
+    recent_activity = User.query.filter(User.last_login >= one_week_ago).count()
+    if recent_activity == 0:
+        recent_activity = User.query.filter(User.created_at >= one_week_ago).count()
     
     # Calculate total value of all banknotes
     banknotes = Banknote.query.all()
@@ -4488,12 +4490,35 @@ def landing():
         except (ValueError, TypeError):
             pass
     
-    # Get recent users (last 24 hours)
+    # Get recent users (last 7 days)
     one_day_ago = datetime.utcnow() - timedelta(hours=24)
-    recent_users = User.query.filter(User.created_at >= one_day_ago).count()
-    
-    # Get recent transactions (last 24 hours)
-    recent_transactions = Banknote.query.filter(Banknote.created_at >= one_day_ago).count()
+    one_week_ago_users = datetime.utcnow() - timedelta(days=7)
+    recent_users = User.query.filter(User.created_at >= one_week_ago_users).count()
+
+    # Get recent transactions (last 24 hours) from blockchain + mempool for live accuracy
+    recent_transactions = 0
+    try:
+        one_day_ago_ts = one_day_ago.timestamp()
+        daemon = blockchain_daemon_instance
+
+        for block in daemon.blockchain:
+            try:
+                block_ts = float(block.get('timestamp', 0))
+                if block_ts >= one_day_ago_ts:
+                    recent_transactions += len(block.get('transactions', []))
+            except Exception:
+                continue
+
+        for tx in getattr(daemon, 'mempool', []):
+            try:
+                tx_ts = float(tx.get('timestamp') or tx.get('time') or 0)
+                if tx_ts >= one_day_ago_ts:
+                    recent_transactions += 1
+            except Exception:
+                continue
+    except Exception as e:
+        print(f"Recent transactions calculation fallback: {e}")
+        recent_transactions = Banknote.query.filter(Banknote.created_at >= one_day_ago).count()
     
     # Get top collector (user with most banknotes)
     top_collector = {}
@@ -4534,10 +4559,11 @@ def landing():
     # Get platform growth stats
     month_ago = datetime.utcnow() - timedelta(days=30)
     month_ago_users = User.query.filter(User.created_at <= month_ago).count()
-    user_growth_rate = ((total_users - month_ago_users) / month_ago_users * 100) if month_ago_users > 0 else 0
-    
     month_ago_banknotes = Banknote.query.filter(Banknote.created_at <= month_ago).count()
-    banknote_growth_rate = ((total_banknotes - month_ago_banknotes) / month_ago_banknotes * 100) if month_ago_banknotes > 0 else 0
+
+    # Avoid zero-baseline showing 0% when growth exists; use denominator at least 1
+    user_growth_rate = ((total_users - month_ago_users) / max(month_ago_users, 1) * 100) if total_users > 0 else 0
+    banknote_growth_rate = ((total_banknotes - month_ago_banknotes) / max(month_ago_banknotes, 1) * 100) if total_banknotes > 0 else 0
     
     # Get current user's stats if logged in
     user_stats = {}
@@ -4558,11 +4584,11 @@ def landing():
                 pass
         
         user_stats = {
-            'banknotes_created': (user_banknotes/2),
+            'banknotes_created': user_banknotes,
             'can_generate': can_generate,
             'days_until_next': days_until_next,
             'balance': current_user.balance if hasattr(current_user, 'balance') else 0,
-            'total_value': user_total_value/2
+            'total_value': user_total_value
         }
     
     # Handle None values in template
@@ -4570,10 +4596,10 @@ def landing():
     recent_transactions = recent_transactions if recent_transactions is not None else 0
     
     return render_template('landing.html', 
-                         total_banknotes=(total_banknotes/2),
+                         total_banknotes=total_banknotes,
                          total_users=total_users,
                          recent_activity=recent_activity,
-                         total_value=(total_value/2),
+                         total_value=total_value,
                          user_stats=user_stats,
                          current_user=current_user,
                          recent_users=recent_users,
