@@ -80,6 +80,70 @@
             </div>
         </div>
 
+        <!-- Email Management Section (only for own profile) -->
+        {% if current_user.is_authenticated and current_user.id == user.id %}
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon">📧</div>
+                <h3 class="header-title">Email Management</h3>
+            </div>
+            
+            <div class="card-content">
+                <div class="email-status">
+                    <div class="status-row">
+                        <span class="label">Current Email:</span>
+                        <span class="value">
+                            <code>{{ user.email }}</code>
+                            {% if user.email_verified %}
+                                <span class="badge verified">✓ Verified</span>
+                            {% else %}
+                                <span class="badge unverified">⚠ Unverified</span>
+                            {% endif %}
+                        </span>
+                    </div>
+                    
+                    {% if user.pending_email %}
+                    <div class="status-row pending">
+                        <span class="label">Pending Change:</span>
+                        <span class="value">
+                            <code>{{ user.pending_email }}</code>
+                            <button class="btn-link" onclick="cancelEmailChange()">Cancel</button>
+                        </span>
+                    </div>
+                    <div class="warning-box">
+                        <p>⏳ A verification email has been sent to <strong>{{ user.pending_email }}</strong>. Please check your inbox and click the verification link to complete the email change.</p>
+                        <button class="action-btn cyan small" onclick="resendVerification()">
+                            <span>Resend Verification</span>
+                            <div class="btn-icon">📤</div>
+                        </button>
+                    </div>
+                    {% endif %}
+                    
+                    {% if not user.email_verified and not user.pending_email %}
+                    <div class="warning-box">
+                        <p>⚠️ Your email is not verified. Please verify your email to receive notifications.</p>
+                        <button class="action-btn cyan small" onclick="resendVerification()">
+                            <span>Resend Verification</span>
+                            <div class="btn-icon">📤</div>
+                        </button>
+                    </div>
+                    {% endif %}
+                </div>
+                
+                <div class="email-actions">
+                    <button class="action-btn purple" onclick="showChangeEmailModal()">
+                        <span>Change Email</span>
+                        <div class="btn-icon">✏️</div>
+                    </button>
+                    <button class="action-btn secondary" onclick="viewEmailHistory()">
+                        <span>View History</span>
+                        <div class="btn-icon">📜</div>
+                    </button>
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Generation Status -->
         {% if current_user.is_authenticated and current_user.id == user.id %}
         <div class="info-card">
@@ -1549,5 +1613,289 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 });
+
+// Email management functions
+function showChangeEmailModal() {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'flex';
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 500px;">
+            <span class="close-btn" onclick="this.closest('.modal').remove()">&times;</span>
+            <h2>Change Email Address</h2>
+            <form id="changeEmailForm" onsubmit="submitEmailChange(event)">
+                <div class="form-group">
+                    <label for="newEmail">New Email Address:</label>
+                    <input type="email" id="newEmail" name="new_email" required 
+                           placeholder="your.new@email.com" class="form-input">
+                </div>
+                <div class="form-group">
+                    <label for="confirmPassword">Confirm Your Password:</label>
+                    <input type="password" id="confirmPassword" name="password" required 
+                           placeholder="Enter your current password" class="form-input">
+                </div>
+                <div class="form-actions">
+                    <button type="submit" class="action-btn cyan">
+                        <span>Change Email</span>
+                        <div class="btn-icon">✉️</div>
+                    </button>
+                    <button type="button" class="action-btn secondary" 
+                            onclick="this.closest('.modal').remove()">Cancel</button>
+                </div>
+            </form>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
+
+function submitEmailChange(event) {
+    event.preventDefault();
+    const form = event.target;
+    const formData = new FormData(form);
+    
+    fetch('/profile/change-email', {
+        method: 'POST',
+        body: formData
+    })
+    .then(response => {
+        console.log('Response status:', response.status);
+        console.log('Response URL:', response.url);
+        if (!response.ok) {
+            return response.text().then(text => {
+                throw new Error(`HTTP ${response.status}: ${text}`);
+            });
+        }
+        return response.json();
+    })
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+            location.reload();
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        console.error('Fetch error:', error);
+        alert('Failed to change email: ' + error.message);
+    });
+}
+
+function cancelEmailChange() {
+    if (confirm('Are you sure you want to cancel the email change?')) {
+        fetch('/profile/cancel-email-change')
+        .then(response => response.json())
+        .then(data => {
+            if (data.success) {
+                alert(data.message);
+                location.reload();
+            } else {
+                alert('Error: ' + data.error);
+            }
+        })
+        .catch(error => {
+            alert('Failed to cancel email change: ' + error);
+        });
+    }
+}
+
+function resendVerification() {
+    fetch('/profile/resend-verification')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            alert(data.message);
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('Failed to resend verification: ' + error);
+    });
+}
+
+function viewEmailHistory() {
+    fetch('/profile/email-history')
+    .then(response => response.json())
+    .then(data => {
+        if (data.success) {
+            showEmailHistoryModal(data.history);
+        } else {
+            alert('Error: ' + data.error);
+        }
+    })
+    .catch(error => {
+        alert('Failed to load email history: ' + error);
+    });
+}
+
+function showEmailHistoryModal(history) {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.style.display = 'flex';
+    
+    let historyHTML = '<p>No email changes recorded.</p>';
+    if (history && history.length > 0) {
+        historyHTML = '<table class="history-table"><thead><tr>' +
+            '<th>Old Email</th><th>New Email</th><th>Changed At</th><th>IP Address</th>' +
+            '</tr></thead><tbody>';
+        history.forEach(h => {
+            historyHTML += `<tr>
+                <td><code>${h.old_email}</code></td>
+                <td><code>${h.new_email}</code></td>
+                <td>${h.changed_at}</td>
+                <td>${h.ip_address || 'N/A'}</td>
+            </tr>`;
+        });
+        historyHTML += '</tbody></table>';
+    }
+    
+    modal.innerHTML = `
+        <div class="modal-content" style="max-width: 800px;">
+            <span class="close-btn" onclick="this.closest('.modal').remove()">&times;</span>
+            <h2>Email Change History</h2>
+            <div class="history-content">
+                ${historyHTML}
+            </div>
+            <button class="action-btn secondary" onclick="this.closest('.modal').remove()">Close</button>
+        </div>
+    `;
+    document.body.appendChild(modal);
+}
 </script>
+
+<style>
+.email-status {
+    margin: 20px 0;
+}
+
+.status-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px;
+    margin: 5px 0;
+    background: #f8f9fa;
+    border-radius: 5px;
+}
+
+.status-row.pending {
+    background: #fff3cd;
+}
+
+.status-row .label {
+    font-weight: bold;
+    color: #666;
+}
+
+.status-row .value {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.status-row code {
+    background: white;
+    padding: 5px 10px;
+    border-radius: 3px;
+    font-family: monospace;
+}
+
+.badge {
+    padding: 3px 10px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: bold;
+}
+
+.badge.verified {
+    background: #d4edda;
+    color: #155724;
+}
+
+.badge.unverified {
+    background: #fff3cd;
+    color: #856404;
+}
+
+.warning-box {
+    background: #fff3cd;
+    border: 1px solid #ffc107;
+    border-radius: 5px;
+    padding: 15px;
+    margin: 15px 0;
+}
+
+.warning-box p {
+    margin: 0 0 10px 0;
+}
+
+.email-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+
+.btn-link {
+    background: none;
+    border: none;
+    color: #667eea;
+    cursor: pointer;
+    text-decoration: underline;
+    font-size: 14px;
+}
+
+.btn-link:hover {
+    color: #764ba2;
+}
+
+.history-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+}
+
+.history-table th,
+.history-table td {
+    padding: 10px;
+    text-align: left;
+    border-bottom: 1px solid #ddd;
+}
+
+.history-table th {
+    background: #f8f9fa;
+    font-weight: bold;
+}
+
+.history-table code {
+    background: #f8f9fa;
+    padding: 2px 6px;
+    border-radius: 3px;
+}
+
+.form-group {
+    margin: 20px 0;
+}
+
+.form-group label {
+    display: block;
+    margin-bottom: 5px;
+    font-weight: bold;
+    color: #333;
+}
+
+.form-input {
+    width: 100%;
+    padding: 10px;
+    border: 1px solid #ddd;
+    border-radius: 5px;
+    font-size: 14px;
+}
+
+.form-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+}
+</style>
 {% endblock %}

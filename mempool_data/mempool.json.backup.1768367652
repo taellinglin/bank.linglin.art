@@ -1,0 +1,16 @@
+[
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-qZGTGQjGSjrizQ-10g",
+    "denomination": 1.0,
+    "issued_to": "Comission for Sustainable Energy",
+    "timestamp": 1768367416.6213665,
+    "signature": "uOj8xd4ebdOkHqceeeEEC/MavtbsEmUfrDM5TMdPPmR2l9vOZvhhFZn3TcZdoj3S82ffiagCVRdfbdbrsRnOlB3IPB57Aii1tZmTAJn9M4ntrSELobqFinkRYJ7NekX826DuVMunpI7cwwmG5N5CNG20V1fFkJRfCn+Mfmzb1Scmo6G9IAiW5c6r/6FU/5T4+/2JTD483sGxsOb4J/ZFBApXHOMsNIjZQrhEy06LwupZVcIDrosQew7WiIeXr31vHbQ0IhwvoIksutO+N3HcFAUGpT7JNwACp0RoiuMkCgLKUzNkWeoBamfNFjnBdnzCrYzXmccwMjENk391s4gBuw==",
+    "public_key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA6UCyX6ESBOf/D0AVM8/V\nedzcB3LgcwKH95Dw9O7IGVXztOLZIOnQVqOKymkIHo81HIhfdp8x1dK+IwYog7bn\nPOUSURQO+OeZjAdndLSU5ZLoqzqr+fdReTOP0NviXFrXpdLkoMzxB5ouStU5hK5C\no+mYXbOYxxTkEG5qHs7VZ211Y798zKaY+5TW6EOKhE2QXQudV1ykDoryo/cQT6ka\n4qyKWXmCCjRi2G0rpEnF/neBmjj4B7GmZUUpGwtwzq4HFwifWXr77svYela3pyRB\nzSZj/BjlQ18cWIftA4jUyYVZZ6Oi9LUk/Mc4Y/bIwWUwO/j9/0a6akHbKMYNZtRz\nGwIDAQAB\n-----END PUBLIC KEY-----\n",
+    "metadata_hash": "667f9a2aed8768457839886fb09e3fe4bf2348956ccf81377473741799692ac2",
+    "front_serial": "GTX1_1768367416487_a5e52df1",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "fb7ccc537f9e96ee0fce58ef338589f4af0ffa7cb07967c4dacb184c832b8973"
+  }
+]

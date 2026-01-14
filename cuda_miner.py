@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-cuda_miner.py - GPU Mining with CUDA
+cuda_miner.py - GPU Mining with CUDA and async support for lunalib 1.6.9
 """
 
 import requests
@@ -8,8 +8,10 @@ import time
 import hashlib
 import json
 import threading
-from typing import List, Dict
+import asyncio
 import logging
+from typing import List, Dict, Optional, Coroutine
+from concurrent.futures import ThreadPoolExecutor
 
 try:
     import cupy as cp
@@ -20,6 +22,13 @@ except ImportError:
     CUDA_AVAILABLE = False
     print("❌ CUDA not available - falling back to CPU mining")
 
+logger = logging.getLogger("cuda_miner")
+logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
+
+# Thread pool for async mining operations
+_mining_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="cuda-mining-")
+
+
 class CUDAMiner:
     def __init__(self, base_url: str = "https://bank.linglin.art", miner_address: str = "cuda_miner"):
         self.base_url = base_url
@@ -27,10 +36,7 @@ class CUDAMiner:
         self.is_mining = False
         self.current_difficulty = 4
         self.hash_rate = 0
-        
-        # Setup logging
-        logging.basicConfig(level=logging.INFO, format='%(asctime)s [%(levelname)s] %(message)s')
-        self.logger = logging.getLogger("cuda_miner")
+        self.logger = logger
         
     def get_mining_candidate(self) -> Dict:
         """Get block candidate for mining"""
@@ -67,11 +73,33 @@ class CUDAMiner:
             
             latest_block = blockchain[-1]
             
-            # Create mining candidate
+            # Create reward transaction with LINEAR calculation
+            # Formula: BASE_REWARD * difficulty
+            BASE_REWARD = 1.0
+            reward_amount = BASE_REWARD * self.current_difficulty
+            
+            reward_tx = {
+                "type": "reward",
+                "from": "MINING_REWARD",
+                "to": self.miner_address,
+                "amount": reward_amount,
+                "timestamp": int(time.time()),
+                "block_height": blockchain_height,
+                "difficulty": self.current_difficulty,
+                "hash": ""
+            }
+            
+            # Calculate reward transaction hash
+            reward_string = json.dumps(reward_tx, sort_keys=True)
+            reward_tx["hash"] = hashlib.sha256(reward_string.encode()).hexdigest()
+            
+            self.logger.info(f"💰 Created reward: {BASE_REWARD} * {self.current_difficulty} = {reward_amount} LKC")
+            
+            # Create mining candidate with reward transaction
             candidate = {
                 "index": blockchain_height,
                 "timestamp": int(time.time()),
-                "transactions": [],  # We'll get these from the mining endpoint
+                "transactions": [reward_tx],  # Include reward transaction
                 "previous_hash": latest_block["hash"],
                 "nonce": 0,
                 "miner": self.miner_address,
@@ -85,18 +113,32 @@ class CUDAMiner:
             self.logger.error(f"Error getting mining candidate: {e}")
             return None
     
-    def cuda_mine_block(self, candidate: Dict) -> Dict:
-        """Mine block using CUDA"""
+    async def cuda_mine_block_async(self, candidate: Dict) -> Optional[Dict]:
+        """
+        Async GPU mining operation with lunalib 1.6.9 support
+        """
         target = "0" * candidate["difficulty"]
         start_time = time.time()
-        hashes_calculated = 0
         
-        if CUDA_AVAILABLE:
-            # GPU mining with CuPy
-            return self._cuda_gpu_mining(candidate, target, start_time)
-        else:
-            # Fallback to CPU mining
-            return self._cpu_mining(candidate, target, start_time)
+        try:
+            loop = asyncio.get_event_loop()
+            mined_block = await asyncio.wait_for(
+                loop.run_in_executor(
+                    _mining_pool,
+                    self.cuda_mine_block,
+                    candidate
+                ),
+                timeout=60.0  # 60 second timeout
+            )
+            return mined_block
+        except asyncio.TimeoutError:
+            self.logger.warning("Mining operation timed out")
+            return None
+        except Exception as e:
+            self.logger.error(f"Async mining error: {e}")
+            return None
+    
+    def cuda_mine_block(self, candidate: Dict) -> Dict:
     
     def _cuda_gpu_mining(self, candidate: Dict, target: str, start_time: float) -> Dict:
         """GPU mining implementation"""

@@ -1925,6 +1925,56 @@ function stopMining() {
     }
 }
 
+// Update mempool transaction timeline
+function updateMempoolTimeline() {
+    try {
+        // Get current stats
+        const rewards = parseInt(document.querySelector('.stat-card .stat-value')?.textContent || '0');
+        const transfers = parseInt(document.querySelectorAll('.stat-card .stat-value')[2]?.textContent || '0');
+        const bills = parseInt(document.querySelectorAll('.stat-card .stat-value')[1]?.textContent || '0');
+        
+        const total = rewards + transfers + bills;
+        
+        if (total === 0) {
+            // Reset to empty
+            document.getElementById('reward-bar').style.width = '0%';
+            document.getElementById('transfer-bar').style.width = '0%';
+            document.getElementById('bill-bar').style.width = '0%';
+            
+            document.getElementById('reward-percent').textContent = '0%';
+            document.getElementById('transfer-percent').textContent = '0%';
+            document.getElementById('bill-percent').textContent = '0%';
+            return;
+        }
+        
+        // Calculate percentages
+        const rewardPercent = Math.round((rewards / total) * 100);
+        const transferPercent = Math.round((transfers / total) * 100);
+        const billPercent = Math.round((bills / total) * 100);
+        
+        // Update bars with animation
+        document.getElementById('reward-bar').style.width = rewardPercent + '%';
+        document.getElementById('transfer-bar').style.width = transferPercent + '%';
+        document.getElementById('bill-bar').style.width = billPercent + '%';
+        
+        // Update percentage labels
+        document.getElementById('reward-percent').textContent = rewardPercent + '%';
+        document.getElementById('transfer-percent').textContent = transferPercent + '%';
+        document.getElementById('bill-percent').textContent = billPercent + '%';
+        
+        console.log(`📊 Timeline updated - Rewards: ${rewardPercent}%, Transfers: ${transferPercent}%, Bills: ${billPercent}%`);
+    } catch (error) {
+        console.error('Error updating timeline:', error);
+    }
+}
+
+// Update timeline when page loads and periodically
+document.addEventListener('DOMContentLoaded', function() {
+    updateMempoolTimeline();
+    // Update every 3 seconds
+    setInterval(updateMempoolTimeline, 3000);
+});
+
 function updateMiningConfig() {
     const difficulty = document.getElementById('mining-difficulty').value;
     const timeout = document.getElementById('mining-timeout').value;

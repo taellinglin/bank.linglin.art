@@ -1,0 +1,29 @@
+[
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-FwTaWL9QJGr4Mg-u-M",
+    "denomination": 10000.0,
+    "issued_to": "Sun and Moon",
+    "timestamp": 1768379502.322695,
+    "signature": "Ap7SB5pBNqMQUtZsy7kxLDDBhbaLYS6H+s9CWlY/RzRZ7YKtloaqa9HyqrJTKcMRki5LvIMSWdrGQSFBDCMgPC90igExR97tDKaShmma6yqy3hEjYmpLGeEA3lmerM55UHUhD6YOzDUMBKg1U11s5yUgNJS91hmgbK5pCoPXtDNJ5v/SUP31ehMz2T1AbJX0Ef5N/BRGactC0U8hJyfL/mWiYD8tF4sPBeIY/1NCILdci7MD3Rnbm+V1QESP6RUCHXohdBHKW2KnGLmr5FTaR3OZE7yRh0Vu0zU6GhnA5OqV+0YyiucXP/MC2sbcEpCrX4cFItVqo0osMqJPs4okdw==",
+    "public_key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArm3YlRz7MZA8HjT5rD5d\n6KqtsARVUj9c6Plv6FXhnYZ2By0r+wKWoETvPSfuZNVermPL2LrjVuVQmzMdvhki\nNg1s9YN4lz2M5ZIzW/9qb/2rtqcY9b/Tn4zCABSkPSbzJ64tLcKmiFZIKakNOo4j\n3IGHsZPdShy7jdKQVzjfON0NoCanQk+0GVqU+X1N3To/oehsXQqy79KjaLjXQPVt\npM+tNLC07u0ZvJ/WGm9FD0Gbt55vKS62v/eV+B6hiJ8ygyMeZJpX6iXidMslS1DK\nr3qnVhH/qzo9yFFDmxA1/zgXqVF+Gzrl0UZsxI87LswNxa6i6FyY6I0GFBHTzwvt\nuQIDAQAB\n-----END PUBLIC KEY-----\n",
+    "metadata_hash": "2eb1c98b352c236c210d260d3cd32ffa1b627a3d4f76d47255308e12589a65a9",
+    "front_serial": "GTX10000_1768379502039_fd10169e",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "147adf02b5000e445b9ee37b8f9ba2b027e8731fa2daa38c6c0177ce75eae17e"
+  },
+  {
+    "type": "transfer",
+    "from": "LUN_CAQoiXjTPmkD1XBbRj8y5vTbKTCv9BDacF",
+    "to": "LUN_Bv1GCRCd5G95J3CDjWasmjHKuqxL1F7Rrt",
+    "amount": 60000.0,
+    "fee": 0.001,
+    "timestamp": 1768379510,
+    "memo": "60,000 for Gifts!",
+    "version": "2.0",
+    "signature": "8d8c332a2b20dc5f657dd6e6d1462c3674b3484a4975c3705c00d030fe9e3f623c0b10f965da57dcbad974130ce144d83d4ab5272427e4659a4f139540e29a74",
+    "public_key": "044b68170cfa6d6667054eb3491d07f43ca615cd69d3f83c33b6509fe4cf853d38987997bd77fd2fcb6e89976bc620179da574eebbc5effd416d09c51673a97f35",
+    "hash": "6a88fc8c696aa4bba35f0f5d708eabecbadaf2a866e2fbaf3c66e9d05bb0184f"
+  }
+]

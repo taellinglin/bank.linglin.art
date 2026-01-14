@@ -1,0 +1,16 @@
+[
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-54NBcbWN-qI-iQ-YWI",
+    "denomination": 10.0,
+    "issued_to": "LingLin",
+    "timestamp": 1768373706.6095235,
+    "signature": "DWIqSFFx1BU6cUaNLkkVKukHV/BFvfyt9IGURaBCC07JK9mev/F9YlgC5wgsKLorZxUIKXmajgV3TdKaDtwxpN0j85iSLmgH0wG70z6nAqZBVK8pMIHxA4pHz67tYnYkWHL3U79wr1Coh2fJUYxjIGCURCE/uFDJzrRh1jMrAsuVUYRN+nSMryGSnDqtx4StrzTUghzb5az9eCOVFtXYWLZOqjixHUXrs3J2u6XKQ+BYoL0Bgq6v7me6nQiTtYIqudAyVFuzKokmH39vI2FcZ3y3840eX+89972SyVdrBwldq4YdrVADLS9p/VNIMa0W82UtB0nyBViwA7xTYhsN+g==",
+    "public_key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA1iOAO7KNFaQ4RjDsyh8h\n6mFgYoodJvvEeCtDfRqVirb3WFeBEgZSgHnPubXLtxgDuKC3pP+K6uLtuqX/Sbzy\nb4nKTuazihuGzCmacfbIZVunjY6oMzMll0+izzX7iLPqNWx9FWByd3c7vpsHFN1h\nXFlntW3VN5Xum2wCIURxkt63Nj0epqYV/MvOXM9HGvPsm/zirtT9KztJOJ83m+Qe\na2umgsZUDZWh7ypKzq6ZWQjJSkdnPVjoSR3rta8OKaLiajohAtFnYYzLdnS8Vdim\n415WOCR3Im4uQ3tAL3dO4IN4IpfrXYriAC3s1BCU34WnwGqFrToQCzPbr7iUPxe+\nhQIDAQAB\n-----END PUBLIC KEY-----\n",
+    "metadata_hash": "ac94af256ccefc1f0e9a0411d6d5f516746bb994bcc3967eea6e7bad33dd1f27",
+    "front_serial": "GTX10_1768373706451_44907ca2",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "cee8fd45cab716f6ca305cbd49a795b88b6065e8e5120ecdfc59a1a19e8bd63d"
+  }
+]

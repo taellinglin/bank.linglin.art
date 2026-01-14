@@ -1555,7 +1555,20 @@ function renderActivityChart(data) {
             maintainAspectRatio: false,
             plugins: {
                 legend: {
-                    display: false
+                    display: true,
+                    position: 'top',
+                    labels: {
+                        color: 'var(--text-secondary)',
+                        font: {
+                            size: 12,
+                            weight: '500'
+                        },
+                        padding: 15,
+                        usePointStyle: true,
+                        pointStyle: 'circle',
+                        boxWidth: 8,
+                        boxHeight: 8
+                    }
                 },
                 tooltip: {
                     mode: 'index',

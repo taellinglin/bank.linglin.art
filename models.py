@@ -24,8 +24,15 @@ class User(UserMixin, db.Model):
     last_login = db.Column(db.DateTime)
     last_generation = db.Column(db.DateTime)
     
+    # Email verification
+    email_verified = db.Column(db.Boolean, default=False)
+    verification_token = db.Column(db.String(100), unique=True)
+    verification_token_expires = db.Column(db.DateTime)
+    pending_email = db.Column(db.String(120))  # For email change verification
+    
     # Relationships
     banknotes = db.relationship('Banknote', backref='user', lazy=True, cascade="all, delete-orphan")
+    email_history = db.relationship('EmailHistory', backref='user', lazy=True, cascade="all, delete-orphan")
     serial_numbers = db.relationship('SerialNumber', backref='user', lazy=True, cascade="all, delete-orphan")
     generation_tasks = db.relationship('GenerationTask', backref='user', lazy=True, cascade="all, delete-orphan")
     
@@ -41,6 +48,28 @@ class User(UserMixin, db.Model):
             name=self.username,
             issuer_name="灵国国库"
         )
+    
+    def generate_verification_token(self):
+        """Generate a new email verification token"""
+        self.verification_token = secrets.token_urlsafe(32)
+        self.verification_token_expires = datetime.utcnow() + timedelta(hours=24)
+        return self.verification_token
+    
+    def verify_email_token(self, token):
+        """Verify email token and mark email as verified"""
+        if not self.verification_token or not self.verification_token_expires:
+            return False
+        
+        if datetime.utcnow() > self.verification_token_expires:
+            return False
+        
+        if self.verification_token == token:
+            self.email_verified = True
+            self.verification_token = None
+            self.verification_token_expires = None
+            return True
+        
+        return False
     
     def can_generate_money(self):
         """Check if user can generate money based on cooldown period"""
@@ -214,6 +243,20 @@ class Settings(db.Model):
     
     def __repr__(self):
         return f'<Settings {self.system_name}>'
+
+class EmailHistory(db.Model):
+    __tablename__ = 'email_history'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    old_email = db.Column(db.String(120), nullable=False)
+    new_email = db.Column(db.String(120), nullable=False)
+    changed_at = db.Column(db.DateTime, default=datetime.utcnow)
+    ip_address = db.Column(db.String(45))  # Support IPv6
+    user_agent = db.Column(db.String(255))
+    
+    def __repr__(self):
+        return f'<EmailHistory {self.user_id}: {self.old_email} -> {self.new_email}>'
 
 class BlockchainTransaction(db.Model):
     __tablename__ = 'blockchain_transactions'

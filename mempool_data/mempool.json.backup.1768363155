@@ -1,0 +1,16 @@
+[
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-duFM9ErsAYP6Ag-C-k",
+    "denomination": 10.0,
+    "issued_to": "다람이와 고슴도치",
+    "timestamp": 1768363102.6356237,
+    "signature": "FSgwy1uzndkLIoKPqvOeZJs4cOETdinJjDrYEFVF270iKqdI/LYv/q/n5EebAILwrSgyQoxoIAHyGzrt3TkcY7JxSSD0DSBEEIQi63WQqSOEInXmVtBzFL7YAxfI57nojlnkEp/k9oyU3i1pvIqPeYJlJh4HD/pPdF3cr8BP4QVHf2HzhdVt966BFsEd9MVSQoVXtevPiqrpCHfLzjD8jowFcKzQlImuQFx1DaeslVNummtWnUhITZXf3JZipClVF3+k9PslYZfa+5+Pn1PxRrnzlqq5v4dWFD0duQ8FgQcF0xdNluaSZPhIDP9Kldn/Q0i5LdlS5I2s2VG/zpmFFQ==",
+    "public_key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA71jfA4Ud++YT/mX5ed7E\nNqw83ULjVZPbeHRdC4e7D2Ra8VW/kk7F9FLnB3F4yifKTsyd2ELYrwhOLAIgMCqF\n2mt3udQooSAbq3uxs5vALVzAoH/7IrGBQFDCNvpn4KBZU31l7KCqtQeebk6eczqw\ni7H0y2WXgi+e3U3dfkOIw11WCEBClohL+UegsFo1EWpbJl7al2lp4mlZBcwYhtmt\nRDKw/qyf+5Y1bUSmVyllOmjcmmxvRTyAgwm66Hhx0xlB1/jc/VDbFF3GQd2P4Rvu\nJG/44Lf6h45QMW0NTANyupT+cDEPgF8EkR8uPsPaxyjGkAkVmkP4HGSKixFlyywj\nSwIDAQAB\n-----END PUBLIC KEY-----\n",
+    "metadata_hash": "1888e7d46056e9464770f721320c5168dadb147c303bd8645ab812c4495ad29d",
+    "front_serial": "GTX10_1768363102413_ed4d5455",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "aa8dfc9699928c229fe0307aff9268b1357eef0302d15890414207b173756290"
+  }
+]

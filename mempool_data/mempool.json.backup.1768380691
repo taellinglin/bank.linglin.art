@@ -1,0 +1,44 @@
+[
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-ct5T10YckUSJ7w-I-k",
+    "denomination": 1000000.0,
+    "issued_to": "Sun and Moon",
+    "timestamp": 1768380237.5499365,
+    "signature": "Xzq9J0LOntf2FiYHpHQj4G3yljhzzbq4PdK3G4MN7SO62dkHY9DkUFFD7/Z7jSs+2MlhDu5qg74bBbmkQoT9DQgUKfnNgMUnm7KIDU4XgGfAiCna3mVgrSs0VInL6XoY/r76FI1fO4OmwfdEyd5+8jJsE9iZSjU1zL22a3a9kWJUl1S1N9oAdc2Wpkdy+OU0+yEpL2k1sxeZCB1HB5yf7ua3JQ6qV8UHJO7ItHnQUwmlsc0y+H3uhikUFvJSZeJzhoCvwKgL3SPcZHLW4Vv5TcgutEIxKDPwcGNGtWrN5v5HgalXVhfbWawh5Cj0ai30CtbaidJQiprkgf/yFkN0Ww==",
+    "public_key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEArbrgaP86rznZCzBVd1CP\nDN/cQ/6/yDs3fTDo2nImhQZR2C7a9otiANR758T394TCE82JuwCPwoLD1QRizv4s\njUEvwaepottaufGh3QcFUUDH5xz9hvgAVxPCqgTvbJ2hFoP1bIcbZUA/lHuD3Ywk\nXWZBfBwdA4HbaU6/Xvj4d+ESyMkZIhZduiI5uJBe20FzRha2WDwVhaazK60x+tUe\njWov5ft13HkBHO8uoW5jBjB+wMtwxtg++I9E70dDBnBuMHyrZbQuMHtzViDoepYH\nzqdkEu7f5b3GLMbmQvaPXHZIGBeIcceYDvEs2YwO0lh+lGVaaWh6umctXZoN3Rjp\nxwIDAQAB\n-----END PUBLIC KEY-----\n",
+    "metadata_hash": "0a74bc4506241590f13aaf3c76cefede03d50c6b9e579fe48d3e89d5b68681bc",
+    "front_serial": "GTX1000000_1768380237381_2e3c6c47",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "d4a54d954109903484a5bd8134343c4a6867d26c7f77ca7ef499d61e1ff74dbb"
+  },
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-qt4Sdrt37hQUoA-3uc",
+    "denomination": 1000000.0,
+    "issued_to": "菅野よう子",
+    "timestamp": 1768380336.3540874,
+    "signature": "Z8oDX+YaIDu1GRqDHDuO0CdghV1+0WUE3q98K9lOHhRNiY7voIXiXMRCNhf1nYJ0QAf8hohxwJPE7T12tBc7GWYQvSWZ7/edxFzBxfwI8hpmGuwsTnvQiMTEiIbqsoO8TTl7SH4MVP3JMLD4eAnauNEZ5vVcoP4FM07DuIIkDLrmGgOcTA+uc5eCYP2WV016xQuTG4q86gLZpuYgZBR8XX2ZLdzbjXTqLU0QBpQqAu1GHaPA+Fy2/6lbBs/bM1EKF+8DcKCm2qSOP7xscI8c49U2Uj6juK12IH0Zga37hVtMpnxmP9OBBqf/DTGKNvA2/NXSHqzCKtf4e3tvuH9Mug==",
+    "public_key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAwkewMA5uULddfcijflw1\nzKud2yt+edXBKkErec8soNdva7bzc6kfjCmrCh/VJKEyo5BSBx8Gm10ddpfQIOng\njMiw1swyis5yw+W+lnOWlVTgxXjZ6+3RNynBv0ld7KtAmtDerwLxmZCOg1oY5lYM\nJ9bYKFpl2OKkE53Q2FrkOvzkb8suOaQkomb/IEyikv8aHfZlJ+V7+jjFo1Tukafr\nWlduLtgGQSCLdxZxnLoD3bvj6BSpWeDingZ2s4Q6m9TpCzxSKl82CNHK/iRNFzyB\nBMKjKkN8SksrE6Rur+1XGSSh5c3bKYHGfUL7rDCpXDtCWR5P/mgIH2fKvKjKVciA\nNwIDAQAB\n-----END PUBLIC KEY-----\n",
+    "metadata_hash": "5f3b4013904ec646d5a38eaa365e04d5acc20719f90f3503563cee8c13bbd6f0",
+    "front_serial": "GTX1000000_1768380336155_91f0b084",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "f0afbd5cddf637590202301b9326d1c160258c21b148e1b95a06687fbdc267f8"
+  },
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-gBtGlZ4b3WYm8g-Ma4",
+    "denomination": 10000000.0,
+    "issued_to": "Sun and Moon",
+    "timestamp": 1768380585.205714,
+    "signature": "gouYLa/X94HH7wNB0xHyhk4zyJ3sooib9XGx4BJhpP6VDGONRrQdt9UmJyHnSftAqEgbOhHxYVqG4l3uraFx2LEwCbPs02/7dSBH7RA3mPCGhs8sjr3SSLQ27YIBx73iLL0xrJFA2lziS3JdnwSnncRYgQXrB1NC+LEdkaOTwFkbMWPrjld++dJdsJEGr89zUZBsAOM48YZCBji3aJ6elcADg0vuDgNGtrG12T7cXh0MXWdYoVf0iJQKAccTQ+ZSmlJWxnkyZIb7PtFilEGftWlGlz7sP42Br8TcS7uEgkTm1zz4lCy7lkBPeeuunstSUJKrRaHAfH+Ycy9rhrWNJw==",
+    "public_key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAxo6eKPDqp3PFwGnj9t05\nffdd8X1HeD346ZtEqZ3bJciSzmHYPW+vAInLzMv9iu8oKPIe6hU2OxaoKuGfhb0s\nlAOLhJBFBgRvICXwQIhWpdBArzdIHZ70PI/LRJuQGYBhFhAW3fgYNvtwqebPm36D\ngZTi0x3aotpcs4FmnfqGUyLPNVR8ln32w2NADCVXjawUDAY5l9IJDgximWHAo+Ig\n/puNdWMI/0Z6cuzfvaJZMTzFez+bx6y5BV5zhBa/GwcdGAx8sd74l3RepXWVnl/O\ngmFLef2jRIctb3NjIC81wQByb1SnLxBtDdVodNchwMnxftOL0hgHqs59DeqTeUL7\ntwIDAQAB\n-----END PUBLIC KEY-----\n",
+    "metadata_hash": "b2acbc68e1ce367b2ea37b1446f8ac7c7a791a8bd21d83690057e37a860accc5",
+    "front_serial": "GTX10000000_1768380585095_e429825f",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "b4896bf0f6cce4c2f7bb905056cc585e7eaff7a28a22ccb798a768088c9d2736"
+  }
+]

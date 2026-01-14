@@ -188,7 +188,13 @@ NAMES_FILE = "master.txt"
 OUTPUT_ROOT = "./images"  # single folder per name
 PORTRAITS_DIR = "./portraits"
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".bmp")
-SD_API_URL = "http://localhost:7860/sdapi/v1/txt2img"
+# SD API URLs with GPU selection support
+SD_API_URL = "http://localhost:3014/sdapi/v1/txt2img"
+SD_API_URL_GPU0 = os.getenv("SD_API_URL_GPU0", "http://localhost:3014/sdapi/v1/txt2img")
+SD_API_URL_GPU1 = os.getenv("SD_API_URL_GPU1", "http://localhost:3015/sdapi/v1/txt2img")
+
+# Check if multi-GPU is available
+MULTI_GPU_ENABLED = os.getenv("MULTI_GPU_ENABLED", "false").lower() == "true"
 MAX_THREADS = 8  # Increased for 3090!
 
 # Standard denominations
@@ -383,8 +389,8 @@ def generate_character_portrait(name: str, width: int = 512, height: int = 512,
     """
     os.makedirs(save_path, exist_ok=True)
     
-    # Use provided prompt or read from file
-    if portrait_prompt is None:
+    # Use provided prompt or read from file (only if not provided)
+    if not portrait_prompt:
         portrait_prompt = read_prompt_file(
             "portrait_prompt.txt",
             "portrait of {name}, elegant character, official portrait, banknote portrait, currency art, detailed face, professional, serious expression, high detail, official document style"
@@ -463,23 +469,37 @@ def get_portrait_for_name(name, force_regenerate=False, portrait_prompt=None):
         os.path.join(PORTRAITS_DIR, f"*{clean_name}*.jpeg"),
     ]
     
+    # Check for existing portrait only if not forcing regeneration
+    existing_portrait = None
     if not force_regenerate:
         for pattern in portrait_patterns:
             existing_portraits = glob.glob(pattern)
             if existing_portraits:
-                safe_print(f"[+] Using existing portrait: {existing_portraits[0]}")
-                return existing_portraits[0]
+                existing_portrait = existing_portraits[0]
+                safe_print(f"[+] Using existing portrait: {existing_portrait}")
+                return existing_portrait
     
-    # Generate new portrait with consistent filename
-    return generate_character_portrait(name, portrait_prompt=portrait_prompt)
+    # No existing portrait found or force_regenerate is True
+    if not existing_portrait or force_regenerate:
+        safe_print(f"[+] Generating new portrait for {name}...")
+        new_portrait = generate_character_portrait(name, portrait_prompt=portrait_prompt)
+        if new_portrait and os.path.exists(new_portrait):
+            safe_print(f"[+] Successfully generated portrait: {new_portrait}")
+            return new_portrait
+        else:
+            safe_print(f"[!] Failed to generate portrait for {name}")
+            return None
+    
+    return existing_portrait
 
 # -----------------------
 # Banknote generation functions
 # -----------------------
 def generate_front_back_pair(name, denom, img_path, timestamp_ms, denom_folder, user_id=None,
                           width_mm=160.0, height_mm=60.0, title="灵国国库", subtitle="天圆地方", 
-                          font_dir="./fonts", bg_dir="./backgrounds", dpi=300.0, bg_image=None, background_prompt=None):
-    """Generate a front+back pair for a single denomination"""
+                          font_dir="./fonts", bg_dir="./backgrounds", dpi=300.0, bg_image=None, background_prompt=None, 
+                          use_parallel=True):
+    """Generate a front+back pair for a single denomination with optional parallel processing"""
     front_serial = generate_serial_id_with_checksum(timestamp_ms)
     back_serial = generate_serial_id_combined(timestamp_ms)
     
@@ -496,80 +516,122 @@ def generate_front_back_pair(name, denom, img_path, timestamp_ms, denom_folder, 
     
     safe_print(f"[+] Created digital signature for serial: {front_serial}")
     
-    # Generate front
+    # Prepare filenames
     front_filename = create_proper_filename(name, denom_str, timestamp_ms, "FRONT")
     front_svg_path = os.path.join(denom_folder, front_filename)
+    back_basename = create_basename(name, denom_str, timestamp_ms, "BACK")
+    back_svg_path = os.path.join(denom_folder, f"{back_basename}.svg")
+    
+    def generate_front_task():
+        """Generate front in separate thread"""
+        try:
+            # Set GPU 0 environment if multi-GPU is enabled
+            gpu_env = os.environ.copy()
+            if MULTI_GPU_ENABLED:
+                gpu_env['CUDA_VISIBLE_DEVICES'] = '0'
+                safe_print(f"[GPU0] Generating front for {denom}卢纳币")
+            
+            # Try using imported function first
+            if HAS_FRONT_GENERATOR and generate_front:
+                generate_front(
+                    seed_text=name,
+                    input_image_path=img_path,
+                    single_denom=denom_str,
+                    outfile=front_svg_path,
+                    serial_id=front_serial,
+                    timestamp=int(timestamp_ms),
+                    background_prompt=background_prompt
+                )
+            else:
+                safe_name = name.replace('&', '_')
+                subprocess.run([
+                    'python', FRONT_SCRIPT,
+                    safe_name,
+                    img_path,
+                    '--outfile', front_svg_path,
+                    '--single_denom', denom_str,
+                    '--serial_id', front_serial,
+                    '--timestamp', str(int(timestamp_ms)),
+                    '--width-mm', str(width_mm),
+                    '--height-mm', str(height_mm),
+                    '--title', title,
+                    '--subtitle', subtitle,
+                    '--font-dir', font_dir,
+                    '--bg-dir', bg_dir,
+                    '--dpi', str(dpi),
+                    '--background-prompt', background_prompt or ''
+                ], check=True, timeout=13131313, env=gpu_env)
+            
+            safe_print(f"[+] Generated front: {front_svg_path}")
+            return True
+        except Exception as e:
+            safe_print(f"[!] Failed to generate front: {e}")
+            return False
+    
+    def generate_back_task():
+        """Generate back in separate thread"""
+        try:
+            # Set GPU 1 environment if multi-GPU is enabled
+            gpu_env = os.environ.copy()
+            if MULTI_GPU_ENABLED:
+                gpu_env['CUDA_VISIBLE_DEVICES'] = '1'
+                safe_print(f"[GPU1] Generating back for {denom}卢纳币")
+            
+            if HAS_BACK_GENERATOR and generate_back:
+                generate_back(
+                    outdir=denom_folder,
+                    base_name=back_basename,
+                    denomination=denom_str,
+                    seed_text=name,
+                    serial_id=back_serial,
+                    timestamp=int(timestamp_ms)
+                )
+            else:
+                safe_name = name.replace('&', '_')
+                subprocess.run([
+                    'python', BACK_SCRIPT,
+                    '--outdir', denom_folder,
+                    '--basename', back_basename,
+                    '--denomination', denom_str,
+                    '--seed_text', safe_name,
+                    '--serial_id', back_serial,
+                    '--timestamp', str(int(timestamp_ms)),
+                    '--width-mm', str(width_mm),
+                    '--height-mm', str(height_mm),
+                    '--title', title,
+                    '--phrase', subtitle,
+                    '--dpi', str(dpi)
+                ] + (['--bg-image', bg_image] if bg_image else []), check=True, timeout=13131313, env=gpu_env)
+            
+            safe_print(f"[+] Generated back: {back_svg_path}")
+            return True
+        except Exception as e:
+            safe_print(f"[!] Failed to generate back: {e}")
+            return False
     
     try:
-        # Try using imported function first
-        if HAS_FRONT_GENERATOR and generate_front:
-            generate_front(
-                seed_text=name,
-                input_image_path=img_path,
-                single_denom=denom_str,  # Already string
-                outfile=front_svg_path,
-                serial_id=front_serial,
-                timestamp=int(timestamp_ms)
-            )
-        else:
-            # Replace ampersand with underscore in name for subprocess
-            safe_name = name.replace('&', '_')
+        if use_parallel and MULTI_GPU_ENABLED:
+            # Generate front and back in parallel using threading
+            safe_print(f"[PARALLEL] Using multi-GPU parallel generation")
+            import concurrent.futures
             
-            # Fallback to subprocess - ensure all arguments are strings
-            subprocess.run([
-                'python', FRONT_SCRIPT,
-                safe_name,  # Use safe name without ampersand
-                img_path,
-                '--outfile', front_svg_path,
-                '--single_denom', denom_str,  # Already string
-                '--serial_id', front_serial,
-                '--timestamp', str(int(timestamp_ms)),  # Convert to string
-                '--width-mm', str(width_mm),
-                '--height-mm', str(height_mm),
-                '--title', title,
-                '--subtitle', subtitle,
-                '--font-dir', font_dir,
-                '--bg-dir', bg_dir,
-                '--dpi', str(dpi),
-                '--background-prompt', background_prompt or ''
-            ], check=True, timeout=13131313)
-        
-        safe_print(f"[+] Generated front: {front_svg_path}")
-        
-        # Generate back
-        back_basename = create_basename(name, denom_str, timestamp_ms, "BACK")
-        back_svg_path = os.path.join(denom_folder, f"{back_basename}.svg")
-        
-        if HAS_BACK_GENERATOR and generate_back:
-            generate_back(
-                outdir=denom_folder,
-                base_name=back_basename,
-                denomination=denom_str,  # Pass as string
-                seed_text=name,
-                serial_id=back_serial,
-                timestamp=int(timestamp_ms)
-            )
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                front_future = executor.submit(generate_front_task)
+                back_future = executor.submit(generate_back_task)
+                
+                # Wait for both to complete
+                front_success = front_future.result()
+                back_success = back_future.result()
+                
+                if not (front_success and back_success):
+                    raise Exception("Failed to generate front or back")
         else:
-            # Replace ampersand with underscore in name for subprocess
-            safe_name = name.replace('&', '_')
-            
-            # Fallback to subprocess - ensure all arguments are strings
-            subprocess.run([
-                'python', BACK_SCRIPT,
-                '--outdir', denom_folder,
-                '--basename', back_basename,
-                '--denomination', denom_str,  # Already string
-                '--seed_text', safe_name,  # Use safe name without ampersand
-                '--serial_id', back_serial,
-                '--timestamp', str(int(timestamp_ms)),  # Convert to string
-                '--width-mm', str(width_mm),
-                '--height-mm', str(height_mm),
-                '--title', title,
-                '--phrase', subtitle,  # Using subtitle as phrase for back
-                '--dpi', str(dpi)
-            ] + (['--bg-image', bg_image] if bg_image else []), check=True, timeout=13131313)
-        
-        safe_print(f"[+] Generated back: {back_svg_path}")
+            # Sequential generation
+            safe_print(f"[SEQUENTIAL] Using single GPU sequential generation")
+            if not generate_front_task():
+                raise Exception("Failed to generate front")
+            if not generate_back_task():
+                raise Exception("Failed to generate back")
         
         # Generate PNG and PDF files
         front_png_path = front_svg_path.replace(".svg", ".png")
@@ -604,6 +666,7 @@ def generate_front_back_pair(name, denom, img_path, timestamp_ms, denom_folder, 
         
     except Exception as e:
         safe_print(f"[!] Failed to generate {denom}卢纳币: {e}")
+        return None
         import traceback
         traceback.print_exc()
         return None
@@ -785,19 +848,45 @@ def process_name(name, user_id, force_regenerate=False, specific_denom=None, sin
 
     # Get or generate ONE portrait for this name
     img_path = get_portrait_for_name(name, force_regenerate, portrait_prompt)
-    if not img_path:
-        safe_print(f"[!] Failed to get portrait for {name}, using random existing one")
-        if images and isinstance(images, list) and len(images) > 0:
-            valid_images = [img for img in images if isinstance(img, str) and os.path.exists(img)]
-            if valid_images:
-                img_path = random.choice(valid_images)
-                safe_print(f"[+] Using random portrait: {img_path}")
-            else:
-                safe_print(f"[!] No valid portraits available for {name}, skipping")
-                return 0
-        else:
-            safe_print(f"[!] No portraits available for {name}, skipping")
-            return 0
+    
+    # If portrait generation/retrieval failed, try multiple times to generate a new one
+    retry_count = 0
+    max_retries = 3
+    
+    while (not img_path or not os.path.exists(img_path)) and retry_count < max_retries:
+        retry_count += 1
+        safe_print(f"[!] Portrait not found for {name}, attempt {retry_count}/{max_retries} to generate...")
+        img_path = generate_character_portrait(name, portrait_prompt=portrait_prompt)
+        
+        if img_path and os.path.exists(img_path):
+            safe_print(f"[+] Successfully generated portrait: {img_path}")
+            
+            # Update user's avatar in database if this portrait was just created
+            try:
+                from app import app, db
+                from models import User
+                with app.app_context():
+                    user = User.query.get(user_id)
+                    if user:
+                        # Store just the filename for the avatar
+                        portrait_filename = os.path.basename(img_path)
+                        # Check if user has an avatar field (some schemas may not have this)
+                        if hasattr(user, 'avatar'):
+                            user.avatar = portrait_filename
+                            db.session.commit()
+                            safe_print(f"[+] Updated user avatar to: {portrait_filename}")
+                        else:
+                            safe_print(f"[+] User model doesn't have avatar field, skipping avatar update")
+            except Exception as avatar_error:
+                safe_print(f"[!] Warning: Could not update user avatar: {avatar_error}")
+            
+            break
+    
+    # If still no portrait after retries, fail the generation
+    if not img_path or not os.path.exists(img_path):
+        safe_print(f"[!] Failed to generate portrait for {name} after {max_retries} attempts")
+        safe_print(f"[!] Cannot proceed without a portrait. Please check SD API connection.")
+        return 0
 
     safe_print(f"[+] Using portrait for all bills: {img_path}")
 
@@ -854,6 +943,49 @@ def process_name(name, user_id, force_regenerate=False, specific_denom=None, sin
                 svg_pairs_created += 1
 
     safe_print(f"[+] Completed {name}: {svg_pairs_created} SVG pairs created")
+    
+    # Send email notification if email service is available
+    if svg_pairs_created > 0:
+        try:
+            from app import app, db
+            from models import User
+            with app.app_context():
+                user = User.query.get(user_id)
+                if user and user.email_verified:
+                    from email_service import send_banknote_generation_notification
+                    
+                    # Collect serial numbers from results
+                    serial_numbers = []
+                    denoms_generated = []
+                    
+                    for r in results:
+                        if r:
+                            denoms_generated.append(r.get('denomination'))
+                            # Try to get serial number from result
+                            if 'serial_number' in r:
+                                serial_numbers.append(r['serial_number'])
+                    
+                    # Format denomination info
+                    if len(set(denoms_generated)) == 1:
+                        denom_str = f"{denoms_generated[0]}"
+                    elif len(denoms_generated) <= 3:
+                        denom_str = ", ".join(str(d) for d in sorted(set(denoms_generated)))
+                    else:
+                        denom_str = f"Multiple ({len(set(denoms_generated))} denominations)"
+                    
+                    send_banknote_generation_notification(
+                        user.email,
+                        user.username,
+                        denomination=denom_str,
+                        count=svg_pairs_created,
+                        serial_numbers=serial_numbers[:5] if serial_numbers else None
+                    )
+                    safe_print(f"[+] ✉️  Email notification sent to {user.email}")
+                elif user and not user.email_verified:
+                    safe_print(f"[!] Email not verified for {user.username}, skipping notification")
+        except Exception as email_error:
+            safe_print(f"[!] Failed to send email notification: {email_error}")
+    
     return svg_pairs_created
 
 # -----------------------
@@ -861,7 +993,7 @@ def process_name(name, user_id, force_regenerate=False, specific_denom=None, sin
 # -----------------------
 def generate_for_user(username, user_id, force_regenerate=False, specific_denom=None, single_denom=False, max_threads=1,
                    width_mm=None, height_mm=None, title=None, subtitle=None, 
-                   font_dir=None, bg_dir=None, dpi=None, bg_image=None, background_prompt=None):
+                   font_dir=None, bg_dir=None, dpi=None, bg_image=None, background_prompt=None, portrait_prompt=None):
     """
     Generate banknotes for a specific user
     
@@ -872,7 +1004,7 @@ def generate_for_user(username, user_id, force_regenerate=False, specific_denom=
         specific_denom (int): Specific denomination to generate (None for all)
         single_denom (bool): If True, generate only the specific denomination
         max_threads (int): Maximum number of parallel threads
-        width_mm, height_mm, title, subtitle, font_dir, bg_dir, dpi, bg_image: Override settings from database
+        width_mm, height_mm, title, subtitle, font_dir, bg_dir, dpi, bg_image, portrait_prompt: Override settings from database
     """
     # Get settings from database
     settings = Settings.query.first()
@@ -885,8 +1017,14 @@ def generate_for_user(username, user_id, force_regenerate=False, specific_denom=
         font_dir = font_dir if font_dir is not None else settings.font_dir
         bg_dir = bg_dir if bg_dir is not None else settings.bg_dir
         dpi = dpi if dpi is not None else settings.bill_dpi
-        background_prompt = background_prompt if background_prompt is not None else settings.background_prompt
-        portrait_prompt = settings.portrait_prompt  # Always use database setting for portrait prompt
+        # Get background_prompt from settings first (check for non-empty), then file as fallback
+        if background_prompt is None:
+            background_prompt = (settings.background_prompt if settings.background_prompt and settings.background_prompt.strip() 
+                               else read_prompt_file("background_prompt.txt", "A beautiful fantasy landscape with mountains and rivers, mystical atmosphere"))
+        # Get portrait_prompt from settings first (check for non-empty), then file as fallback  
+        if portrait_prompt is None:
+            portrait_prompt = (settings.portrait_prompt if settings.portrait_prompt and settings.portrait_prompt.strip()
+                             else read_prompt_file("portrait_prompt.txt", "A professional portrait of a person, high quality, studio lighting, detailed face"))
     else:
         # Fallback defaults if no settings in database
         width_mm = width_mm or 160.0
@@ -896,8 +1034,11 @@ def generate_for_user(username, user_id, force_regenerate=False, specific_denom=
         font_dir = font_dir or "./fonts"
         bg_dir = bg_dir or "./backgrounds"
         dpi = dpi or 300.0
-        background_prompt = background_prompt or "A beautiful fantasy landscape with mountains and rivers, mystical atmosphere"
-        portrait_prompt = "A professional portrait of a person, high quality, studio lighting, detailed face"
+        # Try to read prompts from file if no prompt provided
+        if not background_prompt:
+            background_prompt = read_prompt_file("background_prompt.txt", "A beautiful fantasy landscape with mountains and rivers, mystical atmosphere")
+        if not portrait_prompt:
+            portrait_prompt = read_prompt_file("portrait_prompt.txt", "A professional portrait of a person, high quality, studio lighting, detailed face")
 
     # Load existing portraits
     images = []
@@ -905,6 +1046,12 @@ def generate_for_user(username, user_id, force_regenerate=False, specific_denom=
         for ext in IMAGE_EXTS:
             pattern = os.path.join(PORTRAITS_DIR, f"*{ext}")
             images.extend(glob.glob(pattern))
+    
+    # Ensure prompts are not None before passing
+    if not portrait_prompt:
+        portrait_prompt = "A professional portrait of a person, high quality, studio lighting, detailed face"
+    if not background_prompt:
+        background_prompt = "A beautiful fantasy landscape with mountains and rivers, mystical atmosphere"
 
     # Process the name with all denominations
     return process_name(username, user_id, force_regenerate, specific_denom, single_denom, images,

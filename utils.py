@@ -104,7 +104,8 @@ class GenerationQueue:
                 
                 with app.app_context():
                     from generate import generate_for_user
-                    from models import GenerationTask, db
+                    from models import GenerationTask, db, User
+                    from email_service import send_banknote_generation_started_notification
                     
                     # Update task status
                     task = GenerationTask.query.get(task_id)
@@ -112,6 +113,18 @@ class GenerationQueue:
                         task.status = 'processing'
                         task.message = "Generation in progress..."
                         db.session.commit()
+                    
+                    # Send email notification that generation has started
+                    user = User.query.get(user_id)
+                    if user and user.email and user.email_verified:
+                        try:
+                            send_banknote_generation_started_notification(
+                                user.email,
+                                user.username,
+                                task_id=task_id
+                            )
+                        except Exception as email_error:
+                            print(f"[EMAIL ERROR] Could not send start notification: {email_error}")
                     
                     denominations = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000]
                     results = []
