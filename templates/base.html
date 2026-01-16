@@ -6,17 +6,203 @@
     <title>{{ title if title else "灵国国库 [Ling Country Treasury]" }}</title>
     <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.ico') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <style>
+        .navbar {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            width: 100%;
+            flex-wrap: wrap;
+            padding: 0.5rem 1rem;
+            box-sizing: border-box;
+        }
+
+        .nav-brand {
+            flex-shrink: 0;
+        }
+
+
+        .nav-links {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+            min-width: 0;
+            margin-left: auto;
+            max-width: 100%;
+        }
+
+        .nav-links a {
+            white-space: nowrap;
+        }
+
+        .page-preloader {
+            position: fixed;
+            inset: 0;
+            background: #090909;
+            color: #f1f1f1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 9999;
+            gap: 1rem;
+        }
+
+        .preloader-spinner {
+            width: 54px;
+            height: 54px;
+            border-radius: 50%;
+            border: 4px solid rgba(255, 0, 0, 0.2);
+            border-top-color: #ff2d2d;
+            animation: spin 0.9s linear infinite;
+            box-shadow: 0 0 20px rgba(255, 0, 0, 0.25);
+        }
+
+        .preloader-text {
+            font-weight: 600;
+            letter-spacing: 0.08em;
+            color: #ff4d4d;
+        }
+
+        .page-preloader.hide {
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        @media (max-width: 900px) {
+            .navbar {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.75rem;
+            }
+
+
+            .nav-links {
+                width: 100%;
+                display: grid;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+                gap: 0.5rem 1rem;
+            }
+
+            .nav-links a {
+                white-space: nowrap;
+            }
+        }
+
+        @media (max-width: 600px) {
+            .navbar {
+                padding: 0.75rem 1rem;
+            }
+
+            .nav-links {
+                gap: 0.4rem 0.75rem;
+            }
+
+            .preloader-text {
+                font-size: 0.85rem;
+            }
+
+            body {
+                font-size: 0.92rem;
+            }
+
+            h1 { font-size: 1.4rem; }
+            h2 { font-size: 1.2rem; }
+            h3 { font-size: 1.05rem; }
+
+            .profile-container,
+            .search-results {
+                padding: 0.75rem !important;
+            }
+
+            .profile-header-card,
+            .info-card,
+            .result-card,
+            .action-card,
+            .action-item {
+                margin-bottom: 0.75rem !important;
+            }
+
+            .card-content,
+            .info-card.minimal .card-content {
+                padding: 0.9rem !important;
+            }
+
+            .card-header {
+                padding: 0.9rem 1rem !important;
+            }
+
+            .tab-navigation {
+                gap: 0.4rem !important;
+                padding: 0.4rem !important;
+            }
+
+            .tab-button {
+                padding: 0.5rem 0.75rem !important;
+                font-size: 0.8rem !important;
+            }
+
+            .stat-item,
+            .growth-item,
+            .activity-item {
+                padding: 0.9rem !important;
+            }
+
+        }
+
+        @media (max-width: 480px) {
+            body {
+                font-size: 0.88rem;
+            }
+
+            .profile-container,
+            .search-results {
+                padding: 0.5rem !important;
+            }
+
+            .card-content,
+            .info-card.minimal .card-content {
+                padding: 0.75rem !important;
+            }
+
+            .card-header {
+                padding: 0.75rem 0.9rem !important;
+            }
+
+            .tab-button {
+                padding: 0.45rem 0.6rem !important;
+                font-size: 0.75rem !important;
+            }
+
+            .stat-item,
+            .growth-item,
+            .activity-item {
+                padding: 0.75rem !important;
+            }
+        }
+    </style>
 </head>
 <body>
-    <div class="navbar">
-        <a href="{{ url_for('landing') }}" class="nav-brand"><span class="Chinese-text">灵国国库</span><span class="daemon-text"> [Ling Country Treasury]</span></a>
+    <div id="page-preloader" class="page-preloader" aria-hidden="true">
+        <div class="preloader-spinner"></div>
+        <div class="preloader-text">Loading...</div>
+    </div>
+    <div class="navbar" id="mainNavbar">
+        <a href="{{ url_for('landing') }}" class="nav-brand">
+            <span class="Chinese-text">灵国国库</span> <span class="daemon-text">Ling Country Treasury</span>
+        </a>
         <div class="nav-links">
             <a href="{{ url_for('mempool_viewer')}}">Mempool</a>
             <a href="{{ url_for('blockchain_viewer')}}">Blockchain</a>
             {% if current_user.is_authenticated %}
-                            <!-- Add this conditional check -->
-
-                
                 <a href="{{ url_for('profile', username=current_user.username) }}">Profile</a>
                 <a href="{{ url_for('gallery_index') }}">Members</a>
                 <a href="{{ url_for('verify_serial') }}">Verify</a>
@@ -44,5 +230,18 @@
     {% endwith %}
     
     {% block content %}{% endblock %}
+    <script>
+        (function () {
+            const preloader = document.getElementById('page-preloader');
+            if (preloader) {
+                window.addEventListener('load', () => {
+                    preloader.classList.add('hide');
+                    setTimeout(() => {
+                        preloader.style.display = 'none';
+                    }, 300);
+                });
+            }
+        })();
+    </script>
 </body>
 </html>

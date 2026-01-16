@@ -267,7 +267,27 @@
                             </div>
                             {% endif %}
                             
-                            {% if tx.serial_number %}
+                            {% if tx.type in ['genesis', 'GTX_Genesis'] %}
+                            {% set front_serial_val = tx.front_serial or tx.serial_number or 'N/A' %}
+                            <div class="transaction-detail serial-row">
+                                <span class="detail-label">Serial (Front):</span>
+                                <code class="detail-value code">{{ front_serial_val }}</code>
+                                {% if front_serial_val and front_serial_val != 'N/A' %}
+                                <a href="{{ url_for('verify_serial', serial_id=front_serial_val) }}" class="action-btn cyan small">
+                                    <span>Verify</span>
+                                </a>
+                                {% endif %}
+                            </div>
+                            {% if tx.back_serial and tx.back_serial != 'N/A' %}
+                            <div class="transaction-detail serial-row">
+                                <span class="detail-label">Serial (Back):</span>
+                                <code class="detail-value code">{{ tx.back_serial }}</code>
+                                <a href="{{ url_for('verify_serial', serial_id=tx.back_serial) }}" class="action-btn cyan small">
+                                    <span>Verify</span>
+                                </a>
+                            </div>
+                            {% endif %}
+                            {% elif tx.serial_number %}
                             <div class="transaction-detail">
                                 <span class="detail-label">Serial:</span>
                                 <code class="detail-value code">{{ tx.serial_number }}</code>
@@ -285,6 +305,35 @@
                             <div class="transaction-detail">
                                 <span class="detail-label">Denomination:</span>
                                 <span class="detail-value">{{ tx.denomination }}</span>
+                            </div>
+                            {% endif %}
+
+                            {% if tx.type in ['genesis', 'GTX_Genesis'] and (tx.front_thumbnail or tx.back_thumbnail) %}
+                            <div class="thumbnail-row">
+                                {% if tx.front_thumbnail %}
+                                <div class="thumb-card">
+                                    <div class="thumb-label">Front</div>
+                                    {% if tx.front_serial or tx.serial_number %}
+                                    <a class="thumb-link" href="{{ url_for('banknote_viewer', serial_id=(tx.front_serial or tx.serial_number)) }}">
+                                    {% else %}
+                                    <a class="thumb-link" href="{{ url_for('serve_banknote_image', filename=tx.front_thumbnail) }}" target="_blank" rel="noopener">
+                                    {% endif %}
+                                        <img class="thumb-image" src="{{ url_for('serve_banknote_thumbnail', filename=tx.front_thumbnail) }}" alt="front thumbnail" />
+                                    </a>
+                                </div>
+                                {% endif %}
+                                {% if tx.back_thumbnail %}
+                                <div class="thumb-card">
+                                    <div class="thumb-label">Back</div>
+                                    {% if tx.back_serial or tx.serial_number %}
+                                    <a class="thumb-link" href="{{ url_for('banknote_viewer', serial_id=(tx.back_serial or tx.serial_number)) }}">
+                                    {% else %}
+                                    <a class="thumb-link" href="{{ url_for('serve_banknote_image', filename=tx.back_thumbnail) }}" target="_blank" rel="noopener">
+                                    {% endif %}
+                                        <img class="thumb-image" src="{{ url_for('serve_banknote_thumbnail', filename=tx.back_thumbnail) }}" alt="back thumbnail" />
+                                    </a>
+                                </div>
+                                {% endif %}
                             </div>
                             {% endif %}
                             
@@ -1021,6 +1070,48 @@
     align-items: center;
     gap: 1rem;
     padding: 0.5rem 0;
+}
+
+.serial-row {
+    flex-wrap: wrap;
+    gap: 0.75rem;
+}
+
+.thumbnail-row {
+    display: flex;
+    gap: 1rem;
+    margin-top: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.thumb-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.5rem;
+    width: 160px;
+}
+
+.thumb-label {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.thumb-image {
+    width: 160px;
+    height: 60px;
+    object-fit: cover;
+    border-radius: 6px;
+    border: 1px solid var(--border-light);
+    display: block;
+}
+
+.thumb-link {
+    display: inline-block;
+    line-height: 0;
 }
 
 .detail-label {

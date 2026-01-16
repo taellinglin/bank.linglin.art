@@ -6,14 +6,17 @@ import threading
 import json
 import hashlib
 import logging
+import os
 from typing import Dict
 from datetime import timedelta, datetime
 from urllib.parse import unquote
 from functools import wraps
+from urllib.parse import quote_plus
 from flask import (
     Flask,
     render_template,
     send_from_directory,
+    send_file,
     url_for,
     request,
     redirect,
@@ -23,6 +26,7 @@ from flask import (
     jsonify,
     g,
 )
+from PIL import Image, ImageOps
 from flask_migrate import Migrate
 from sqlalchemy import desc
 from models import User, GenerationTask, Banknote, SerialNumber, Settings, db
@@ -34,6 +38,7 @@ from utils import (
     GENERATION_THREADS,
     get_user_avatar_or_default,
     get_user_avatar_url,
+    get_user_avatar_thumbnail_url,
     get_user_by_username,
     has_banknotes,
     IMAGES_ROOT,
@@ -224,6 +229,7 @@ def utility_processor():
         "get_user_avatar": get_user_avatar,  # Add this
         "get_formatted_initials": get_formatted_initials,  # Add this
         "get_user_avatar_url": get_user_avatar_url,
+        "get_user_avatar_thumbnail_url": get_user_avatar_thumbnail_url,
         "get_user_by_username": get_user_by_username,
         "has_banknotes": has_banknotes,
     }
@@ -401,6 +407,54 @@ def view_block_detail(block_hash):
             pass
 
         # SAFE transaction details preparation
+        def normalize_png_path(png_path: str) -> str:
+            if not png_path:
+                return ""
+            path = str(png_path).replace("\\", "/")
+            if os.path.isabs(path):
+                try:
+                    rel = os.path.relpath(path, IMAGES_ROOT)
+                    rel = rel.replace("\\", "/")
+                    if not rel.startswith(".."):
+                        path = rel
+                except Exception:
+                    pass
+            if path.startswith("./"):
+                path = path[2:]
+            if path.startswith("images/"):
+                path = path[len("images/"):]
+            return path
+
+        def resolve_banknote_by_serial(serial_value: str):
+            if not serial_value:
+                return None
+            banknote = Banknote.query.filter_by(serial_number=serial_value).first()
+            if not banknote:
+                serial_record = SerialNumber.query.filter_by(serial=serial_value).first()
+                if serial_record and serial_record.banknote_id:
+                    banknote = Banknote.query.get(serial_record.banknote_id)
+            return banknote
+
+        def derive_counterpart_thumbnail(png_path: str, target_side: str) -> str:
+            if not png_path:
+                return ""
+            rel_path = normalize_png_path(png_path)
+            if not rel_path:
+                return ""
+            dir_rel = os.path.dirname(rel_path)
+            filename = os.path.basename(rel_path)
+            if target_side == "front":
+                swapped = re.sub(r"_BACK", "_FRONT", filename, flags=re.IGNORECASE)
+            else:
+                swapped = re.sub(r"_FRONT", "_BACK", filename, flags=re.IGNORECASE)
+            if swapped == filename:
+                return ""
+            candidate_rel = f"{dir_rel}/{swapped}" if dir_rel else swapped
+            candidate_abs = os.path.join(IMAGES_ROOT, candidate_rel)
+            if os.path.exists(candidate_abs):
+                return candidate_rel
+            return ""
+
         transaction_details = []
         for i, tx in enumerate(transactions):
             if not isinstance(tx, dict):
@@ -445,11 +499,58 @@ def view_block_detail(block_hash):
                     }
                 )
             elif tx_type in ["genesis", "GTX_Genesis"]:
+                serial_number = str(tx.get("serial_number") or "")
+                front_serial = str(tx.get("front_serial") or "")
+                back_serial = str(tx.get("back_serial") or "")
+
+                if serial_number and not serial_number.startswith("SN-"):
+                    serial_number = ""
+                if front_serial and not front_serial.startswith("SN-"):
+                    front_serial = ""
+                if back_serial and not back_serial.startswith("SN-"):
+                    back_serial = ""
+
+                primary_serial = front_serial or back_serial or serial_number
+                primary_banknote = resolve_banknote_by_serial(primary_serial)
+
+                if primary_banknote and primary_banknote.side:
+                    side_value = str(primary_banknote.side).lower()
+                    if side_value == "front" and not front_serial:
+                        front_serial = primary_serial
+                    if side_value == "back" and not back_serial:
+                        back_serial = primary_serial
+                elif primary_serial and not front_serial:
+                    front_serial = primary_serial
+
+                front_banknote = resolve_banknote_by_serial(front_serial)
+                back_banknote = resolve_banknote_by_serial(back_serial)
+
+                front_thumbnail = normalize_png_path(front_banknote.png_path) if front_banknote and front_banknote.png_path else ""
+                back_thumbnail = normalize_png_path(back_banknote.png_path) if back_banknote and back_banknote.png_path else ""
+
+                if primary_banknote and primary_banknote.png_path:
+                    primary_thumb = normalize_png_path(primary_banknote.png_path)
+                    if primary_thumb and not (front_thumbnail and back_thumbnail):
+                        primary_side = str(primary_banknote.side or "").lower()
+                        if primary_side == "front" and not front_thumbnail:
+                            front_thumbnail = primary_thumb
+                        elif primary_side == "back" and not back_thumbnail:
+                            back_thumbnail = primary_thumb
+
+                        if primary_side == "front" and not back_thumbnail:
+                            back_thumbnail = derive_counterpart_thumbnail(primary_banknote.png_path, "back")
+                        if primary_side == "back" and not front_thumbnail:
+                            front_thumbnail = derive_counterpart_thumbnail(primary_banknote.png_path, "front")
+
                 tx_info.update(
                     {
-                        "serial_number": str(tx.get("serial_number", "N/A")),
+                        "serial_number": serial_number or "",
+                        "front_serial": front_serial or "",
+                        "back_serial": back_serial or "",
                         "issued_to": str(tx.get("issued_to", "N/A")),
                         "denomination": tx.get("denomination", "N/A"),
+                        "front_thumbnail": front_thumbnail,
+                        "back_thumbnail": back_thumbnail,
                     }
                 )
             elif tx_type == "reward":
@@ -1170,6 +1271,12 @@ def blockchain_viewer(page=1):
     try:
         print(f"🚀 ======= STARTING blockchain_viewer() for page {page} =======")
 
+        show_genesis = request.args.get("genesis", "1") == "1"
+        show_transfers = request.args.get("transfers", "1") == "1"
+        show_rewards = request.args.get("rewards", "0") == "1"
+        search_query = (request.args.get("q") or "").strip()
+        filter_type = (request.args.get("filter") or "all").strip().lower()
+
         # Get the raw blockchain data from daemon
         print(f"🔍 [1/8] Checking blockchain_daemon_instance...")
 
@@ -1318,6 +1425,7 @@ def blockchain_viewer(page=1):
         genesis_count = 0
         transfer_count = 0
         reward_count = 0
+        blocks_with_counts = []
 
         # Calculate stats from all blocks
         for i, block in enumerate(all_blocks_sorted):
@@ -1333,7 +1441,9 @@ def blockchain_viewer(page=1):
                 transactions = []
 
             block_tx_count = len(transactions)
-            total_transactions += block_tx_count
+            block_genesis = 0
+            block_transfer = 0
+            block_reward = 0
 
             if block_tx_count > 0:
                 print(
@@ -1344,11 +1454,11 @@ def blockchain_viewer(page=1):
                 if isinstance(tx, dict):
                     tx_type = tx.get("type", "")
                     if tx_type in ["genesis", "GTX_Genesis"]:
-                        genesis_count += 1
+                        block_genesis += 1
                     elif tx_type == "transfer":
-                        transfer_count += 1
+                        block_transfer += 1
                     elif tx_type == "reward":
-                        reward_count += 1
+                        block_reward += 1
                     else:
                         print(
                             f"     Unknown transaction type: {tx_type} in block {block.get('index', 'N/A')}"
@@ -1358,8 +1468,86 @@ def blockchain_viewer(page=1):
                         f"     Transaction {j} in block {block.get('index', 'N/A')} is not a dict: {type(tx)}"
                     )
 
+            blocks_with_counts.append(
+                {
+                    "block": block,
+                    "tx_count": block_tx_count,
+                    "genesis_count": block_genesis,
+                    "transfer_count": block_transfer,
+                    "reward_count": block_reward,
+                }
+            )
+
+        def _include_block(block_info):
+            if not (show_genesis or show_transfers or show_rewards):
+                return False
+            if show_genesis and block_info["genesis_count"] > 0:
+                return True
+            if show_transfers and block_info["transfer_count"] > 0:
+                return True
+            if show_rewards and block_info["reward_count"] > 0:
+                return True
+            return False
+
+        def _block_matches_query(block_info):
+            if not search_query:
+                return True
+
+            block = block_info.get("block") if isinstance(block_info, dict) else None
+            if not isinstance(block, dict):
+                return False
+
+            query = search_query.lower()
+            block_index = str(block.get("index", ""))
+            block_hash = str(block.get("hash", ""))
+            prev_hash = str(block.get("previous_hash", ""))
+            miner = str(block.get("miner", ""))
+
+            if filter_type in ["block", "all"]:
+                if query in block_index.lower() or query in block_hash.lower() or query in prev_hash.lower():
+                    return True
+
+            if filter_type in ["miner", "user", "all"]:
+                if query in miner.lower():
+                    return True
+
+            transactions = block.get("transactions", [])
+            if not isinstance(transactions, list):
+                transactions = []
+
+            if filter_type in ["transaction", "all"]:
+                for tx in transactions:
+                    if isinstance(tx, dict) and query in str(tx.get("hash", "")).lower():
+                        return True
+
+            if filter_type in ["genesis", "all"]:
+                for tx in transactions:
+                    if not isinstance(tx, dict):
+                        continue
+                    for field in ["serial_number", "front_serial", "back_serial", "serial"]:
+                        if query in str(tx.get(field, "")).lower():
+                            return True
+
+            if filter_type in ["amount", "all"]:
+                for tx in transactions:
+                    if not isinstance(tx, dict):
+                        continue
+                    if query in str(tx.get("amount", "")).lower():
+                        return True
+
+            return False
+
+        filtered_blocks = [
+            b for b in blocks_with_counts if _include_block(b) and _block_matches_query(b)
+        ]
+
+        total_transactions = sum(b["tx_count"] for b in filtered_blocks)
+        genesis_count = sum(b["genesis_count"] for b in filtered_blocks)
+        transfer_count = sum(b["transfer_count"] for b in filtered_blocks)
+        reward_count = sum(b["reward_count"] for b in filtered_blocks)
+
         print(f"📊 STATISTICS SUMMARY:")
-        print(f"   Total blocks: {len(all_blocks_sorted)}")
+        print(f"   Total blocks: {len(filtered_blocks)}")
         print(f"   Total transactions: {total_transactions}")
         print(f"   Genesis/GTX_Genesis transactions: {genesis_count}")
         print(f"   Transfer transactions: {transfer_count}")
@@ -1369,11 +1557,7 @@ def blockchain_viewer(page=1):
         per_page = 10  # Number of blocks per page
 
         # If we have accurate blockchain status, use that for total blocks
-        if total_blocks > 0 and len(all_blocks_sorted) != total_blocks:
-            print(
-                f"⚠️  Block count mismatch: status says {total_blocks}, actual list has {len(all_blocks_sorted)}"
-            )
-            total_blocks = len(all_blocks_sorted)
+        total_blocks = len(filtered_blocks)
 
         total_pages = max(
             1, (total_blocks + per_page - 1) // per_page
@@ -1391,7 +1575,7 @@ def blockchain_viewer(page=1):
         # Calculate slice for current page (already sorted newest first)
         start_idx = (page - 1) * per_page
         end_idx = start_idx + per_page
-        current_blocks = all_blocks_sorted[start_idx:end_idx]
+        current_blocks = filtered_blocks[start_idx:end_idx]
 
         print(
             f"   Showing blocks {start_idx} to {end_idx} (actual: {len(current_blocks)} blocks)"
@@ -1401,7 +1585,8 @@ def blockchain_viewer(page=1):
         print(f"🔍 [7/8] Processing {len(current_blocks)} blocks for page display...")
         blocks_info = []
 
-        for i, block in enumerate(current_blocks):
+        for i, block_info in enumerate(current_blocks):
+            block = block_info.get("block") if isinstance(block_info, dict) else None
             if not isinstance(block, dict):
                 print(f"   Skipping non-dict block at position {i}")
                 continue
@@ -1418,20 +1603,9 @@ def blockchain_viewer(page=1):
                 )
                 transactions = []
 
-            # Count transaction types for this block
-            block_genesis = 0
-            block_transfer = 0
-            block_reward = 0
-
-            for tx in transactions:
-                if isinstance(tx, dict):
-                    tx_type = tx.get("type", "")
-                    if tx_type in ["genesis", "GTX_Genesis"]:
-                        block_genesis += 1
-                    elif tx_type == "transfer":
-                        block_transfer += 1
-                    elif tx_type == "reward":
-                        block_reward += 1
+            block_genesis = block_info.get("genesis_count", 0)
+            block_transfer = block_info.get("transfer_count", 0)
+            block_reward = block_info.get("reward_count", 0)
 
             # Process timestamp for display
             timestamp = block.get("timestamp", 0)
@@ -1510,6 +1684,18 @@ def blockchain_viewer(page=1):
             total_pages=total_pages,
             per_page=per_page,
             current_user=get_current_user(),
+            filter_genesis=show_genesis,
+            filter_transfers=show_transfers,
+            filter_rewards=show_rewards,
+            filter_query=(
+                f"?genesis={1 if show_genesis else 0}"
+                f"&transfers={1 if show_transfers else 0}"
+                f"&rewards={1 if show_rewards else 0}"
+                f"&filter={filter_type}"
+                f"&q={quote_plus(search_query)}"
+            ),
+            search_query=search_query,
+            filter_type=filter_type,
             max=max,
             min=min,
             title="Blockchain Viewer",
@@ -1554,7 +1740,7 @@ def get_blockchain_timeline(timeframe):
     """Get blockchain timeline data for charts with caching"""
     try:
         # Validate timeframe
-        valid_timeframes = ["1d", "7d", "30d", "90d", "1y", "all"]
+        valid_timeframes = ["1h", "1d", "7d", "30d", "90d", "1y", "all"]
         if timeframe not in valid_timeframes:
             return (
                 jsonify(
@@ -1589,7 +1775,10 @@ def get_blockchain_timeline(timeframe):
             filtered_blocks = all_blocks
         else:
             # Parse timeframe
-            if timeframe.endswith("d"):
+            if timeframe.endswith("h"):
+                hours = int(timeframe[:-1])
+                cutoff_time = current_time - (hours * 60 * 60)
+            elif timeframe.endswith("d"):
                 days = int(timeframe[:-1])
                 cutoff_time = current_time - (days * 24 * 60 * 60)
             elif timeframe.endswith("y"):
@@ -2630,6 +2819,25 @@ class SmartMiner:
         if not reward_transactions:
             return {"valid": True, "error": None}
 
+        def _is_valid_luna_address(address: str) -> bool:
+            if not address or not isinstance(address, str):
+                return False
+            normalized = address.strip()
+            if not normalized:
+                return False
+            lowered = normalized.lower()
+            placeholder_values = {
+                "enter luna wallet address here",
+                "enter wallet address here",
+                "miner_default_address",
+                "default_wallet_address",
+            }
+            if lowered in placeholder_values:
+                return False
+            if normalized.startswith("LUN_"):
+                return True
+            return bool(re.fullmatch(r"[0-9a-fA-F]{32}", normalized))
+
         # Check for duplicate reward transactions in this block
         reward_hashes = []
         for tx in reward_transactions:
@@ -2682,6 +2890,18 @@ class SmartMiner:
             return {
                 "valid": False,
                 "error": f"Reward recipient {recipient} does not match block miner {miner_address}",
+            }
+
+        # Validate miner/recipient address format (reject placeholders)
+        if not _is_valid_luna_address(miner_address):
+            return {
+                "valid": False,
+                "error": f"Invalid miner address format: {miner_address}",
+            }
+        if not _is_valid_luna_address(recipient):
+            return {
+                "valid": False,
+                "error": f"Invalid recipient address format: {recipient}",
             }
 
         # Validate 'from' field for mining reward
@@ -2866,9 +3086,9 @@ def validate_regular_transactions(transactions):
                     "error": "Invalid addresses in transfer transaction",
                 }
 
-            # Check for self-transfer
+            # Check for self-transfer (allow but flag if needed)
             if from_addr == to_addr:
-                return {"valid": False, "error": "Self-transfer not allowed"}
+                pass
 
         elif tx_type == "GTX_Genesis":
             # Validate genesis transactions
@@ -3332,7 +3552,16 @@ def get_transaction_status(tx_hash):
                 400,
             )
 
-        status = blockchain_daemon_instance.get_transaction_status(tx_hash)
+        tx = blockchain_daemon_instance.get_transaction(tx_hash)
+
+        if not tx:
+            status = {"status": "not_found"}
+        else:
+            is_mined = blockchain_daemon_instance.is_transaction_mined(tx)
+            status = {
+                "status": "mined" if is_mined else "pending",
+                "transaction": tx
+            }
 
         return (
             jsonify(
@@ -3359,27 +3588,43 @@ def transaction_explorer(transaction_hash):
             return redirect(url_for("index"))
 
         # Get transaction status from blockchain daemon
-        status_data = blockchain_daemon_instance.get_transaction_status(
+        tx_data = blockchain_daemon_instance.get_transaction(
             transaction_hash
         )
+
+        # If not found with custom format, try normal transaction lookup
+        if not tx_data:
+            tx_data = blockchain_daemon_instance.get_transaction(transaction_hash)
+            # 型チェック: dictでなければNone扱い
+            if not isinstance(tx_data, dict):
+                print(f"[DEBUG] get_transaction returned non-dict: {type(tx_data)} value={tx_data}")
+                tx_data = None
+        # 追加: もしtx_dataがlist型なら、最初の要素がdictならそれを使う
+        if isinstance(tx_data, list) and len(tx_data) > 0 and isinstance(tx_data[0], dict):
+            print(f"[DEBUG] get_transaction returned list, using first element: {tx_data[0]}")
+            tx_data = tx_data[0]
+
+        if not tx_data:
+            flash("Transaction not found", "error")
+            return redirect(url_for("index"))
 
         # If you have a method to get full transaction details, use it here
         # For now, we'll use the status data and simulate some transaction details
         transaction = {
             "hash": transaction_hash,
-            "status": status_data.get("status", "unknown"),
-            "confirmations": status_data.get("confirmations", 0),
-            "block_height": status_data.get("block_height"),
-            "timestamp": status_data.get("timestamp", int(time.time())),
-            "from_address": status_data.get("from"),
-            "to_address": status_data.get("to"),
-            "value": status_data.get("value"),
-            "gas_used": status_data.get("gas_used"),
-            "gas_price": status_data.get("gas_price"),
-            "input_data": status_data.get("input_data"),
-            "nonce": status_data.get("nonce"),
-            "is_error": status_data.get("is_error", False),
-            "error_message": status_data.get("error_message"),
+            "status": "mined" if blockchain_daemon_instance.is_transaction_mined(tx_data) else "pending",
+            "confirmations": 0, # You might need to calculate this
+            "block_height": None, # You might need to find this
+            "timestamp": tx_data.get("timestamp", int(time.time())),
+            "from_address": tx_data.get("from"),
+            "to_address": tx_data.get("to"),
+            "value": tx_data.get("amount"),
+            "gas_used": 0, # Placeholder
+            "gas_price": 0, # Placeholder
+            "input_data": tx_data.get("signature"), # Or other relevant data
+            "nonce": 0, # Placeholder
+            "is_error": False,
+            "error_message": None,
         }
 
         # Calculate transaction age
@@ -3423,11 +3668,22 @@ def transaction_explorer(transaction_hash):
             else:
                 transaction["status"] = "pending"
 
+        # Calculate confirmation percentage based on mined status
+        confirmation_percentage = 100 if blockchain_daemon_instance.is_transaction_mined(tx_data) else 0
+
+        # Calculate validation percentage based on mined status
+        validation_percentage = 100 if blockchain_daemon_instance.is_transaction_mined(tx_data) else 50
+        
+        # Calculate validation score (0-5)
+        validation_score = 5 if blockchain_daemon_instance.is_transaction_mined(tx_data) else 3
+
         return render_template(
             "transaction_viewer.html",
             transaction=transaction,
             transaction_age=transaction_age,
             confirmation_percentage=confirmation_percentage,
+            validation_percentage=validation_percentage,
+            validation_score=validation_score,
             title=f"Transaction {transaction_hash[:12]}...",
             current_user=get_current_user(),
         )
@@ -5650,6 +5906,11 @@ def landing():
     one_week_ago_users = datetime.utcnow() - timedelta(days=7)
     recent_users = User.query.filter(User.created_at >= one_week_ago_users).count()
 
+    # Daily active users (last 24h logins, fallback to signups)
+    daily_active_users = User.query.filter(User.last_login >= one_day_ago).count()
+    if daily_active_users == 0:
+        daily_active_users = User.query.filter(User.created_at >= one_day_ago).count()
+
     # Get recent transactions (last 24 hours) from blockchain + mempool for live accuracy
     recent_transactions = 0
     try:
@@ -5784,6 +6045,124 @@ def landing():
         banknote_growth_rate=banknote_growth_rate,
         month_ago_users=month_ago_users,
         month_ago_banknotes=month_ago_banknotes,
+        daily_active_users=daily_active_users,
+    )
+
+
+@app.route("/search", methods=["GET"])
+def search_all():
+    """Unified search across transactions, blocks, and users."""
+    query = (request.args.get("q") or "").strip()
+
+    results = {
+        "transactions": [],
+        "blocks": [],
+        "users": [],
+    }
+
+    if query:
+        # Users
+        try:
+            results["users"] = (
+                User.query.filter(User.username.ilike(f"%{query}%"))
+                .limit(20)
+                .all()
+            )
+        except Exception:
+            results["users"] = []
+
+        # Blocks
+        chain = getattr(blockchain_daemon_instance, "blockchain", []) or []
+        block_seen = set()
+        blocks = []
+        if query.isdigit():
+            idx = int(query)
+            if 0 <= idx < len(chain):
+                block = chain[idx]
+                block_hash = block.get("hash")
+                blocks.append(
+                    {
+                        "index": block.get("index", idx),
+                        "hash": block_hash,
+                        "tx_count": len(block.get("transactions", [])),
+                    }
+                )
+                if block_hash:
+                    block_seen.add(block_hash)
+
+        if len(query) >= 4:
+            for idx, block in enumerate(chain):
+                block_hash = str(block.get("hash", ""))
+                if query.lower() in block_hash.lower():
+                    if block_hash in block_seen:
+                        continue
+                    blocks.append(
+                        {
+                            "index": block.get("index", idx),
+                            "hash": block_hash,
+                            "tx_count": len(block.get("transactions", [])),
+                        }
+                    )
+                    block_seen.add(block_hash)
+                if len(blocks) >= 25:
+                    break
+
+        results["blocks"] = blocks
+
+        # Transactions
+        tx_seen = set()
+        transactions = []
+
+        def _add_tx(tx, status=None, block_index=None):
+            if not isinstance(tx, dict):
+                return
+            tx_hash = tx.get("hash")
+            if not tx_hash or tx_hash in tx_seen:
+                return
+            tx_seen.add(tx_hash)
+            transactions.append(
+                {
+                    "hash": tx_hash,
+                    "type": tx.get("type", "transfer"),
+                    "amount": tx.get("amount", tx.get("reward_amount", 0)),
+                    "block_height": block_index,
+                    "status": status or ("mined" if block_index is not None else "unknown"),
+                }
+            )
+
+        tx_data = blockchain_daemon_instance.get_transaction(query)
+        if isinstance(tx_data, list):
+            for item in tx_data:
+                _add_tx(item)
+        elif isinstance(tx_data, dict):
+            _add_tx(tx_data)
+
+        mempool_tx = blockchain_daemon_instance.get_mempool_transaction(query)
+        if isinstance(mempool_tx, dict):
+            _add_tx(mempool_tx, status="mempool")
+
+        if len(query) >= 6:
+            for idx, block in enumerate(chain):
+                for tx in block.get("transactions", []):
+                    if query.lower() in str(tx.get("hash", "")).lower():
+                        _add_tx(tx, status="mined", block_index=block.get("index", idx))
+                if len(transactions) >= 25:
+                    break
+
+            for tx in getattr(blockchain_daemon_instance, "mempool", []) or []:
+                if query.lower() in str(tx.get("hash", "")).lower():
+                    _add_tx(tx, status="mempool")
+                if len(transactions) >= 25:
+                    break
+
+        results["transactions"] = transactions
+
+    return render_template(
+        "search_results.html",
+        query=query,
+        results=results,
+        title="Search Results",
+        current_user=get_current_user(),
     )
 
 
@@ -5793,6 +6172,53 @@ def serve_portrait(filename):
     Serve portrait images from the portraits directory
     """
     return send_from_directory("portraits", filename)
+
+
+def _sanitize_portrait_filename(filename):
+    filename = unquote(filename)
+    filename = filename.replace("\\", "/")
+    if filename.startswith("portraits/"):
+        filename = filename[10:]
+    if ".." in filename or filename.startswith("/"):
+        return None
+    return filename
+
+
+@app.route("/portrait-thumbnail/<path:filename>")
+def serve_portrait_thumbnail(filename):
+    clean_name = _sanitize_portrait_filename(filename)
+    if not clean_name:
+        abort(404)
+
+    try:
+        width = int(request.args.get("w", 100))
+        height = int(request.args.get("h", 100))
+    except ValueError:
+        return jsonify({"error": "Invalid thumbnail size"}), 400
+
+    if width < 20 or height < 20 or width > 800 or height > 800:
+        return jsonify({"error": "Thumbnail size out of bounds"}), 400
+
+    portraits_root = os.path.join(os.path.dirname(__file__), "portraits")
+    if clean_name.lower().endswith(".svg"):
+        return send_from_directory("portraits", clean_name)
+    source_path = os.path.join(portraits_root, clean_name)
+    if not os.path.exists(source_path):
+        abort(404)
+
+    thumb_dir = os.path.join(portraits_root, ".thumbs", f"{width}x{height}")
+    thumb_path = os.path.join(thumb_dir, clean_name)
+
+    try:
+        if (not os.path.exists(thumb_path)) or (
+            os.path.getmtime(thumb_path) < os.path.getmtime(source_path)
+        ):
+            _generate_thumbnail(source_path, thumb_path, (width, height))
+    except Exception as e:
+        logger.warning(f"Portrait thumbnail generation failed for {clean_name}: {e}")
+        return send_from_directory("portraits", clean_name)
+
+    return send_file(thumb_path, mimetype="image/png", conditional=True)
 
 
 # Add this route
@@ -6413,65 +6839,107 @@ def logout():
 
 @app.route("/transaction-viewer/<tx_hash>")
 def transaction_viewer(tx_hash):
+    # ネットワークと同期してから検索
+    try:
+        blockchain_daemon_instance.sync_with_network()
+    except Exception as sync_err:
+        print(f"[SYNC WARNING] Could not sync with network: {sync_err}")
     """
     View transaction details from the blockchain
     """
     try:
-        # Check if this is a reward transaction (miner reward)
-        # In your blockchain, reward transactions aren't separate tx_hashes
-        # They're just the block's reward field
+        # Check if this is a custom reward transaction format: reward_<block_index>_<identifier>
+        is_reward_tx = False
+        block_data = None
+        tx_data = None
+        
+        if tx_hash.startswith("reward_"):
+            # Parse custom reward format: reward_<block_index>_<identifier>
+            parts = tx_hash.split("_")
+            if len(parts) >= 2:
+                try:
+                    block_index = int(parts[1])
+                    # Try to fetch block by index
+                    for block in blockchain_daemon_instance.blockchain:
+                        if block.get("index") == block_index:
+                            block_data = block
+                            break
+                    
+                    if block_data and "reward" in block_data:
+                        is_reward_tx = True
+                except (ValueError, IndexError):
+                    pass
 
-        # First try to get it as a normal transaction
-        tx_data = blockchain_daemon_instance.get_transaction(tx_hash)
-
-        # If not found, check if it's a block hash (mining reward)
+        # If not found with custom format, try normal transaction lookup
         if not tx_data:
-            # Try to get block by hash
+            tx_data = blockchain_daemon_instance.get_transaction(tx_hash)
+            if isinstance(tx_data, list):
+                tx_data = next((item for item in tx_data if isinstance(item, dict)), None)
+            elif not isinstance(tx_data, dict):
+                tx_data = None
+        # 追加: dict型以外はNone
+        if not isinstance(tx_data, dict):
+            tx_data = None
+
+        # If still not found, check if it's a block hash (mining reward)
+        if not tx_data and not block_data:
             block_data = blockchain_daemon_instance.get_block(tx_hash)
 
-            if block_data and "reward" in block_data:
-                # This is a mining reward transaction
-                is_reward_tx = True
-                reward_amount = block_data.get("reward", 0)
-                miner_address = block_data.get("miner", "Unknown")
+        # 追加: block_dataからget_transactionを呼ぶ場合も型チェック
+        if tx_data is not None:
+            if isinstance(tx_data, list):
+                tx_data = next((item for item in tx_data if isinstance(item, dict)), None)
+            elif not isinstance(tx_data, dict):
+                tx_data = None
+        # 追加: dict型以外はNone
+        if not isinstance(tx_data, dict):
+            tx_data = None
 
-                # Create synthetic transaction data for the reward
-                tx_data = {
-                    "hash": block_data.get("hash", tx_hash),
-                    "block_height": block_data.get("index"),
-                    "timestamp": block_data.get("timestamp"),
-                    "is_reward": True,
-                    "is_coinbase": True,
-                    "reward_amount": reward_amount,
-                    "miner": miner_address,
-                    "type": "mining_reward",
-                    "confirmations": 1,  # Assuming if we can see it, it's confirmed
-                    "inputs": [],
-                    "outputs": [
-                        {
-                            "address": miner_address,
-                            "value": reward_amount,
-                            "type": "mining_reward",
-                            "description": f'Mining reward for block #{block_data.get("index", "N/A")}',
-                        }
-                    ],
-                    "total_value": reward_amount,
-                    "fee": 0,
-                    "size": 0,
-                    "difficulty": block_data.get("difficulty"),
-                    "nonce": block_data.get("nonce"),
-                    "previous_hash": block_data.get("previous_hash"),
-                    "transactions_count": len(block_data.get("transactions", [])),
-                }
-            else:
-                flash("Transaction not found on the blockchain", "error")
-                return redirect(url_for("verify_serial"))
+        if block_data and "reward" in block_data:
+            is_reward_tx = True
+            reward_amount = block_data.get("reward", 0)
+            miner_address = block_data.get("miner", "Unknown")
+
+            # Create synthetic transaction data for the reward
+            tx_data = {
+                "hash": block_data.get("hash", tx_hash),
+                "block_height": block_data.get("index"),
+                "timestamp": block_data.get("timestamp"),
+                "is_reward": True,
+                "is_coinbase": True,
+                "reward_amount": reward_amount,
+                "miner": miner_address,
+                "type": "mining_reward",
+                "confirmations": 1,  # Assuming if we can see it, it's confirmed
+                "inputs": [],
+                "outputs": [
+                    {
+                        "address": miner_address,
+                        "value": reward_amount,
+                        "type": "mining_reward",
+                        "description": f'Mining reward for block #{block_data.get("index", "N/A")}',
+                    }
+                ],
+                "total_value": reward_amount,
+                "fee": 0,
+                "size": 0,
+                "difficulty": block_data.get("difficulty"),
+                "nonce": block_data.get("nonce"),
+                "previous_hash": block_data.get("previous_hash"),
+                "transactions_count": len(block_data.get("transactions", [])),
+            }
+        elif not tx_data:
+            flash("Transaction not found on the blockchain", "error")
+            return redirect(url_for("verify_serial"))
 
         # Check if this is a normal transaction from the transactions array
         # You might need a different API endpoint to get transaction by hash
         # from the blockchain daemon
 
         # Prepare transaction data for the template
+        if not isinstance(tx_data, dict):
+            flash("Transaction data is invalid (internal error)", "error")
+            return redirect(url_for("verify_serial"))
         transaction = {
             "hash": tx_hash,
             "block_height": tx_data.get("block_height") or tx_data.get("index"),
@@ -6493,6 +6961,8 @@ def transaction_viewer(tx_hash):
             "nonce": tx_data.get("nonce"),
             "previous_hash": tx_data.get("previous_hash"),
             "miner": tx_data.get("miner"),
+            "from_address": tx_data.get("from"),
+            "to_address": tx_data.get("to"),
         }
 
         # Handle different transaction types
@@ -6603,21 +7073,85 @@ def transaction_viewer(tx_hash):
             transaction["timestamp_readable"] = "Not yet confirmed"
             transaction["timestamp_relative"] = "Just now"
 
-        # Calculate validation metrics
+        # Calculate intelligent validation metrics
         validation_score = 0
         max_score = 5
-
-        if transaction["block_height"]:
-            validation_score += 1  # Confirmed in block
-        if transaction["confirmations"] >= 1:
-            validation_score += 1  # At least 1 confirmation
+        validation_layers = []
+        
+        # Check if transaction is in blockchain
+        is_in_blockchain = bool(transaction["block_height"])
+        
+        # Layer 1: Blockchain confirmation (2 points max)
+        if is_in_blockchain:
+            validation_score += 2
+            validation_layers.append({"name": "Blockchain Confirmed", "points": 2, "valid": True})
+        else:
+            # Check if in mempool
+            if mempool_status:
+                validation_score += 1
+                validation_layers.append({"name": "In Mempool", "points": 1, "valid": True})
+            else:
+                validation_layers.append({"name": "Not yet broadcast", "points": 0, "valid": False})
+        
+        # Layer 2: Signature validation (1 point)
+        has_valid_signature = False
         if transaction.get("signature"):
-            validation_score += 1  # Has signature
+            try:
+                has_valid_signature = verify_transaction_signature(transaction)
+                if has_valid_signature:
+                    validation_score += 1
+                    validation_layers.append({"name": "Valid Signature", "points": 1, "valid": True})
+                else:
+                    validation_layers.append({"name": "Invalid Signature", "points": 0, "valid": False})
+            except:
+                validation_layers.append({"name": "Signature Unverifiable", "points": 0, "valid": False})
+        else:
+            validation_layers.append({"name": "No Signature", "points": 0, "valid": False})
+        
+        # Layer 3: Transaction structure validation (1 point)
+        is_valid_structure = True
+        if is_reward_tx:
+            # Mining rewards must have miner address and amount
+            if transaction.get("miner") and transaction.get("reward_amount"):
+                validation_score += 1
+                validation_layers.append({"name": "Valid Structure (Reward)", "points": 1, "valid": True})
+            else:
+                is_valid_structure = False
+                validation_layers.append({"name": "Invalid Structure", "points": 0, "valid": False})
+        else:
+            # Normal transactions must have from, to, and amount
+            if transaction.get("from") and transaction.get("to") and transaction.get("amount"):
+                validation_score += 1
+                validation_layers.append({"name": "Valid Structure", "points": 1, "valid": True})
+            else:
+                is_valid_structure = False
+                validation_layers.append({"name": "Invalid Structure", "points": 0, "valid": False})
+        
+        # Layer 4: Database/Serial validation (if applicable, 1 point)
+        has_db_validation = False
         if banknote_info:
-            validation_score += 1  # Banknote exists in database
-        if transaction.get("type") == "mining_reward":
-            # Mining rewards are always valid
+            validation_score += 1
+            has_db_validation = True
+            validation_layers.append({"name": "Serial in Database", "points": 1, "valid": True})
+        elif banknote_serial:
+            validation_layers.append({"name": "Serial Not in Database", "points": 0, "valid": False})
+        
+        # Mining rewards are always valid if in blockchain
+        if is_reward_tx and is_in_blockchain:
             validation_score = max_score
+            validation_layers = [
+                {"name": "Block Mined", "points": 2, "valid": True},
+                {"name": "Valid Reward Transaction", "points": 1, "valid": True},
+                {"name": "Correct Reward Structure", "points": 1, "valid": True},
+                {"name": "Confirmed in Blockchain", "points": 1, "valid": True}
+            ]
+        elif is_reward_tx:
+            # Pending reward transactions
+            validation_layers = [
+                {"name": "Reward Transaction", "points": 1, "valid": True},
+                {"name": "Mining in Progress", "points": 1, "valid": True},
+            ]
+            validation_score = 2
 
         validation_percentage = (validation_score / max_score) * 100
 
@@ -6639,10 +7173,11 @@ def transaction_viewer(tx_hash):
                     transaction.get("type", "transfer")
                 ),
             },
+            "validation_layers": validation_layers,
         }
 
-        # Add mempool status
-        if mempool_status:
+        # Only add mempool status if NOT in blockchain
+        if mempool_status and not transaction["block_height"]:
             validation_results["mempool"] = {"found": True, "data": mempool_status}
 
         # Add signature validation
@@ -6687,6 +7222,9 @@ def transaction_viewer(tx_hash):
 
         # Add mining reward specific info
         if is_reward_tx:
+            # Calculate chain depth (confirmations from tip)
+            chain_depth = len(blockchain_daemon_instance.blockchain) - (transaction["block_height"] or 0)
+            
             validation_results["mining_info"] = {
                 "reward_amount": transaction.get("reward_amount")
                 or transaction.get("total_value", 0),
@@ -6695,6 +7233,9 @@ def transaction_viewer(tx_hash):
                 "nonce": transaction.get("nonce"),
                 "block_hash": transaction.get("hash"),
                 "previous_hash": transaction.get("previous_hash"),
+                "chain_depth": chain_depth,
+                "blocks_since_reward": chain_depth,
+                "confirmations": chain_depth,
             }
 
         # Determine status icon and color
@@ -6766,8 +7307,60 @@ def transaction_viewer(tx_hash):
             context["miner_address"] = transaction.get("miner", "Unknown")
             context["difficulty"] = transaction.get("difficulty")
             context["nonce"] = transaction.get("nonce")
+            if block_data:
+                block_transactions = []
+                try:
+                    from models import Banknote, SerialNumber
 
-        return render_template("transaction_viewer.html", **context)
+                    for tx in block_data.get("transactions", []):
+                        if not isinstance(tx, dict):
+                            block_transactions.append(tx)
+                            continue
+
+                        tx_copy = tx.copy()
+
+                        if tx_copy.get("type") == "GTX_Genesis":
+                            serial_val = tx_copy.get("serial_number") or tx_copy.get("front_serial")
+                            banknote = None
+
+                            if serial_val:
+                                banknote = Banknote.query.filter_by(serial_number=serial_val).first()
+                                if not banknote:
+                                    serial_record = SerialNumber.query.filter_by(serial=serial_val).first()
+                                    if serial_record and serial_record.banknote_id:
+                                        banknote = Banknote.query.get(serial_record.banknote_id)
+
+                            if banknote:
+                                if banknote.png_path:
+                                    png_path = banknote.png_path.replace("\\", "/")
+                                    if png_path.startswith("./"):
+                                        png_path = png_path[2:]
+                                    if png_path.startswith("images/"):
+                                        png_path = png_path[len("images/"):]
+                                    tx_copy["png_path"] = png_path
+                                if not tx_copy.get("issued_to") and banknote.user:
+                                    tx_copy["issued_to"] = banknote.user.username
+
+                            if serial_val and not tx_copy.get("serial_number"):
+                                tx_copy["serial_number"] = serial_val
+
+                        block_transactions.append(tx_copy)
+                except Exception as e:
+                    print(f"[BLOCK TX WARNING] Could not enrich block transactions: {e}")
+                    block_transactions = block_data.get("transactions", [])
+
+                context["block_transactions"] = block_transactions
+
+        # Choose template based on transaction type
+        template_name = "reward_viewer.html" if is_reward_tx else "transaction_viewer.html"
+        
+        # Check if reward template exists, fall back to regular if not
+        import os
+        template_path = os.path.join(app.template_folder, template_name)
+        if not os.path.exists(template_path):
+            template_name = "transaction_viewer.html"
+        
+        return render_template(template_name, **context)
 
     except Exception as e:
         print(f"Error viewing transaction: {str(e)}")
@@ -6857,6 +7450,300 @@ def serve_banknote_image(filename):
     if ".." in filename or filename.startswith("/"):
         abort(404)
     return send_from_directory(IMAGES_ROOT, filename)
+
+
+def _sanitize_banknote_filename(filename):
+    filename = unquote(filename)
+    filename = filename.replace("\\", "/")
+    if filename.startswith("images/"):
+        filename = filename[7:]
+    if ".." in filename or filename.startswith("/"):
+        return None
+    return filename
+
+
+def _generate_thumbnail(source_path, thumb_path, size):
+    os.makedirs(os.path.dirname(thumb_path), exist_ok=True)
+    with Image.open(source_path) as img:
+        img = img.convert("RGBA")
+        thumb = ImageOps.fit(img, size, Image.LANCZOS)
+        thumb.save(thumb_path, format="PNG", optimize=True)
+
+
+@app.route("/banknote-thumbnail/<path:filename>")
+def serve_banknote_thumbnail(filename):
+    clean_name = _sanitize_banknote_filename(filename)
+    if not clean_name:
+        abort(404)
+
+    try:
+        width = int(request.args.get("w", 160))
+        height = int(request.args.get("h", 60))
+    except ValueError:
+        return jsonify({"error": "Invalid thumbnail size"}), 400
+
+    if width < 20 or height < 20 or width > 800 or height > 800:
+        return jsonify({"error": "Thumbnail size out of bounds"}), 400
+
+    source_path = os.path.join(IMAGES_ROOT, clean_name)
+    if not os.path.exists(source_path):
+        abort(404)
+
+    thumb_dir = os.path.join(IMAGES_ROOT, ".thumbs", f"{width}x{height}")
+    thumb_path = os.path.join(thumb_dir, clean_name)
+
+    try:
+        if (not os.path.exists(thumb_path)) or (
+            os.path.getmtime(thumb_path) < os.path.getmtime(source_path)
+        ):
+            _generate_thumbnail(source_path, thumb_path, (width, height))
+    except Exception as e:
+        logger.warning(f"Thumbnail generation failed for {clean_name}: {e}")
+        return send_from_directory(IMAGES_ROOT, clean_name)
+
+    return send_file(thumb_path, mimetype="image/png", conditional=True)
+
+
+@app.route("/banknote/<serial_id>")
+@app.route("/banknote-viewer/<serial_id>")
+def banknote_viewer(serial_id):
+    """Render a full-width banknote view with details."""
+    if not serial_id:
+        flash("Banknote serial is required", "error")
+        return redirect(url_for("verify_serial"))
+
+    banknote = Banknote.query.filter_by(serial_number=serial_id).first()
+    if not banknote:
+        serial_record = SerialNumber.query.filter_by(serial=serial_id).first()
+        if serial_record and serial_record.banknote_id:
+            banknote = Banknote.query.get(serial_record.banknote_id)
+
+    if not banknote:
+        flash("Banknote not found", "error")
+        return redirect(url_for("verify_serial"))
+
+    def normalize_png_path(png_path: str) -> str:
+        if not png_path:
+            return ""
+        path = str(png_path).replace("\\", "/")
+        if os.path.isabs(path):
+            try:
+                rel = os.path.relpath(path, IMAGES_ROOT)
+                rel = rel.replace("\\", "/")
+                if not rel.startswith(".."):
+                    path = rel
+            except Exception:
+                pass
+        if path.startswith("./"):
+            path = path[2:]
+        if path.startswith("images/"):
+            path = path[len("images/"):]
+        return path
+
+    image_path = normalize_png_path(banknote.png_path) if banknote.png_path else ""
+    svg_path = ""
+    if not image_path and banknote.svg_path:
+        svg_path = normalize_png_path(banknote.svg_path)
+
+    tx_data = banknote.get_transaction_data() if hasattr(banknote, "get_transaction_data") else {}
+
+    return render_template(
+        "banknote_viewer.html",
+        banknote=banknote,
+        image_path=image_path,
+        svg_path=svg_path,
+        transaction_data=tx_data,
+        title=f"Banknote {banknote.serial_number}",
+        current_user=get_current_user(),
+    )
+
+
+@app.route("/banknote-matching-thumbnail/<serial_id>")
+def get_matching_banknote_thumbnail(serial_id):
+    """Return the matching front/back thumbnail for a given serial."""
+    if not serial_id:
+        return jsonify({"error": "Missing serial"}), 400
+
+    def normalize_png_path(png_path: str) -> str:
+        if not png_path:
+            return ""
+        path = str(png_path).replace("\\", "/")
+        if os.path.isabs(path):
+            try:
+                rel = os.path.relpath(path, IMAGES_ROOT)
+                rel = rel.replace("\\", "/")
+                if not rel.startswith(".."): 
+                    path = rel
+            except Exception:
+                pass
+        if path.startswith("./"):
+            path = path[2:]
+        if path.startswith("images/"):
+            path = path[len("images/"):]
+        return path
+
+    def resolve_banknote_by_serial(serial_value: str):
+        if not serial_value:
+            return None
+        from models import Banknote, SerialNumber
+
+        banknote = Banknote.query.filter_by(serial_number=serial_value).first()
+        if not banknote:
+            serial_record = SerialNumber.query.filter_by(serial=serial_value).first()
+            if serial_record and serial_record.banknote_id:
+                banknote = Banknote.query.get(serial_record.banknote_id)
+        return banknote
+
+    banknote = resolve_banknote_by_serial(serial_id)
+    if not banknote:
+        return jsonify({"error": "Banknote not found"}), 404
+
+    tx_data = (
+        banknote.get_transaction_data()
+        if hasattr(banknote, "get_transaction_data")
+        else {}
+    )
+
+    requested_side = request.args.get("side", "match").lower()
+    candidates = []
+
+    if requested_side == "back":
+        candidates.append(tx_data.get("back_serial"))
+    elif requested_side == "front":
+        candidates.append(tx_data.get("front_serial"))
+    else:
+        if getattr(banknote, "side", "").lower() == "front":
+            candidates.append(tx_data.get("back_serial"))
+        elif getattr(banknote, "side", "").lower() == "back":
+            candidates.append(tx_data.get("front_serial"))
+
+    candidates.extend(
+        [
+            tx_data.get("front_serial"),
+            tx_data.get("back_serial"),
+        ]
+    )
+
+    if not any(candidates) and isinstance(serial_id, str):
+        serial_upper = serial_id.upper()
+        if "FRONT" in serial_upper:
+            candidates.append(serial_id.replace("FRONT", "BACK"))
+        elif "BACK" in serial_upper:
+            candidates.append(serial_id.replace("BACK", "FRONT"))
+
+    seen = set()
+    serials = [c for c in candidates if c and not (c in seen or seen.add(c))]
+
+    match_note = None
+    for serial in serials:
+        match_note = resolve_banknote_by_serial(str(serial))
+        if match_note:
+            break
+
+    if not match_note or not match_note.png_path:
+        return jsonify({"error": "Matching banknote image not found"}), 404
+
+    clean_path = normalize_png_path(match_note.png_path)
+    if not clean_path:
+        return jsonify({"error": "Invalid banknote image path"}), 404
+
+    return serve_banknote_thumbnail(clean_path)
+
+
+@app.route("/transaction-thumbnail/<tx_hash>")
+def get_transaction_banknote_thumbnail(tx_hash):
+    """Return banknote thumbnail for a given transaction hash."""
+    if not tx_hash or tx_hash == "undefined":
+        return jsonify({"error": "Missing transaction hash"}), 400
+
+    def normalize_png_path(png_path: str) -> str:
+        if not png_path:
+            return ""
+        path = str(png_path).replace("\\", "/")
+        if os.path.isabs(path):
+            try:
+                rel = os.path.relpath(path, IMAGES_ROOT)
+                rel = rel.replace("\\", "/")
+                if not rel.startswith(".."):
+                    path = rel
+            except Exception:
+                pass
+        if path.startswith("./"):
+            path = path[2:]
+        if path.startswith("images/"):
+            path = path[len("images/"):]
+        return path
+
+    def resolve_banknote_by_serial(serial_value: str):
+        if not serial_value:
+            return None
+        from models import Banknote, SerialNumber
+
+        banknote = Banknote.query.filter_by(serial_number=serial_value).first()
+        if not banknote:
+            serial_record = SerialNumber.query.filter_by(serial=serial_value).first()
+            if serial_record and serial_record.banknote_id:
+                banknote = Banknote.query.get(serial_record.banknote_id)
+        return banknote
+
+    tx_data = blockchain_daemon_instance.get_transaction(tx_hash)
+    if isinstance(tx_data, list):
+        tx_data = next((item for item in tx_data if isinstance(item, dict)), None)
+    elif not isinstance(tx_data, dict):
+        tx_data = None
+
+    if not tx_data:
+        mempool_tx = blockchain_daemon_instance.get_mempool_transaction(tx_hash)
+        if isinstance(mempool_tx, dict):
+            tx_data = mempool_tx
+
+    if not tx_data:
+        for block in blockchain_daemon_instance.blockchain:
+            for tx in block.get("transactions", []):
+                if isinstance(tx, dict) and tx.get("hash") == tx_hash:
+                    tx_data = tx
+                    break
+            if tx_data:
+                break
+
+    if not tx_data:
+        return jsonify({"error": "Transaction not found"}), 404
+
+    side = request.args.get("side", "front").lower()
+    candidates = []
+    if side == "back":
+        candidates.append(tx_data.get("back_serial"))
+    else:
+        candidates.append(tx_data.get("front_serial"))
+
+    candidates.extend(
+        [
+            tx_data.get("front_serial"),
+            tx_data.get("back_serial"),
+            tx_data.get("serial_number"),
+            tx_data.get("serial"),
+            tx_data.get("memo"),
+            tx_data.get("bill_type"),
+        ]
+    )
+
+    seen = set()
+    serials = [c for c in candidates if c and not (c in seen or seen.add(c))]
+
+    banknote = None
+    for serial in serials:
+        banknote = resolve_banknote_by_serial(str(serial))
+        if banknote:
+            break
+
+    if not banknote or not banknote.png_path:
+        return jsonify({"error": "Banknote image not found for transaction"}), 404
+
+    clean_path = normalize_png_path(banknote.png_path)
+    if not clean_path:
+        return jsonify({"error": "Invalid banknote image path"}), 404
+
+    return serve_banknote_thumbnail(clean_path)
 
 
 @app.route("/toggle-banknote/<int:banknote_id>")

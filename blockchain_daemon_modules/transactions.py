@@ -198,6 +198,20 @@ def add_transaction(transaction: Dict, mempool: List[Dict], validate_transaction
         
         logger.info(f"✅ [ADD_TX] Step 1: Structure validated")
         
+        # Check for self-transfer (before adding to mempool)
+        if tx_type == 'transfer':
+            from_addr = transaction.get('from')
+            to_addr = transaction.get('to')
+            if from_addr and to_addr and from_addr == to_addr:
+                # Allow self-transfer, but mark it for transparency
+                memo = str(transaction.get('memo', '') or '')
+                if 'self-transfer' not in memo.lower() and 'self transfer' not in memo.lower():
+                    transaction['memo'] = (memo + ' | ' if memo else '') + 'self-transfer'
+                transaction['self_transfer'] = True
+                logger.warning(f"⚠️ [ADD_TX] Self-transfer allowed (from={from_addr}, to={to_addr})")
+            else:
+                logger.info(f"✅ [ADD_TX] Self-transfer check passed")
+        
         # Calculate hash if not present
         logger.info(f"🔍 [ADD_TX] Step 2: Checking/generating hash...")
         if not transaction.get("hash"):
@@ -367,6 +381,24 @@ def mark_reward_transactions_mined(reward_transactions: List[Dict], block_index:
         
         print(f"📝 Marking {len(reward_transactions)} reward transaction(s) as mined")
         
+        def _mark_mined(mgr, tx_hash_value, height_value) -> bool:
+            if not mgr:
+                return False
+            if hasattr(mgr, "mark_transaction_mined"):
+                mgr.mark_transaction_mined(tx_hash_value, height_value)
+                return True
+            fallback_methods = [
+                ("remove_transaction", (tx_hash_value,)),
+                ("delete_transaction", (tx_hash_value,)),
+                ("remove_from_mempool", (tx_hash_value,)),
+                ("remove", (tx_hash_value,)),
+            ]
+            for method_name, args in fallback_methods:
+                if hasattr(mgr, method_name):
+                    getattr(mgr, method_name)(*args)
+                    return True
+            return False
+
         for reward_tx in reward_transactions:
             # Extract key info from reward transaction
             tx_hash = reward_tx.get('hash')
@@ -380,8 +412,10 @@ def mark_reward_transactions_mined(reward_transactions: List[Dict], block_index:
                 print(f"    Block: {block_height}")
                 print(f"    Amount: {amount}")
                 print(f"    Marking in mempool manager...")
-                mempool_mgr.mark_transaction_mined(tx_hash, block_height)
-                print(f"    ✓ Marked as mined")
+                if _mark_mined(mempool_mgr, tx_hash, block_height):
+                    print(f"    ✓ Marked as mined")
+                else:
+                    print(f"    ⚠️ Mempool manager does not support mined marking")
                 
         return True
         

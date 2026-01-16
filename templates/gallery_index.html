@@ -127,7 +127,7 @@
             <div class="member-header">
                 <div class="member-avatar-container">
                     <div class="member-avatar">
-                        {% set avatar_url = get_user_avatar_url(user.username) if get_user_avatar_url else '' %}
+                        {% set avatar_url = get_user_avatar_thumbnail_url(user.username, 70) if get_user_avatar_thumbnail_url else '' %}
                         {% if avatar_url %}
                             <img src="{{ avatar_url }}" alt="{{ user.username }}" class="avatar-image" loading="lazy">
                         {% else %}

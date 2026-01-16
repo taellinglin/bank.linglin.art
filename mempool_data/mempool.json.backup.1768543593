@@ -1,0 +1,30 @@
+[
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-SDIeUzk7amAHFg-79E",
+    "denomination": 1.0,
+    "issued_to": "菅野よう子",
+    "timestamp": 1768543330.508668,
+    "signature": "tH6fOaqjsSpYu3hF9NqhooSQj67Vc7hg/40iNMURNnTDQOA8EO0X7XQZVpNsNY1M/n/SHd4BS+W8hjFpXlFEizN2gFv5fD7AkeWukdBpEh3EybxOmZdufKyl0hYrnCcByfy8I5jF7KFtCBrgppNSUwsYc0mgIlxxen2+PZ16rjNxHy6lRJ2fS3gwZaKPP0q+raYglg0hCiTGLIQIYhNVIEdaLYqx2pmngewvc/GbSvplygjWrJUmjdcicILJsSy2upiskvMeZgoFuo1RAhmy/q0ntp+VMRAokzxd+KJgptz+L/JXBkmePslOy31oLdake3q2c7zuFJL+HJEQ8gxQaA==",
+    "public_key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0Ai9dwkoNWdo8cGbBjJA\n/C7H5wPc5vXcuVGWnD5TlgQLjkV5ShFctc8SujLuAomxnztl8yUuFx9U681/EmxX\nUbfN2g6fKGHwJy+CqJMSmOxZLq2kwWbOD5hUY9QMcVl0CYim4+TPpp9z261B+qza\nWt/3PJwVrPTY0ZzGKyg6uUDdlSwR4c5bcNnQr/vIpiRK5FZRlqXTOOFsvP1S6eBq\n+JD+H2p3FMl7HiJ8jBFHP6zRKD7UfDd873CTuXvb/j1YO1psOA/1mTq5J5A9uAVz\nZ0QK0NkHel4Wms76badukEp9ofcgmT3lvWLve1mFdK8VI3MzsnaoGl3Nn4tPGtax\nPwIDAQAB\n-----END PUBLIC KEY-----\n",
+    "metadata_hash": "19b0498aea6ef4f188b4c40fab49403bc390cf4c037708b7db24ea31ea195328",
+    "front_serial": "GTX1_1768543330330_fb884dbd",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "1790958e142bd42565a681fddc255e7e44f42d1692a7f4fb1b860e326e176827"
+  },
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-mS6YKWilJWc5ig-8Q0",
+    "denomination": 10.0,
+    "issued_to": "菅野よう子",
+    "timestamp": 1768543473.9241621,
+    "signature": "ozERvSBPpJ2Nspjqm5PCWWjFZ+ppD5k0WV8EJKYiozYzfowkBhx5eTdnxduNTPCJtyfHvfjh5VTitrwUCN1grHWL/im6/KkPF/HMxT7lc3J4vwzjvfEDbG8jdP2gsvkOLvoD2/XoPFMhN3a/YXd8p9Z5rOaf9Oh5XJs41rMMFPKVKzwlRVNqsl2AqAiNprZeoHQBm2gyDAl21by/iBrIfIPi59lABhjcx75LZJBvLMbwyur9SrAxluoBS16THffwMgbM/KMis5g5zn225Gwxl1W0MaFFlSRrHeNrzGzIXuSKRupGRkoBu3fTQj7jo2EJlMSwIlr2HdiE6oZd56OISg==",
+    "public_key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA0r+QFjCUt4k+2uJYePFW\ncVxjL1S0u3m8DpzZy8vbXuSXFJH1VFoAG8611gojurSqF1F4hEDNjHUgKG5UukDk\nyi3+pnYwfKWd6A9aj+4qumd4HuRiMKTR67cHkdjA5xOeyxoAttS8Ts4wYZOMdk/V\nnZaP+7O46syxoyAUqeWjStxa/iSiSGNU0T8KomD8pXo74/9OYyYTIYKMDYbdB0hy\nJeTENXhBGL8O12l+0q1k6+FRpl3lJIdAILT3kcW0E7vu9+rptHKc12XLAmcBZSxb\nH1cbYYW3kFBjPq4lFVYFNmb5yD6MHvgpN3UWN/hqZEB5Hkbwa9os/FDh6DI8UMBC\nswIDAQAB\n-----END PUBLIC KEY-----\n",
+    "metadata_hash": "b40c003370be118a79fd6abf94983841735da19facf84c8d78673c50b8d23e10",
+    "front_serial": "GTX10_1768543473790_011929cc",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "e8663bb7c8cea04dbeeae469fee329a93395a59f11415936ccf13b2d26c45343"
+  }
+]

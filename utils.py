@@ -828,6 +828,19 @@ def get_user_avatar_url(username):
         return url_for('serve_portrait', filename=filename)
     
     return None
+
+
+def get_user_avatar_thumbnail_url(username, size=100):
+    """
+    Get the URL for a user's avatar thumbnail
+    """
+    avatar_path = get_user_avatar(username)
+
+    if avatar_path:
+        filename = os.path.basename(avatar_path)
+        return url_for("serve_portrait_thumbnail", filename=filename, w=size, h=size)
+
+    return None
 def get_formatted_initials(username):
     """
     Convert username to formatted initials:

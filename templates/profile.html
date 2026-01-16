@@ -5,8 +5,8 @@
     <div class="profile-header-card">
         <div class="avatar-section">
             <div class="avatar-wrapper">
-                {% if get_user_avatar_url(user.username) %}
-                    <img src="{{ get_user_avatar_url(user.username) }}" alt="{{ user.username }}" class="avatar-image">
+                {% if get_user_avatar_thumbnail_url(user.username, 100) %}
+                    <img src="{{ get_user_avatar_thumbnail_url(user.username, 100) }}" alt="{{ user.username }}" class="avatar-image">
                 {% else %}
                     <div class="avatar-initials">
                         {{ get_formatted_initials(user.username) }}
@@ -287,7 +287,7 @@
                                 <div class="banknote-side front">FRONT</div>
                                 <div class="banknote-image-container">
                                     {% if banknote.png_path %}
-                                    <img src="{{ url_for('serve_banknote_image', filename=clean_path) }}"
+                                    <img src="{{ url_for('serve_banknote_thumbnail', filename=clean_path, w=400, h=150) }}"
                                         alt="{{ banknote.denomination }} Front"
                                         class="banknote-image"
                                         onclick="openBanknoteModal('{{ url_for('serve_banknote_image', filename=clean_path) }}',
@@ -351,7 +351,7 @@
                                 <div class="banknote-side back">BACK</div>
                                 <div class="banknote-image-container">
                                     {% if banknote.png_path %}
-                                    <img src="{{ url_for('serve_banknote_image', filename=clean_path) }}"
+                                    <img src="{{ url_for('serve_banknote_thumbnail', filename=clean_path, w=400, h=150) }}"
                                         alt="{{ banknote.denomination }} Back"
                                         class="banknote-image"
                                         onclick="openBanknoteModal('{{ url_for('serve_banknote_image', filename=clean_path) }}',

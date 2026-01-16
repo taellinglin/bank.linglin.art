@@ -79,24 +79,43 @@
             </div>
         </div>
         <div class="search-container">
-            <div class="search-input-group">
+            <form class="search-input-group" method="get" action="{{ url_for('blockchain_viewer') }}">
                 <div class="search-icon">🔍</div>
                 <input type="text" 
                        class="search-input" 
                        id="blockchainSearch" 
-                       placeholder="Search blocks, transactions, miners, banknote serials..."
-                       onkeyup="filterTable()">
-            </div>
+                       name="q"
+                       value="{{ search_query|default('') }}"
+                       placeholder="Search blocks, transactions, miners, banknote serials...">
+                <input type="hidden" id="filterTypeHidden" name="filter" value="{{ filter_type|default('all') }}">
+                <input type="hidden" name="genesis" value="{{ 1 if filter_genesis else 0 }}">
+                <input type="hidden" name="transfers" value="{{ 1 if filter_transfers else 0 }}">
+                <input type="hidden" name="rewards" value="{{ 1 if filter_rewards else 0 }}">
+            </form>
             <div class="search-filters">
-                <select class="filter-select" id="filterType" onchange="filterTable()">
-                    <option value="all">All Types</option>
-                    <option value="block">Block Hash/Index</option>
-                    <option value="miner">Miner Address</option>
-                    <option value="transaction">Transaction Hash</option>
-                    <option value="genesis">Banknote Serial</option>
-                    <option value="user">User Address</option>
-                    <option value="amount">Amount Value</option>
+                <select class="filter-select" id="filterType" name="filter" onchange="submitSearchFilters()">
+                    <option value="all" {% if filter_type == 'all' %}selected{% endif %}>All Types</option>
+                    <option value="block" {% if filter_type == 'block' %}selected{% endif %}>Block Hash/Index</option>
+                    <option value="miner" {% if filter_type == 'miner' %}selected{% endif %}>Miner Address</option>
+                    <option value="transaction" {% if filter_type == 'transaction' %}selected{% endif %}>Transaction Hash</option>
+                    <option value="genesis" {% if filter_type == 'genesis' %}selected{% endif %}>Banknote Serial</option>
+                    <option value="user" {% if filter_type == 'user' %}selected{% endif %}>User Address</option>
+                    <option value="amount" {% if filter_type == 'amount' %}selected{% endif %}>Amount Value</option>
                 </select>
+                <div class="type-filters">
+                    <label class="type-filter">
+                        <input type="checkbox" id="filterGenesis" {% if filter_genesis %}checked{% endif %} onchange="applyTypeFilters()">
+                        <span>GTX_Genesis</span>
+                    </label>
+                    <label class="type-filter">
+                        <input type="checkbox" id="filterTransfers" {% if filter_transfers %}checked{% endif %} onchange="applyTypeFilters()">
+                        <span>Transfers</span>
+                    </label>
+                    <label class="type-filter">
+                        <input type="checkbox" id="filterRewards" {% if filter_rewards %}checked{% endif %} onchange="applyTypeFilters()">
+                        <span>Rewards</span>
+                    </label>
+                </div>
                 <button class="filter-btn" onclick="resetFilters()">
                     <span class="filter-btn-icon">⟳</span>
                     <span class="filter-btn-text">Reset</span>
@@ -243,8 +262,13 @@
                         <tr>
                             <td colspan="7" class="empty-state">
                                 <div class="empty-content">
-                                    <span class="empty-icon">⛓️</span>
-                                    <span>No blocks in the blockchain</span>
+                                    {% if search_query or (not filter_genesis) or (not filter_transfers) or filter_rewards %}
+                                        <span class="empty-icon">🔍</span>
+                                        <span>No matching blocks found</span>
+                                    {% else %}
+                                        <span class="empty-icon">⛓️</span>
+                                        <span>No blocks in the blockchain</span>
+                                    {% endif %}
                                 </div>
                             </td>
                         </tr>
@@ -256,7 +280,7 @@
             <!-- Pagination -->
             <div class="compact-pagination">
                 {% if current_page > 1 %}
-                    <a href="{{ url_for('blockchain_viewer', page=current_page-1) }}" class="page-nav prev">← Prev</a>
+                    <a href="{{ url_for('blockchain_viewer', page=current_page-1) }}{{ filter_query }}" class="page-nav prev">← Prev</a>
                 {% else %}
                     <span class="page-nav prev disabled">← Prev</span>
                 {% endif %}
@@ -269,18 +293,18 @@
                         {% if p == current_page %}
                             <span class="page-number active">{{ p }}</span>
                         {% else %}
-                            <a href="{{ url_for('blockchain_viewer', page=p) }}" class="page-number">{{ p }}</a>
+                            <a href="{{ url_for('blockchain_viewer', page=p) }}{{ filter_query }}" class="page-number">{{ p }}</a>
                         {% endif %}
                     {% endfor %}
                     
                     {% if end_page < total_pages %}
                         <span class="page-ellipsis">...</span>
-                        <a href="{{ url_for('blockchain_viewer', page=total_pages) }}" class="page-number">{{ total_pages }}</a>
+                        <a href="{{ url_for('blockchain_viewer', page=total_pages) }}{{ filter_query }}" class="page-number">{{ total_pages }}</a>
                     {% endif %}
                 </div>
                 
                 {% if current_page < total_pages %}
-                    <a href="{{ url_for('blockchain_viewer', page=current_page+1) }}" class="page-nav next">Next →</a>
+                    <a href="{{ url_for('blockchain_viewer', page=current_page+1) }}{{ filter_query }}" class="page-nav next">Next →</a>
                 {% else %}
                     <span class="page-nav next disabled">Next →</span>
                 {% endif %}
@@ -297,10 +321,10 @@
                     <!-- Timeframe Buttons -->
                     <div class="timeframe-selector">
                         {% set timeframes = {
-                            '1d': 'Last 24 Hours',
-                            '7d': 'Last 7 Days', 
-                            '30d': 'Last 30 Days',
-                            'all': 'All Time'
+                            '1h': 'Last Hour',
+                            '1d': 'Last Day',
+                            '7d': 'Last Week',
+                            '30d': 'Last Month'
                         } %}
                         {% for tf_key, tf_label in timeframes.items() %}
                             <button class="timeframe-btn {% if selected_timeframe == tf_key %}active{% endif %}" 
@@ -310,26 +334,16 @@
                         {% endfor %}
                     </div>
                     
-                    <!-- Block Range Selector -->
+                    <!-- Timeline Window Slider -->
                     <div class="block-range-selector">
                         <div class="range-header">
-                            <label for="startBlock">Block Range:</label>
+                            <label for="blockSlider">Timeline Window:</label>
                             <span class="range-info" id="rangeInfo"></span>
                         </div>
                         <div class="range-inputs">
-                            <div class="range-input-group">
-                                <label for="startBlock">From:</label>
-                                <input type="number" id="startBlock" min="0" placeholder="Start block" value="0">
+                            <div class="range-slider-container">
+                                <input type="range" id="blockSlider" min="0" max="100" value="0" class="range-slider" oninput="updateTimelineWindowFromSlider()">
                             </div>
-                            <div class="range-input-group">
-                                <label for="endBlock">To:</label>
-                                <input type="number" id="endBlock" placeholder="End block">
-                            </div>
-                            <button class="range-apply-btn" onclick="applyBlockRange()">Apply Range</button>
-                            <button class="range-reset-btn" onclick="resetBlockRange()">Reset</button>
-                        </div>
-                        <div class="range-slider-container">
-                            <input type="range" id="blockSlider" min="0" max="100" value="0" class="range-slider" oninput="updateBlockRangeFromSlider()">
                         </div>
                     </div>
                 </div>
@@ -434,8 +448,8 @@
     <!-- Refresh Note -->
     <div class="refresh-note">
         <span class="note-icon">↻</span>
-        <span>Auto-refresh in <span id="countdown">30</span>s</span>
-        <button onclick="refreshNow()" class="refresh-btn">Refresh Now</button>
+        <span>Auto-updates every 30s · Last update: <span id="lastUpdated">just now</span></span>
+        <button onclick="refreshNow()" class="refresh-btn">Update Now</button>
     </div>
 </div>
 
@@ -1101,6 +1115,7 @@
     color: white;
 }
 
+
 /* Timeline Controls */
 .timeline-controls {
     display: flex;
@@ -1711,6 +1726,29 @@
         width: 100%;
         justify-content: center;
     }
+
+    .type-filters {
+        display: flex;
+        align-items: center;
+        gap: 0.75rem;
+        flex-wrap: wrap;
+    }
+
+    .type-filter {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        font-size: 0.85rem;
+        color: var(--text-secondary);
+        background: rgba(0, 0, 0, 0.2);
+        border: 1px solid var(--border);
+        border-radius: 999px;
+        padding: 0.25rem 0.6rem;
+    }
+
+    .type-filter input {
+        accent-color: var(--primary);
+    }
 }
 </style>
 
@@ -1745,59 +1783,47 @@ function openTab(tabName) {
     
     // Load data for the tab if needed
     if (tabName === 'activity') {
-        loadActivityData();
+        loadActivityForCurrentState(true);
     } else if (tabName === 'statistics') {
-        calculateStatistics();
+        loadStats();
     }
 }
 
 // Filter Functions
-function filterTable() {
-    const searchInput = document.getElementById('blockchainSearch').value.toLowerCase();
-    const filterType = document.getElementById('filterType').value;
-    const rows = document.querySelectorAll('.compact-block-row');
-    
-    rows.forEach(row => {
-        let shouldShow = false;
-        
-        if (!searchInput) {
-            shouldShow = true;
-        } else {
-            const index = row.querySelector('.compact-index-number').textContent;
-            const blockHash = row.querySelector('.compact-block-hash').textContent;
-            const prevHash = row.querySelector('.compact-prev-hash')?.textContent || '';
-            const miner = row.querySelector('.miner-address').textContent;
-            const txCount = row.querySelector('.tx-count').textContent;
-            const genesisCount = row.querySelector('.tx-badge.genesis')?.textContent || '';
-            const transferCount = row.querySelector('.tx-badge.transfer')?.textContent || '';
-            const rewardCount = row.querySelector('.tx-badge.reward')?.textContent || '';
-            
-            const allText = (index + ' ' + blockHash + ' ' + prevHash + ' ' + miner + ' ' + 
-                          txCount + ' ' + genesisCount + ' ' + transferCount + ' ' + rewardCount).toLowerCase();
-            
-            switch(filterType) {
-                case 'block':
-                    shouldShow = index.includes(searchInput) || blockHash.includes(searchInput) || prevHash.includes(searchInput);
-                    break;
-                case 'miner':
-                    shouldShow = miner.includes(searchInput);
-                    break;
-                case 'user':
-                    shouldShow = miner.includes(searchInput);
-                    break;
-                default: // 'all'
-                    shouldShow = allText.includes(searchInput);
-            }
-        }
-        
-        row.style.display = shouldShow ? '' : 'none';
+function submitSearchFilters() {
+    const searchForm = document.querySelector('.search-input-group');
+    const filterTypeSelect = document.getElementById('filterType');
+    const filterTypeHidden = document.getElementById('filterTypeHidden');
+
+    if (filterTypeSelect && filterTypeHidden) {
+        filterTypeHidden.value = filterTypeSelect.value;
+    }
+
+    if (searchForm) {
+        searchForm.submit();
+    }
+}
+
+function applyTypeFilters() {
+    const showGenesis = document.getElementById('filterGenesis').checked ? '1' : '0';
+    const showTransfers = document.getElementById('filterTransfers').checked ? '1' : '0';
+    const showRewards = document.getElementById('filterRewards').checked ? '1' : '0';
+    const searchValue = document.getElementById('blockchainSearch')?.value || '';
+    const filterType = document.getElementById('filterType')?.value || 'all';
+    const params = new URLSearchParams({
+        genesis: showGenesis,
+        transfers: showTransfers,
+        rewards: showRewards,
+        filter: filterType,
+        q: searchValue
     });
+    window.location.href = `/blockchain-viewer?${params.toString()}`;
 }
 
 function resetFilters() {
     document.getElementById('blockchainSearch').value = '';
     document.getElementById('filterType').selectedIndex = 0;
-    filterTable();
+    window.location.href = '/blockchain-viewer?genesis=1&transfers=1&rewards=0&filter=all&q=';
 }
 
 // Show Block Details
@@ -1835,62 +1861,50 @@ function closeModal() {
 }
 
 // Timeframe Management
-let selectedTimeframe = '7d';
+let selectedTimeframe = '1h';
 let activityChart = null;
 let blockRangeMode = false;
 let totalBlocksInChain = 0;
 let timelineDataCache = {};
+let timelineWindowSize = 50;
+let sliderInitialized = false;
+let isSliderDragging = false;
 
 function changeTimeframe(timeframe) {
     selectedTimeframe = timeframe;
     blockRangeMode = false;
+    updateWindowSizeFromTimeframe(timeframe);
     loadActivityData();
     updateTimeframeButtons();
 }
 
-function applyBlockRange() {
-    const startBlock = parseInt(document.getElementById('startBlock').value) || 0;
-    const endBlock = parseInt(document.getElementById('endBlock').value);
-    
-    if (isNaN(endBlock)) {
-        alert('Please enter a valid end block number');
-        return;
-    }
-    
-    if (startBlock > endBlock) {
-        alert('Start block must be less than or equal to end block');
-        return;
-    }
-    
-    if (startBlock < 0) {
-        alert('Start block must be greater than or equal to 0');
-        return;
-    }
-    
-    blockRangeMode = true;
-    loadActivityData(startBlock, endBlock);
+function updateWindowSizeFromTimeframe(timeframe) {
+    const windowMap = {
+        '1h': 10,
+        '1d': 50,
+        '7d': 200,
+        '30d': 600
+    };
+    timelineWindowSize = windowMap[timeframe] || 50;
 }
 
-function resetBlockRange() {
-    document.getElementById('startBlock').value = '0';
-    document.getElementById('endBlock').value = totalBlocksInChain ? totalBlocksInChain - 1 : '';
-    document.getElementById('blockSlider').max = totalBlocksInChain || 100;
-    document.getElementById('blockSlider').value = 0;
-    document.getElementById('rangeInfo').textContent = '';
-    blockRangeMode = false;
-    loadActivityData();
-}
-
-function updateBlockRangeFromSlider() {
+function updateTimelineWindowFromSlider(force = false) {
     const slider = document.getElementById('blockSlider');
-    const startBlock = parseInt(slider.value);
-    const window = Math.max(50, Math.floor(totalBlocksInChain / 10));
-    const endBlock = Math.min(startBlock + window, totalBlocksInChain - 1);
-    
-    document.getElementById('startBlock').value = startBlock;
-    document.getElementById('endBlock').value = endBlock;
+    if (!slider) return;
+
+    const endBlock = parseInt(slider.value) || 0;
+    const startBlock = Math.max(0, endBlock - timelineWindowSize + 1);
+
     blockRangeMode = true;
-    loadActivityData(startBlock, endBlock);
+    updateRangeInfo(startBlock, endBlock);
+    loadActivityData(startBlock, endBlock, force);
+}
+
+function updateRangeInfo(startBlock, endBlock) {
+    const info = document.getElementById('rangeInfo');
+    if (!info) return;
+    const total = totalBlocksInChain || 0;
+    info.textContent = `Showing blocks ${startBlock} to ${endBlock} of ${total}`;
 }
 
 function updateTimeframeButtons() {
@@ -1903,7 +1917,7 @@ function updateTimeframeButtons() {
 }
 
 // Load Activity Data
-async function loadActivityData(startBlock = null, endBlock = null) {
+async function loadActivityData(startBlock = null, endBlock = null, forceRefresh = false) {
     try {
         // Show loading state
         document.getElementById('activityChart').style.opacity = '0.5';
@@ -1914,7 +1928,7 @@ async function loadActivityData(startBlock = null, endBlock = null) {
         if (blockRangeMode && startBlock !== null && endBlock !== null) {
             cacheKey = `range_${startBlock}_${endBlock}`;
             
-            if (timelineDataCache[cacheKey] && 
+            if (!forceRefresh && timelineDataCache[cacheKey] && 
                 Date.now() - timelineDataCache[cacheKey].timestamp < 300000) {
                 data = timelineDataCache[cacheKey].data;
             } else {
@@ -1930,20 +1944,24 @@ async function loadActivityData(startBlock = null, endBlock = null) {
             }
             
             totalBlocksInChain = data.range.total_blocks_in_chain;
-            document.getElementById('blockSlider').max = totalBlocksInChain - 1;
-            document.getElementById('rangeInfo').textContent = `Showing blocks ${startBlock} to ${endBlock} of ${totalBlocksInChain}`;
+            const slider = document.getElementById('blockSlider');
+            if (slider) {
+                slider.max = totalBlocksInChain - 1;
+                slider.value = endBlock;
+            }
+            updateRangeInfo(startBlock, endBlock);
         } else {
             cacheKey = `timeframe_${selectedTimeframe}`;
             
-            if (timelineDataCache[cacheKey] && 
+            if (!forceRefresh && timelineDataCache[cacheKey] && 
                 Date.now() - timelineDataCache[cacheKey].timestamp < 300000) {
                 data = timelineDataCache[cacheKey].data;
             } else {
                 const timeframeMap = {
+                    '1h': '1h',
                     '1d': '1d',
                     '7d': '7d',
-                    '30d': '30d',
-                    'all': 'all'
+                    '30d': '30d'
                 };
                 
                 const apiTimeframe = timeframeMap[selectedTimeframe] || '7d';
@@ -1958,7 +1976,23 @@ async function loadActivityData(startBlock = null, endBlock = null) {
                 };
             }
             
-            document.getElementById('rangeInfo').textContent = '';
+            if (data && data.stats && typeof data.stats.total_blocks === 'number') {
+                totalBlocksInChain = data.stats.total_blocks;
+                const slider = document.getElementById('blockSlider');
+                if (slider) {
+                    const maxValue = Math.max(totalBlocksInChain - 1, 0);
+                    slider.max = maxValue;
+                    if (!sliderInitialized || !blockRangeMode) {
+                        slider.value = maxValue;
+                    }
+                    sliderInitialized = true;
+                }
+            }
+
+            const info = document.getElementById('rangeInfo');
+            if (info) {
+                info.textContent = '';
+            }
         }
 
         if (!data.timeline || data.timeline.length === 0) {
@@ -2174,96 +2208,92 @@ async function calculateStatistics() {
     }
 }
 
-// Auto-refresh Countdown
-let countdown = 30;
-let countdownInterval;
-
-function startCountdown() {
-    clearInterval(countdownInterval);
-    countdown = 30;
-    document.getElementById('countdown').textContent = countdown;
-    
-    countdownInterval = setInterval(() => {
-        countdown--;
-        document.getElementById('countdown').textContent = countdown;
-        
-        if (countdown <= 0) {
-            clearInterval(countdownInterval);
-            refreshNow();
-        }
-    }, 1000);
-}
+// Auto update functionality (AJAX-style)
+let refreshInterval;
 
 function refreshNow() {
-    clearInterval(countdownInterval);
-    window.location.reload();
+    autoUpdate();
 }
 
-// Initialize
+function updateLastUpdated() {
+    const el = document.getElementById('lastUpdated');
+    if (!el) return;
+    const now = new Date();
+    const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    el.textContent = time;
+}
+
+async function loadStats() {
+    try {
+        await calculateStatistics();
+    } catch (err) {
+        console.warn('Failed to refresh stats', err);
+    }
+}
+
+function autoUpdate() {
+    if (!isSliderDragging) {
+        loadActivityForCurrentState(true);
+    }
+    loadStats();
+    updateLastUpdated();
+}
+
+function loadActivityForCurrentState(forceRefresh = false) {
+    if (blockRangeMode) {
+        updateTimelineWindowFromSlider(forceRefresh);
+    } else {
+        loadActivityData(null, null, forceRefresh);
+    }
+}
+
+// Initialize auto refresh
 document.addEventListener('DOMContentLoaded', function() {
-    // Get total blocks from page
-    const totalBlocksElement = document.getElementById('totalValue');
-    if (totalBlocksElement) {
-        totalBlocksInChain = parseInt(totalBlocksElement.textContent) || 0;
-    }
-    
-    // Initialize range selector controls
-    if (totalBlocksInChain > 0) {
-        document.getElementById('blockSlider').max = totalBlocksInChain - 1;
-        document.getElementById('endBlock').placeholder = String(totalBlocksInChain - 1);
-        document.getElementById('endBlock').value = totalBlocksInChain - 1;
-    }
-    
+    updateTimeframeButtons();
+    updateWindowSizeFromTimeframe(selectedTimeframe);
+
     // Restore active tab
     const activeTab = sessionStorage.getItem('blockchainActiveTab') || 'blocks';
     openTab(activeTab);
-    
-    // Initialize timeframe buttons
-    updateTimeframeButtons();
-    
-    // Load initial activity data if on activity tab
-    if (activeTab === 'activity') {
-        loadActivityData();
+
+    const slider = document.getElementById('blockSlider');
+    if (slider) {
+        slider.addEventListener('pointerdown', () => { isSliderDragging = true; });
+        slider.addEventListener('pointerup', () => { isSliderDragging = false; });
+        slider.addEventListener('touchstart', () => { isSliderDragging = true; });
+        slider.addEventListener('touchend', () => { isSliderDragging = false; });
     }
-    
-    // Calculate statistics if on statistics tab
-    if (activeTab === 'statistics') {
-        calculateStatistics();
-    }
-    
-    // Start auto-refresh countdown
-    startCountdown();
-    
+
+    autoUpdate();
+    if (refreshInterval) clearInterval(refreshInterval);
+    refreshInterval = setInterval(autoUpdate, 30000);
+
     // Setup search input debounce
     let searchTimeout;
-    document.getElementById('blockchainSearch').addEventListener('input', function() {
-        clearTimeout(searchTimeout);
-        searchTimeout = setTimeout(filterTable, 300);
-    });
-    
-    // Auto-refresh data every 15 seconds
-    setInterval(() => {
-        if (document.getElementById('activity').classList.contains('active')) {
-            loadActivityData();
-        }
-        if (document.getElementById('statistics').classList.contains('active')) {
-            calculateStatistics();
-        }
-    }, 15000);
-    
+    const searchInput = document.getElementById('blockchainSearch');
+    if (searchInput) {
+        searchInput.addEventListener('input', function() {
+            clearTimeout(searchTimeout);
+            searchTimeout = setTimeout(filterTable, 300);
+        });
+    }
+
     // Close modal with Escape key
     document.addEventListener('keydown', (event) => {
         if (event.key === 'Escape') {
             closeModal();
         }
     });
-    
+
     // Close modal when clicking outside
-    document.getElementById('blockModal').addEventListener('click', (event) => {
-        if (event.target.id === 'blockModal') {
-            closeModal();
-        }
-    });
+    const blockModal = document.getElementById('blockModal');
+    if (blockModal) {
+        blockModal.addEventListener('click', (event) => {
+            if (event.target.id === 'blockModal') {
+                closeModal();
+            }
+        });
+    }
 });
 </script>
 {% endblock %}

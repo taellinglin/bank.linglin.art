@@ -8,6 +8,7 @@ import json
 import hashlib
 import time
 import logging
+import re
 from typing import Dict, List, Optional
 
 try:
@@ -18,6 +19,26 @@ except ImportError:
     logger.warning("lunalib not available, using fallback validation")
 
 logger = logging.getLogger(__name__)
+
+
+def _is_valid_luna_address(address: str) -> bool:
+    if not address or not isinstance(address, str):
+        return False
+    normalized = address.strip()
+    if not normalized:
+        return False
+    lowered = normalized.lower()
+    placeholder_values = {
+        "enter luna wallet address here",
+        "enter wallet address here",
+        "miner_default_address",
+        "default_wallet_address",
+    }
+    if lowered in placeholder_values:
+        return False
+    if normalized.startswith("LUN_"):
+        return True
+    return bool(re.fullmatch(r"[0-9a-fA-F]{32}", normalized))
 
 
 def validate_transaction_structure(transaction: Dict) -> bool:
@@ -114,9 +135,10 @@ def validate_regular_transactions(transactions: List[Dict]) -> Dict:
             if not from_addr or not to_addr:
                 return {'valid': False, 'error': 'Invalid addresses in transfer transaction'}
             
-            # Check for self-transfer
+            # Check for self-transfer (allow but flag if needed)
             if from_addr == to_addr:
-                return {'valid': False, 'error': 'Self-transfer not allowed'}
+                # Allow self-transfer; mining wallets may self-send
+                pass
                 
         elif tx_type == 'GTX_Genesis':
             # Validate genesis transactions
@@ -217,6 +239,18 @@ def validate_reward_transactions(reward_transactions: List[Dict], block_index: i
     # Validate recipient matches miner
     if reward_tx.get('to') != miner_address:
         return {'valid': False, 'error': f'Reward recipient {reward_tx.get("to")} != miner {miner_address}'}
+
+    # Validate recipient/miner address format (reject placeholders)
+    if not _is_valid_luna_address(miner_address):
+        return {
+            'valid': False,
+            'error': f'Invalid miner address format: {miner_address}'
+        }
+    if not _is_valid_luna_address(reward_tx.get('to')):
+        return {
+            'valid': False,
+            'error': f'Invalid reward recipient address format: {reward_tx.get("to")}'
+        }
     
     # Validate block height
     if reward_tx.get('block_height') != block_index:

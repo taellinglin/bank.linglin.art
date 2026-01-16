@@ -271,66 +271,68 @@
             <div class="card-content">
                 <div class="validation-layers">
                     {% for layer, data in validation_results.items() %}
-                    <div class="validation-layer {{ 'valid' if data.get('found', False) else 'invalid' }}">
-                        <div class="layer-icon">
-                            {% if data.get('found', False) %}✅{% else %}❌{% endif %}
-                        </div>
-                        <div class="layer-info">
-                            <div class="layer-name">{{ layer|title|replace('_', ' ') }}</div>
-                            <div class="layer-status">
-                                {% if data.get('found', False) %}
-                                    Valid
-                                {% else %}
-                                    Not Found
+                    {% if data is mapping %}
+                        <div class="validation-layer {{ 'valid' if data.get('found', False) else 'invalid' }}">
+                            <div class="layer-icon">
+                                {% if data.get('found', False) %}✅{% else %}❌{% endif %}
+                            </div>
+                            <div class="layer-info">
+                                <div class="layer-name">{{ layer|title|replace('_', ' ') }}</div>
+                                <div class="layer-status">
+                                    {% if data.get('found', False) %}
+                                        Valid
+                                    {% else %}
+                                        Not Found
+                                    {% endif %}
+                                </div>
+                            </div>
+                            {% if layer == 'mempool' and data.get('found', False) and data.get('data') %}
+                            <div class="layer-details">
+                                <div class="detail-item">
+                                    <span class="detail-key">Status:</span>
+                                    <span class="detail-value">{{ data.data.get('status', 'pending')|title }}</span>
+                                </div>
+                                <div class="detail-item">
+                                    <span class="detail-key">Confirmations:</span>
+                                    <span class="detail-value">{{ data.data.get('confirmations', 0) }}</span>
+                                </div>
+                                {% if data.data.get('time_in_mempool') %}
+                                <div class="detail-item">
+                                    <span class="detail-key">Time in Mempool:</span>
+                                    <span class="detail-value">{{ (data.data.time_in_mempool / 60)|round(1) }} minutes</span>
+                                </div>
+                                {% endif %}
+                                {% if data.data.get('priority') %}
+                                <div class="detail-item">
+                                    <span class="detail-key">Priority:</span>
+                                    <span class="detail-value">{{ data.data.priority|title }}</span>
+                                </div>
+                                {% endif %}
+                                {% if data.data.get('fee') %}
+                                <div class="detail-item">
+                                    <span class="detail-key">Fee:</span>
+                                    <span class="detail-value">{{ data.data.fee }}</span>
+                                </div>
+                                {% endif %}
+                                {% if data.data.get('size') %}
+                                <div class="detail-item">
+                                    <span class="detail-key">Size:</span>
+                                    <span class="detail-value">{{ data.data.size }} bytes</span>
+                                </div>
                                 {% endif %}
                             </div>
-                        </div>
-                        {% if layer == 'mempool' and data.get('found', False) and data.get('data') %}
-                        <div class="layer-details">
-                            <div class="detail-item">
-                                <span class="detail-key">Status:</span>
-                                <span class="detail-value">{{ data.data.get('status', 'pending')|title }}</span>
-                            </div>
-                            <div class="detail-item">
-                                <span class="detail-key">Confirmations:</span>
-                                <span class="detail-value">{{ data.data.get('confirmations', 0) }}</span>
-                            </div>
-                            {% if data.data.get('time_in_mempool') %}
-                            <div class="detail-item">
-                                <span class="detail-key">Time in Mempool:</span>
-                                <span class="detail-value">{{ (data.data.time_in_mempool / 60)|round(1) }} minutes</span>
-                            </div>
-                            {% endif %}
-                            {% if data.data.get('priority') %}
-                            <div class="detail-item">
-                                <span class="detail-key">Priority:</span>
-                                <span class="detail-value">{{ data.data.priority|title }}</span>
-                            </div>
-                            {% endif %}
-                            {% if data.data.get('fee') %}
-                            <div class="detail-item">
-                                <span class="detail-key">Fee:</span>
-                                <span class="detail-value">{{ data.data.fee }}</span>
-                            </div>
-                            {% endif %}
-                            {% if data.data.get('size') %}
-                            <div class="detail-item">
-                                <span class="detail-key">Size:</span>
-                                <span class="detail-value">{{ data.data.size }} bytes</span>
+                            {% elif data.get('data') %}
+                            <div class="layer-details">
+                                {% for key, value in data.data.items() %}
+                                    <div class="detail-item">
+                                        <span class="detail-key">{{ key|title|replace('_', ' ') }}:</span>
+                                        <span class="detail-value">{{ value }}</span>
+                                    </div>
+                                {% endfor %}
                             </div>
                             {% endif %}
                         </div>
-                        {% elif data.get('data') %}
-                        <div class="layer-details">
-                            {% for key, value in data.data.items() %}
-                                <div class="detail-item">
-                                    <span class="detail-key">{{ key|title|replace('_', ' ') }}:</span>
-                                    <span class="detail-value">{{ value }}</span>
-                                </div>
-                            {% endfor %}
-                        </div>
-                        {% endif %}
-                    </div>
+                    {% endif %}
                     {% endfor %}
                 </div>
             </div>
