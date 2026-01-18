@@ -493,6 +493,11 @@
                         <span class="badge {% if queue_status.is_running %}badge-success{% else %}badge-secondary{% endif %}">
                             {{ 'Running' if queue_status.is_running else 'Stopped' }}
                         </span>
+                        <form method="POST" action="/admin/clear-generation-tasks" class="w-100 mb-2" onsubmit="return confirm('Are you sure you want to clear ALL generation tasks? This cannot be undone.');">
+                            <button type="submit" class="btn btn-outline-danger w-100 rounded shadow-sm fw-bold py-2" style="font-size:1rem;">
+                                <i class="fas fa-trash"></i> Clear All Generation Tasks
+                            </button>
+                        </form>
                     </div>
                 </div>
                 

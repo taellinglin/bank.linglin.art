@@ -215,6 +215,23 @@ class GenerationTask(db.Model):
     def __repr__(self):
         return f'<GenerationTask {self.id} - {self.status}>'
 
+class WebAuthnCredential(db.Model):
+    __tablename__ = 'webauthn_credentials'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    credential_id = db.Column(db.String(512), unique=True, nullable=False)
+    name = db.Column(db.String(120), nullable=True)
+    public_key = db.Column(db.Text, nullable=False)
+    sign_count = db.Column(db.Integer, default=0)
+    transports = db.Column(db.String(255), default="")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', backref='webauthn_credentials')
+
+    def __repr__(self):
+        return f'<WebAuthnCredential {self.id} user={self.user_id}>'
+
 class Settings(db.Model):
     __tablename__ = 'settings'
     

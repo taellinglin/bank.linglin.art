@@ -1,20 +1,176 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="auth-container">
-    <div class="auth-box">
-        <h1>Two-Factor Authentication Setup</h1>
-        <p>Scan the QR code below with your authenticator app (like Google Authenticator or Authy):</p>
-        
-        <div class="qr-code">
-            <img src="data:image/png;base64,{{ qr_code }}" alt="QR Code">
+<div class="profile-container">
+    <div class="info-card">
+        <div class="card-header">
+            <div class="header-icon">🔐</div>
+            <h3 class="header-title">Two-Factor Authentication Setup</h3>
         </div>
-        
-        <p>Then enter the code from your app to verify setup:</p>
-        
-        <form method="POST" class="auth-form">
-            <input type="text" name="token" placeholder="6-digit code" class="auth-input" required>
-            <button type="submit" class="auth-button">Verify & Complete Setup</button>
-        </form>
+        <div class="card-content">
+            <p class="card-subtitle">
+                Scan the QR code with your authenticator app (Google Authenticator, Authy, etc.).
+            </p>
+
+            <div class="qr-panel">
+                <img src="data:image/png;base64,{{ qr_code }}" alt="QR Code" class="qr-image">
+            </div>
+
+            <div class="note info">
+                <div class="note-icon">ℹ️</div>
+                <div class="note-content">
+                    Enter the 6-digit code from your app to complete setup.
+                </div>
+            </div>
+
+            <form method="POST" class="verify-form">
+                <div class="input-group">
+                    <input type="text" name="token" placeholder="6-digit code" class="form-input" required>
+                    <button type="submit" class="action-btn primary">
+                        <span>Verify & Complete Setup</span>
+                        <div class="btn-icon">✅</div>
+                    </button>
+                </div>
+            </form>
+        </div>
     </div>
 </div>
+
+<style>
+:root {
+    --bg-primary: #0f0f0f;
+    --bg-secondary: #151515;
+    --bg-tertiary: #1e1e1e;
+    --border: #2d2d2d;
+    --text-primary: #ffffff;
+    --text-secondary: #b0b0b0;
+    --primary: #007aff;
+    --info: #32d7ee;
+}
+
+.profile-container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 1rem;
+}
+
+.info-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.header-title {
+    color: var(--text-primary);
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.card-content {
+    padding: 1.5rem;
+}
+
+.card-subtitle {
+    color: var(--text-secondary);
+    margin: 0 0 1rem 0;
+}
+
+.qr-panel {
+    display: flex;
+    justify-content: center;
+    padding: 1.25rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 1.25rem;
+}
+
+.qr-image {
+    max-width: 220px;
+    width: 100%;
+    height: auto;
+    border-radius: 8px;
+}
+
+.note {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.9rem 1rem;
+    background: rgba(50, 215, 238, 0.1);
+    border: 1px solid var(--info);
+    border-radius: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 1.25rem;
+}
+
+.note-icon {
+    font-size: 1.1rem;
+}
+
+.verify-form {
+    margin: 0;
+}
+
+.input-group {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.form-input {
+    flex: 1;
+    min-width: 240px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.875rem 1rem;
+    color: var(--text-primary);
+    font-size: 1rem;
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: var(--info);
+    box-shadow: 0 0 0 2px rgba(50, 215, 238, 0.2);
+}
+
+.action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: var(--primary);
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.action-btn:hover {
+    transform: translateY(-1px);
+    opacity: 0.9;
+}
+
+.btn-icon {
+    font-size: 1rem;
+}
+
+@media (max-width: 640px) {
+    .input-group {
+        flex-direction: column;
+    }
+}
+</style>
 {% endblock %}

@@ -1275,7 +1275,11 @@ from PIL import Image
     
 
 def denom_to_int(denom_str: str) -> int:
-    match = re.search(r'\d+', denom_str)
+    if denom_str is None:
+        raise ValueError("Denomination is None")
+    if isinstance(denom_str, (int, float)):
+        return int(denom_str)
+    match = re.search(r'\d+', str(denom_str))
     if match:
         return int(match.group())
     raise ValueError(f"No numeric part found in denomination '{denom_str}'")
@@ -1903,7 +1907,8 @@ def add_chinese_microprint(dwg: svgwrite.Drawing, cx:int, cy:int, radius:int, te
                         alignment_baseline="middle",
                         transform=f"rotate({rotation},{x},{y})"))
 def generate_backside_svg(outfile: str, denomination: int, title_text: str, phrase_text: str, size_px: Tuple[int,int], 
-                         serial_id: str = None, timestamp_ms: str = None, seed_text: str = ""):
+                         serial_id: str = None, timestamp_ms: str = None, seed_text: str = "",
+                         progress_callback=None):
     W, H = size_px
     denom_exp = int(math.log10(denom_to_int(denomination))) if denom_to_int(denomination) > 0 else 0
     timestamp = timestamp_ms or generate_timestamp_ms_precise()
@@ -1928,6 +1933,8 @@ def generate_backside_svg(outfile: str, denomination: int, title_text: str, phra
     dwg.add(dwg.rect(insert=(0,0), size=(W,H), fill=denomination_color(denom=denom_value)))
 
 
+    if progress_callback:
+        progress_callback("Vectorizing background")
     # Replace the entire block with this single function call:
     add_vectorized_background(
         dwg,
@@ -1941,6 +1948,8 @@ def generate_backside_svg(outfile: str, denomination: int, title_text: str, phra
     cx, cy = W//2, H//2
     
     # Add functional elements
+    if progress_callback:
+        progress_callback("Adding borders and seals")
     add_functional_corner_decorations(dwg, W, H, denomination, timestamp, serial_id)
     
     # Create circular QR with metadata-consistent colors
@@ -1974,6 +1983,8 @@ def generate_backside_svg(outfile: str, denomination: int, title_text: str, phra
     add_corner_denoms(dwg, W, H, str(denomination))
     
     qr_url=f"https://bank.linglin.art/verify/{serial_id}"
+    if progress_callback:
+        progress_callback("Adding QR and aztec elements")
     # Add ROYGBIV QR style with metadata-based theming
     add_roygbiv_qr_style(dwg, W=W, H=H, url=qr_url, stamp_width=60, stamp_height=60, rows=6)
     matrix = segno.make(qr_url).matrix  # matrix is a list of lists of booleans
@@ -2006,6 +2017,8 @@ def generate_backside_svg(outfile: str, denomination: int, title_text: str, phra
     # After successfully generating a bill and saving to DB:
 
 
+    if progress_callback:
+        progress_callback("Saving vector output")
     dwg.save()
     print(f"[+] Saved {outfile}")
 import qrcode
@@ -2766,7 +2779,8 @@ def fractal_stamp(
 def run_single_denomination(outdir: str = ".", base_name: str = "banknote", denomination: int = 1, 
                            width_mm: float = 160.0, height_mm: float = 60.0,
                            title_text: str = "灵国国库", phrase_text: str = "灵之意志，天下共识", seed_text: str = "Username", serial_id: str = "SNB-", timestamp: str = None,
-                           png: bool = False, dpi: float = 300.0, bg_image: str = None):
+                           png: bool = False, dpi: float = 300.0, bg_image: str = None,
+                           progress_callback=None):
     # Update global DPI
     global MM_TO_PX
     MM_TO_PX = dpi / 25.4
@@ -2781,7 +2795,7 @@ def run_single_denomination(outdir: str = ".", base_name: str = "banknote", deno
     
     fname = f"{base_name}.svg"
     path = os.path.join(outdir, fname)
-    generate_backside_svg(path, denomination, title_text, phrase_text, (W,H), serial_id, timestamp, seed_text)
+    generate_backside_svg(path, denomination, title_text, phrase_text, (W,H), serial_id, timestamp, seed_text, progress_callback=progress_callback)
     
     if png:
         if not CAIROSVG_AVAILABLE:

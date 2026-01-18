@@ -1,0 +1,44 @@
+[
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-c9Pntw3lteLzpg-wNI",
+    "denomination": 1000.0,
+    "issued_to": "Gabriela Robin",
+    "timestamp": 1768696053.3639963,
+    "signature": "PBn+wisyISMIfsIsqteHTzT3RGMRJ3SAeCXgMtaf/PS/hCqBU4kDB21WiJ8AMmEO/HxwgFigl2rmuGb9cWI0dvPb9Fu3CiXAeQLQv7GunMif3XqzqJnvaReh4LCgBzvlKMYwZnHLZXgg64oIz7JjM9qO/4qQvKmwcj+e3ULXggD/dPuFR3gwDQuMJjk46a+n5rVirEAU6X6Skf6K0Vwe1H//oBL+S6pz8ZHj1jNipU2l7/c2DnEFwDypVCeOeMzpBf3eT0gz9Srd53S+CYUAfYlq9ANYpW4TMjNGXW2kmqGSJJF6PV9edW41zzhqqIsO1PaT8e6+MhE1nbDZSJ+vQA==",
+    "public_key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA5IJzO1sbLjhg010gX83M\ngloCFnUH4wy9dEXoZslf3yE+ZkKmc+Q5y6PFN4+b8ePzcPUioKFkdhPafr9jAO4/\nnGvoQ+R0z0w4SCCcvAmcXVcd3Fg+32lVBvdhgUZkr2EjfQzzdlRnV7AxjyMXI5vn\nQTP+PkwR9B+9qWGF20A6206/th5SYxXyQt7MJSjeIt3LRb1TFo1Afg3ExQ5qs0Fs\nDi1UxA2xVMnKFYC8lhHKCCMMuBDFEHsJxhYFQ5ar+MfNpI7rwJntS+3Gls89Qn81\n/TAywGH/ajU2246NsJhYNmQzrlMMRvx+PUzmbncRLN96/Uw5DLY6lK6XSDCNNihX\njQIDAQAB\n-----END PUBLIC KEY-----\n",
+    "metadata_hash": "1123a793697b217ec6e2336e892e579d9f1911c8d626ebd217eb754fb5b9bff9",
+    "front_serial": "GTX1000_1768696053138_3de2cfd4",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "7c89a94a16d7b4a6abebd6c5ad65d82ac241cdf4402c867a6f2d2968bd2f704f"
+  },
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-be28ezAn6A6blg-tXQ",
+    "denomination": 10000.0,
+    "issued_to": "Gabriela Robin",
+    "timestamp": 1768696190.29119,
+    "signature": "SzMQ9eOnq9SUPHO7zLkSOyz0t213nYgukALQH7XgsED7nKDozOgWIK1Iuonon603dYPmpl95LOkEXr5DZGP57typJZXcA7VXpcGmYDONV/h+z5iB9OzfPIMj73DU2JbqSmvHLlwDWvCdXy1yqTsRNLMxNMN+q9Y7hSOeAXi0jpJa1mvsqvgFYaOhA2F25jEJZFEKUjeuRTKulm/Cd3tTeKIcpd0dFssJAK7exo3ZQ31El4l44gXpFrvNsQp7UC8OpPHq0y1/atIy4MSSW26VgpYPCrVgQywjA9OwoXU6BXSyRX4VCAP6B5KfbCeHQMvBvLEJcHpDQZ8BxnNVvW6Q5Q==",
+    "public_key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA4H2+oMFDtjvP4vgdGSXx\nMg4hxLuorusZO1Xc7EHIIqXwX6l+yowUbcuQtGuC2FXnZvZyMl9OzqEF788p2bsH\n0n+GiB8JIT1dY0DiVwXGvwM1b8iI2pgBUvgIJXbiLaC2M0/ClWuMIFVBJt+Al/Lc\naPE285jVJwC4UxVAE2IM5+7Xihqnun6N+h5ERYq/C4JOMJdSrJXdNd5twPQkCPpv\nLRO61tUAhFtGFlFzMN3ocNvoZkiHj9CTegVrVZsCoaULxdwoQk5AHBOI4qGnSTtR\nWKJPlnICgSuVE+PioZhlRE5Ppu+3v5PqfJjHxwxASGGa9PdEHllkr0y168sO4yz0\nXwIDAQAB\n-----END PUBLIC KEY-----\n",
+    "metadata_hash": "5e4765544f14f72b4097e549f772e9808a7e03141aa44b1f2f53655b8f3211a1",
+    "front_serial": "GTX10000_1768696190238_26b85423",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "6d59479c171df500002f60192f307b375072730b794ca9be5ddadc8bb273cb5c"
+  },
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-IjSJccmQSzI3nQ-r6k",
+    "denomination": 100000.0,
+    "issued_to": "Gabriela Robin",
+    "timestamp": 1768696324.1507332,
+    "signature": "H5oxxjXA3n5AdQz+Zh6q46c7lt94qj6EXs1VpsKxZaNx2asklJqNdP9uFypEnTankaTl1/BV2pzvllYZLnu4rqpWv+K1pClEFWih3U9QX1Y8D4iY7OLoa7/n9fkgJmv3kVVEQ+tQVZ+O8m8EIPWPUN/2Di8VWuk08YoKlcu5qT/Jt0+M3o6dGD6regaXQSpuF8eg8MxWK16jq2Msek7HZhgY4T/aFoHa39BKp3wPVu8i5Wa4uNNTTU3sL6gLOHUHYZjY9C1Eh2ht+LJCC7Dcee5nE+3F72DL6KxDwO8p4Y6//gqvIrLcWAMb1Etq7lh+lVbqQkyuC/5vz+NweAmZVw==",
+    "public_key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA2ukRLZSZcjgH3xwIUwNc\nWAk1chU6NOmd06k79Jgv2c1sF2AQcM00uz4wHyzK03J8KvIDCApuH5HsgEnjdUi4\ns6kCy/s6/bIqEMAYdiB6pWgBXGvecUtaEUJO7C6pQwXx18nJwYJMW6dWRLqWGSb9\ntsNdjpRXckMmUwkXlDmfilZsqO4jbJ7SGQW76mDWINbvBBCS41Chh4tE3NYY0qLo\nEF2lBQneNk8gTzNoOnLQkMU3pueiOYm0OIwtag+9MiOp09pEyCWEwumM7Ka9oip4\n6HeE0a6Ah7KvMZxsme/HpzNG6xoe1k1hORH9npF+zHkr2VBmyEFkdJ9dEmmPn6nU\nZQIDAQAB\n-----END PUBLIC KEY-----\n",
+    "metadata_hash": "3fb79e9aae8db6cdab469ced7265cb6ed94495c1fc46293e9c5348ef5e6938ff",
+    "front_serial": "GTX100000_1768696324006_dc9d0d67",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "c323ee4a5b7271196289a3d70a334d64e84975e583c31dfd921d3cb9a8cdeb59"
+  }
+]

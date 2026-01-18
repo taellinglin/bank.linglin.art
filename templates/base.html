@@ -200,19 +200,22 @@
             <span class="Chinese-text">灵国国库</span> <span class="daemon-text">Ling Country Treasury</span>
         </a>
         <div class="nav-links">
-            <a href="{{ url_for('mempool_viewer')}}">Mempool</a>
-            <a href="{{ url_for('blockchain_viewer')}}">Blockchain</a>
             {% if current_user.is_authenticated %}
-                <a href="{{ url_for('profile', username=current_user.username) }}">Profile</a>
-                <a href="{{ url_for('gallery_index') }}">Members</a>
                 <a href="{{ url_for('verify_serial') }}">Verify</a>
+                <a href="{{ url_for('mempool_viewer')}}">Mempool</a>
+                <a href="{{ url_for('blockchain_viewer')}}">Blockchain</a>
+                <a href="{{ url_for('gallery_index') }}">Members</a>
+                <a href="{{ url_for('profile', username=current_user.username) }}">Profile</a>
+                <a href="{{ url_for('account_settings') }}">Settings</a>
                 {% if current_user.is_authenticated and current_user.is_admin %}
                     <a href="{{ url_for('admin_panel') }}">Admin</a>
                 {% endif %}
                 <a href="{{ url_for('logout') }}">Logout</a>
             {% else %}
-                <a href="{{ url_for('gallery_index') }}">Members</a>
                 <a href="{{ url_for('verify_serial') }}">Verify</a>
+                <a href="{{ url_for('mempool_viewer')}}">Mempool</a>
+                <a href="{{ url_for('blockchain_viewer')}}">Blockchain</a>
+                <a href="{{ url_for('gallery_index') }}">Members</a>
                 <a href="{{ url_for('login') }}">Login</a>
                 <a href="{{ url_for('register') }}">Register</a>
             {% endif %}

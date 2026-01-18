@@ -1366,7 +1366,8 @@ def generate_fantasy_banknote(seed_text: str, input_image_path: str, outfile_svg
                                width_mm: float = 160.0, height_mm: float = 60.0,
                                title: str = "灵国国库", subtitle: str = "天圆地方", serial_id: str = "SERIALID", timestamp:str = "TIMESTAMP",
                                denomination: str = "100 卢纳币", specimen: bool = True,
-                               fonts = {}, bg_dir: str = "./backgrounds", background_prompt: str = ""):
+                               fonts = {}, bg_dir: str = "./backgrounds", background_prompt: str = "",
+                               progress_callback=None):
     timestamp_ms = timestamp or generate_timestamp_ms_precise()
     serial_id = serial_id or generate_serial_id_with_checksum()
     W = mm_to_px(width_mm)
@@ -1378,13 +1379,20 @@ def generate_fantasy_banknote(seed_text: str, input_image_path: str, outfile_svg
     seed_text=seed_text
     seed_hash = sha3_512_salted(seed_text, serial_id)
     dwg.add(dwg.rect(insert=(0,0), size=(W,H), fill=denomination_color(denom=denom_value)))
+
+    if progress_callback:
+        progress_callback("Adding QR border")
     
     border_info = add_qr_like_border(dwg, seed_text, W, H, serial_id, timestamp_ms)
     
+    if progress_callback:
+        progress_callback("Vectorizing background")
     add_vectorized_background(dwg=dwg, W=W, H=H, seed_text=seed_text, bg_dir=bg_dir, margin=60, n_segments=1024, 
                               background_prompt=background_prompt, denomination=denomination)
     print("Generated:", path)
     
+    if progress_callback:
+        progress_callback("Adding microgrid and border")
     add_subtle_frame_and_microgrid(dwg, W, H, border_info, denom_value, timestamp_ms, to_bytes(seed_hash))
     add_decorative_border(dwg, W, H, border_info, denom_value, timestamp_ms)
     im = None
@@ -1398,6 +1406,8 @@ def generate_fantasy_banknote(seed_text: str, input_image_path: str, outfile_svg
     small_radius = min(W,H)*0.25
     text_left = f"{str(seed_text)}"
     text_right= f"{str(serial_id)}"
+    if progress_callback:
+        progress_callback("Placing center seal and text")
     add_text_seal(dwg, cy=cy, radius=small_radius*0.65, text_left=text_left, text_right=text_right, denom_color=d_color,inner_text="日", include_datetime=True, seed_text=seed_text, serial_id=serial_id, canvas_width=W)
     add_secondary_ring(dwg, cx, cy, radius=center_px_radius*0.88, seed=to_bytes(seed_hash), segments=360, d_color=d_color)
     add_center_seal(dwg, im, cx, cy, center_px_radius*1.2)
@@ -1405,6 +1415,8 @@ def generate_fantasy_banknote(seed_text: str, input_image_path: str, outfile_svg
     add_functional_corner_decorations(dwg, W, H, denomination, timestamp_ms, serial_id)
     add_corner_denoms(dwg, W, H, str(denom_value))
     chinese_value = number_to_chinese(denom_value)
+    if progress_callback:
+        progress_callback("Adding microprint")
     add_chinese_microprint(
         dwg, cx, cy, radius=int(center_px_radius*0.7),
         text=f"{chinese_value} 卢纳币",
@@ -1412,6 +1424,8 @@ def generate_fantasy_banknote(seed_text: str, input_image_path: str, outfile_svg
     )
     qr_url=f"https://bank.linglin.art/verify/{serial_id}"
     
+    if progress_callback:
+        progress_callback("Adding QR and Aztec elements")
     add_roygbiv_qr_style(dwg, W=W, H=H, url=qr_url, stamp_width=60, stamp_height=60, rows=6)
     
     matrix = segno.make(qr_url).matrix  # matrix is a list of lists of booleans
@@ -1444,6 +1458,8 @@ def generate_fantasy_banknote(seed_text: str, input_image_path: str, outfile_svg
                          text_anchor="middle", opacity=0.75))
     
 
+    if progress_callback:
+        progress_callback("Saving vector output")
     dwg.save()
     print(f"[+] Saved: {outfile_svg}")
 from PIL import ImageStat
@@ -1880,7 +1896,8 @@ def add_decorative_border(dwg, W:int, H:int, border_info:dict, denom_value: int,
 def generate_single_banknote(seed_text, input_image_path, single_denom, outfile=None, 
                            specimen=False, serial_id=None, timestamp=None,
                            width_mm=160.0, height_mm=60.0, title="灵国国库", subtitle="天圆地方",
-                           font_dir="./fonts", bg_dir="./backgrounds", dpi=300.0, background_prompt=""):
+                           font_dir="./fonts", bg_dir="./backgrounds", dpi=300.0, background_prompt="",
+                           progress_callback=None):
     """
     Generate a single banknote with a specific denomination.
     
@@ -1936,7 +1953,8 @@ def generate_single_banknote(seed_text, input_image_path, single_denom, outfile=
         serial_id=serial_id,
         timestamp=timestamp,
         bg_dir=bg_dir,
-        background_prompt=background_prompt
+        background_prompt=background_prompt,
+        progress_callback=progress_callback
     )
     
     print(f"[+] Single bill generated: {outfile}")

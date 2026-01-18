@@ -1,0 +1,467 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="profile-container">
+    <div class="info-card">
+        <div class="card-header">
+            <div class="header-icon">⚙️</div>
+            <h3 class="header-title">Account Settings</h3>
+        </div>
+        <div class="card-content">
+            <p class="card-subtitle">Manage your security options and account access.</p>
+        </div>
+    </div>
+
+    <div class="info-card">
+        <div class="card-header">
+            <div class="header-icon">🔐</div>
+            <h3 class="header-title">Two-Factor Authentication</h3>
+        </div>
+        <div class="card-content">
+            <p class="card-subtitle">
+                Scan the QR code with your authenticator app (Google Authenticator, Authy, etc.).
+            </p>
+
+            <div class="qr-panel">
+                <img src="data:image/png;base64,{{ qr_code }}" alt="QR Code" class="qr-image">
+            </div>
+
+            <div class="note info">
+                <div class="note-icon">ℹ️</div>
+                <div class="note-content">
+                    Enter the 6-digit code from your app to confirm 2FA on this account.
+                </div>
+            </div>
+
+            <form method="POST" action="{{ url_for('account_settings_2fa') }}" class="verify-form">
+                <div class="input-group">
+                    <input type="text" name="token" placeholder="6-digit code" class="form-input" required>
+                    <button type="submit" class="action-btn primary">
+                        <span>Verify & Save</span>
+                        <div class="btn-icon">✅</div>
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="info-card">
+        <div class="card-header">
+            <div class="header-icon">🔑</div>
+            <h3 class="header-title">Security Keys</h3>
+            {% if security_keys %}
+            <div class="header-badge">{{ security_keys|length }}</div>
+            {% endif %}
+        </div>
+        <div class="card-content">
+            {% if security_keys %}
+            <ul class="key-list">
+                {% for cred in security_keys %}
+                <li class="key-item">
+                    <div class="key-info">
+                        <span class="key-name">{{ cred.name or 'Security Key' }}</span>
+                        <span class="key-id">Key • ...{{ cred.credential_id[-6:] }}</span>
+                        <span class="key-date">Added {{ cred.created_at.strftime('%Y-%m-%d') }}</span>
+                    </div>
+                    <button type="button" class="action-btn danger" onclick="deleteSecurityKey({{ cred.id }})">Remove</button>
+                </li>
+                {% endfor %}
+            </ul>
+            {% else %}
+            <div class="empty-state">
+                <div class="empty-icon">🔐</div>
+                <p>No security keys registered yet.</p>
+            </div>
+            {% endif %}
+
+            <button type="button" class="action-btn secondary" onclick="startSecurityKeyRegistration()">
+                <span>Register Security Key</span>
+                <div class="btn-icon">➕</div>
+            </button>
+        </div>
+    </div>
+</div>
+
+<style>
+:root {
+    --bg-primary: #0f0f0f;
+    --bg-secondary: #151515;
+    --bg-tertiary: #1e1e1e;
+    --border: #2d2d2d;
+    --text-primary: #ffffff;
+    --text-secondary: #b0b0b0;
+    --primary: #007aff;
+    --info: #32d7ee;
+}
+
+.profile-container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 1rem;
+}
+
+.info-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+    margin-bottom: 1.25rem;
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.header-title {
+    color: var(--text-primary);
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin: 0;
+    flex: 1;
+}
+
+.header-badge {
+    background: rgba(50, 215, 238, 0.2);
+    color: var(--info);
+    padding: 0.25rem 0.6rem;
+    border-radius: 999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+}
+
+.card-content {
+    padding: 1.5rem;
+}
+
+.card-subtitle {
+    color: var(--text-secondary);
+    margin: 0 0 1rem 0;
+}
+
+.qr-panel {
+    display: flex;
+    justify-content: center;
+    padding: 1.25rem;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 1.25rem;
+}
+
+.qr-image {
+    max-width: 220px;
+    width: 100%;
+    height: auto;
+    border-radius: 8px;
+}
+
+.note {
+    display: flex;
+    gap: 0.75rem;
+    padding: 0.9rem 1rem;
+    background: rgba(50, 215, 238, 0.1);
+    border: 1px solid var(--info);
+    border-radius: 12px;
+    color: var(--text-secondary);
+    margin-bottom: 1.25rem;
+}
+
+.note-icon {
+    font-size: 1.1rem;
+}
+
+.verify-form {
+    margin: 0;
+}
+
+.input-group {
+    display: flex;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.form-input {
+    flex: 1;
+    min-width: 240px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.875rem 1rem;
+    color: var(--text-primary);
+    font-size: 1rem;
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: var(--info);
+    box-shadow: 0 0 0 2px rgba(50, 215, 238, 0.2);
+}
+
+.action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: var(--primary);
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+}
+
+.action-btn.secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+}
+
+.action-btn:hover {
+    transform: translateY(-1px);
+    opacity: 0.9;
+}
+
+.key-list {
+    list-style: none;
+    padding: 0;
+    margin: 0 0 1rem;
+    display: grid;
+    gap: 0.75rem;
+}
+
+.key-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.75rem 1rem;
+    color: var(--text-secondary);
+}
+
+.key-id {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.key-date {
+    font-size: 0.9rem;
+}
+
+.empty-state {
+    text-align: center;
+    color: var(--text-secondary);
+    padding: 1rem;
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+    margin-bottom: 1rem;
+}
+
+@media (max-width: 640px) {
+    .input-group {
+        flex-direction: column;
+    }
+}
+</style>
+
+<script>
+async function startSecurityKeyRegistration() {
+    if (!window.PublicKeyCredential) {
+        alert('Security keys are not supported in this browser.');
+        return;
+    }
+
+    if (!window.isSecureContext) {
+        alert('Security keys require HTTPS (or localhost).');
+        return;
+    }
+
+    const optionsRes = await fetch('/webauthn/register/options', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' }
+    });
+
+    const optionsText = await optionsRes.text();
+    console.debug('WebAuthn options status:', optionsRes.status);
+    console.debug('WebAuthn options response:', optionsText);
+    let options;
+    try {
+        options = JSON.parse(optionsText);
+    } catch (err) {
+        const hint = optionsRes.redirected ? 'Session expired. Please log in again.' : `Status ${optionsRes.status}`;
+        alert(`Security key registration failed: unexpected response. ${hint}`);
+        return;
+    }
+
+    if (!optionsRes.ok) {
+        alert(options.error || 'Unable to start security key registration');
+        return;
+    }
+
+    options.challenge = base64urlToBuffer(options.challenge);
+    if (typeof options.user?.id === 'string') {
+        options.user.id = base64urlToBuffer(options.user.id);
+    }
+    if (options.excludeCredentials) {
+        options.excludeCredentials = options.excludeCredentials.map(c => ({
+            ...c,
+            id: base64urlToBuffer(c.id)
+        }));
+    }
+
+    const cred = await navigator.credentials.create({ publicKey: options });
+    if (!cred) {
+        alert('Security key registration was cancelled.');
+        return;
+    }
+    const credential = publicKeyCredentialToJSON(cred);
+    if (credential && credential.rawId) {
+        credential.id = credential.rawId;
+    }
+
+    const label = prompt('Name this security key (optional):') || '';
+
+    const verifyRes = await fetch('/webauthn/register/verify', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential, label })
+    });
+
+    const verifyText = await verifyRes.text();
+    console.debug('WebAuthn verify status:', verifyRes.status);
+    console.debug('WebAuthn verify response:', verifyText);
+    let verifyData;
+    try {
+        verifyData = JSON.parse(verifyText);
+    } catch (err) {
+        const hint = verifyRes.redirected ? 'Session expired. Please log in again.' : `Status ${verifyRes.status}`;
+        alert(`Security key registration failed: unexpected response. ${hint}`);
+        return;
+    }
+    if (!verifyRes.ok) {
+        alert(verifyData.error || 'Security key registration failed');
+        return;
+    }
+
+    if (typeof verifyData.count === 'number' && verifyData.count === 0) {
+        alert('Security key registered, but no keys are visible yet. Please refresh.');
+    } else {
+        alert('Security key registered');
+    }
+    location.reload();
+}
+
+async function deleteSecurityKey(credentialId) {
+    if (!confirm('Remove this security key?')) {
+        return;
+    }
+    const endpoints = [
+        { url: `/webauthn/credential/${credentialId}/delete`, method: 'POST' },
+        { url: `/webauthn/credential/delete/${credentialId}`, method: 'POST' },
+        { url: `/webauthn/credential/${credentialId}`, method: 'DELETE' },
+        { url: `webauthn/credential/${credentialId}/delete`, method: 'POST' }
+    ];
+
+    for (const endpoint of endpoints) {
+        const res = await fetch(endpoint.url, {
+            method: endpoint.method,
+            credentials: 'same-origin'
+        });
+        if (res.status === 404) {
+            continue;
+        }
+        const text = await res.text();
+        let data;
+        try {
+            data = JSON.parse(text);
+        } catch (err) {
+            alert('Failed to remove security key.');
+            return;
+        }
+        if (!res.ok) {
+            alert(data.error || 'Failed to remove security key');
+            return;
+        }
+        location.reload();
+        return;
+    }
+
+    alert('Security key endpoint not found. Please refresh and try again.');
+}
+
+function base64urlToBuffer(base64url) {
+    const padding = '='.repeat((4 - (base64url.length % 4)) % 4);
+    const base64 = (base64url + padding).replace(/-/g, '+').replace(/_/g, '/');
+    const raw = atob(base64);
+    const buffer = new ArrayBuffer(raw.length);
+    const view = new Uint8Array(buffer);
+    for (let i = 0; i < raw.length; i++) {
+        view[i] = raw.charCodeAt(i);
+    }
+    return buffer;
+}
+
+function bufferToBase64url(buffer) {
+    const bytes = new Uint8Array(buffer);
+    let binary = '';
+    bytes.forEach((b) => (binary += String.fromCharCode(b)));
+    return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function arrayBufferFrom(value) {
+    if (value instanceof ArrayBuffer) {
+        return value;
+    }
+    if (ArrayBuffer.isView(value)) {
+        return value.buffer.slice(value.byteOffset, value.byteOffset + value.byteLength);
+    }
+    return null;
+}
+
+function credentialToJSON(cred) {
+    const buffer = arrayBufferFrom(cred);
+    if (buffer) {
+        return bufferToBase64url(buffer);
+    }
+    if (cred instanceof ArrayBuffer) {
+        return bufferToBase64url(cred);
+    }
+    if (Array.isArray(cred)) {
+        return cred.map(credentialToJSON);
+    }
+    if (cred && typeof cred === 'object') {
+        const obj = {};
+        for (const key in cred) {
+            if (key === 'toJSON') {
+                continue;
+            }
+            obj[key] = credentialToJSON(cred[key]);
+        }
+        return obj;
+    }
+    return cred;
+}
+
+function publicKeyCredentialToJSON(cred) {
+    if (!cred) {
+        return null;
+    }
+    if (typeof cred.toJSON === 'function') {
+        try {
+            return credentialToJSON(cred.toJSON());
+        } catch (err) {
+            console.warn('toJSON failed, falling back:', err);
+        }
+    }
+    return credentialToJSON(cred);
+}
+</script>
+{% endblock %}

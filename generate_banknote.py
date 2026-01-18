@@ -867,6 +867,7 @@ def add_number_boxes(dwg: svgwrite.Drawing, width:int, height:int,
 if __name__ == "__main__":
     import argparse
     import os
+    import json
     from tqdm import tqdm
 
     parser = argparse.ArgumentParser(description="Fantasy banknote generator")
@@ -889,23 +890,59 @@ if __name__ == "__main__":
 
     import time
 
-    for i in tqdm(range(args.copies), desc="Generating banknotes"):
-        new_seed = args.seed_text  # no _i prefix in filenames
+    # --- State tracking file ---
+    STATE_FILE = f"{args.seed_text}_generation_state.json"
 
-        for denom in denominations:
-            timestamp = time.strftime("%Y%m%d_%H%M%S")
+    def load_state():
+        if os.path.exists(STATE_FILE):
+            with open(STATE_FILE, 'r') as f:
+                try:
+                    return json.load(f)
+                except json.JSONDecodeError:
+                    return {"last_successful": {"copy": -1, "denom_index": -1}}
+        return {"last_successful": {"copy": -1, "denom_index": -1}}
+
+    def save_state(copy_index, denom_index):
+        with open(STATE_FILE, 'w') as f:
+            json.dump({"last_successful": {"copy": copy_index, "denom_index": denom_index}}, f)
+
+    state = load_state()
+    last_copy = state['last_successful']['copy']
+    last_denom_idx = state['last_successful']['denom_index']
+
+    start_copy = last_copy if last_copy != -1 else 0
+    if last_denom_idx == len(denominations) - 1:
+        start_copy += 1 # Start next copy
+        
+    for i in tqdm(range(start_copy, args.copies), desc="Generating banknotes", initial=start_copy, total=args.copies):
+        new_seed = args.seed_text
+
+        start_denom_idx = 0
+        if i == last_copy and last_denom_idx != -1:
+            start_denom_idx = last_denom_idx + 1
+
+        for denom_idx, denom in enumerate(tqdm(denominations[start_denom_idx:], desc=f"Copy {i+1}/{args.copies}", leave=False)):
+            actual_denom_idx = start_denom_idx + denom_idx
             base, ext = os.path.splitext(args.outfile)
-            # Filename format: seed_denomination_datetime.svg
-            outfile_svg = f"{new_seed}_{denom}_{timestamp}{ext}"
+            # Consistent, checkable filename
+            outfile_svg = f"{new_seed}_{i}_{denom}{ext}"
+
+            # Skip if already exists
+            if os.path.exists(outfile_svg):
+                print(f"Skipping existing file: {outfile_svg}")
+                save_state(i, actual_denom_idx)
+                continue
 
             denomination_str = f"{denom} 卢纳币"
 
             generate_fantasy_banknote(
-                seed_text=f"{new_seed}_{i}",  # keep unique seed for generation
+                seed_text=f"{new_seed}_{i}",
                 input_image_path=args.input_image,
                 outfile_svg=outfile_svg,
                 specimen=args.specimen,
                 denomination=denomination_str,
                 fonts=fonts
             )
+            # Save state after successful generation
+            save_state(i, actual_denom_idx)
 

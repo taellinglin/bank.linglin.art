@@ -1,6 +1,7 @@
 pillow
 svgwrite
 qrcode
+webauthn
 qrcode[pil]
 flask
 flask_sqlalchemy

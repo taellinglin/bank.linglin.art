@@ -1,0 +1,16 @@
+[
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-c9Pntw3lteLzpg-wNI",
+    "denomination": 1000.0,
+    "issued_to": "Gabriela Robin",
+    "timestamp": 1768696053.3639963,
+    "signature": "PBn+wisyISMIfsIsqteHTzT3RGMRJ3SAeCXgMtaf/PS/hCqBU4kDB21WiJ8AMmEO/HxwgFigl2rmuGb9cWI0dvPb9Fu3CiXAeQLQv7GunMif3XqzqJnvaReh4LCgBzvlKMYwZnHLZXgg64oIz7JjM9qO/4qQvKmwcj+e3ULXggD/dPuFR3gwDQuMJjk46a+n5rVirEAU6X6Skf6K0Vwe1H//oBL+S6pz8ZHj1jNipU2l7/c2DnEFwDypVCeOeMzpBf3eT0gz9Srd53S+CYUAfYlq9ANYpW4TMjNGXW2kmqGSJJF6PV9edW41zzhqqIsO1PaT8e6+MhE1nbDZSJ+vQA==",
+    "public_key": "-----BEGIN PUBLIC KEY-----\nMIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEA5IJzO1sbLjhg010gX83M\ngloCFnUH4wy9dEXoZslf3yE+ZkKmc+Q5y6PFN4+b8ePzcPUioKFkdhPafr9jAO4/\nnGvoQ+R0z0w4SCCcvAmcXVcd3Fg+32lVBvdhgUZkr2EjfQzzdlRnV7AxjyMXI5vn\nQTP+PkwR9B+9qWGF20A6206/th5SYxXyQt7MJSjeIt3LRb1TFo1Afg3ExQ5qs0Fs\nDi1UxA2xVMnKFYC8lhHKCCMMuBDFEHsJxhYFQ5ar+MfNpI7rwJntS+3Gls89Qn81\n/TAywGH/ajU2246NsJhYNmQzrlMMRvx+PUzmbncRLN96/Uw5DLY6lK6XSDCNNihX\njQIDAQAB\n-----END PUBLIC KEY-----\n",
+    "metadata_hash": "1123a793697b217ec6e2336e892e579d9f1911c8d626ebd217eb754fb5b9bff9",
+    "front_serial": "GTX1000_1768696053138_3de2cfd4",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "7c89a94a16d7b4a6abebd6c5ad65d82ac241cdf4402c867a6f2d2968bd2f704f"
+  }
+]

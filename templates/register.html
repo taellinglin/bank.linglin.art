@@ -1,18 +1,162 @@
 {% extends "base.html" %}
 {% block content %}
-<div class="auth-container">
-    <div class="auth-box">
-        <h1>Register</h1>
-        <form method="POST" class="auth-form">
-            <input type="text" name="username" placeholder="Username" class="auth-input" required>
-            <input type="email" name="email" placeholder="Email" class="auth-input" required>
-            <input type="password" name="password" placeholder="Password" class="auth-input" required>
-            <input type="password" name="confirm_password" placeholder="Confirm Password" class="auth-input" required>
-            <button type="submit" class="auth-button">Register</button>
-        </form>
-        <div class="auth-link">
-            Already have an account? <a href="{{ url_for('login') }}">Login here</a>
+<div class="profile-container">
+    <div class="info-card">
+        <div class="card-header">
+            <div class="header-icon">🧾</div>
+            <h3 class="header-title">Create Account</h3>
+        </div>
+        <div class="card-content">
+            <form method="POST" class="verify-form">
+                <div class="input-group">
+                    <input type="text" name="username" placeholder="Username" class="form-input" required>
+                    <input type="email" name="email" placeholder="Email" class="form-input" required>
+                    <input type="password" name="password" placeholder="Password" class="form-input" required>
+                    <input type="password" name="confirm_password" placeholder="Confirm Password" class="form-input" required>
+                    <button type="submit" class="action-btn primary">
+                        <span>Register</span>
+                        <div class="btn-icon">✅</div>
+                    </button>
+                </div>
+            </form>
+
+            <div class="note">
+                <div class="note-icon">🔐</div>
+                <div>
+                    You can add a security key after logging in from your account settings.
+                </div>
+            </div>
+
+            <div class="auth-link">
+                Already have an account? <a href="{{ url_for('login') }}">Login here</a>
+            </div>
         </div>
     </div>
 </div>
+
+<style>
+:root {
+    --bg-primary: #0f0f0f;
+    --bg-secondary: #151515;
+    --bg-tertiary: #1e1e1e;
+    --border: #2d2d2d;
+    --text-primary: #ffffff;
+    --text-secondary: #b0b0b0;
+    --primary: #007aff;
+}
+
+.profile-container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 1rem;
+}
+
+.info-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    overflow: hidden;
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.header-title {
+    color: var(--text-primary);
+    font-size: 1.1rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.card-content {
+    padding: 1.5rem;
+}
+
+.verify-form {
+    margin: 0;
+}
+
+.input-group {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+.form-input {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.875rem 1rem;
+    color: var(--text-primary);
+    font-size: 1rem;
+}
+
+.form-input:focus {
+    outline: none;
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(0, 122, 255, 0.2);
+}
+
+.action-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    border-radius: 8px;
+    border: 1px solid transparent;
+    background: var(--primary);
+    color: #fff;
+    font-weight: 600;
+    cursor: pointer;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+    grid-column: span 2;
+}
+
+.action-btn:hover {
+    transform: translateY(-1px);
+    opacity: 0.9;
+}
+
+.note {
+    display: flex;
+    gap: 0.75rem;
+    align-items: flex-start;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    background: rgba(125, 211, 252, 0.08);
+    border-radius: 10px;
+    margin-top: 1.25rem;
+    color: var(--text-secondary);
+}
+
+.note-icon {
+    font-size: 1.2rem;
+}
+
+.auth-link {
+    margin-top: 1rem;
+    color: var(--text-secondary);
+}
+
+.auth-link a {
+    color: #7dd3fc;
+}
+
+@media (max-width: 800px) {
+    .input-group {
+        grid-template-columns: 1fr;
+    }
+
+    .action-btn {
+        grid-column: span 1;
+    }
+}
+</style>
 {% endblock %}

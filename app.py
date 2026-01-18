@@ -12,6 +12,7 @@ from datetime import timedelta, datetime
 from urllib.parse import unquote
 from functools import wraps
 from urllib.parse import quote_plus
+import re
 from flask import (
     Flask,
     render_template,
@@ -28,8 +29,9 @@ from flask import (
 )
 from PIL import Image, ImageOps
 from flask_migrate import Migrate
+from werkzeug.middleware.proxy_fix import ProxyFix
 from sqlalchemy import desc
-from models import User, GenerationTask, Banknote, SerialNumber, Settings, db
+from models import User, GenerationTask, Banknote, SerialNumber, Settings, db, WebAuthnCredential
 from utils import (
     get_current_user,
     generate_qr_code,
@@ -46,6 +48,8 @@ from utils import (
     get_formatted_initials,
     get_user_avatar,
     sanitize_bio,
+    MAX_GENERATION_THREADS,
+    execute_generation_task,
 )
 import pyotp
 from signatures import DigitalBill
@@ -63,6 +67,25 @@ load_dotenv()
 # Setup logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+
+def _ensure_webauthn_name_column():
+    try:
+        from sqlalchemy import inspect, text
+
+        engine = db.engine
+        inspector = inspect(engine)
+        if "webauthn_credentials" not in inspector.get_table_names():
+            return
+        columns = [col["name"] for col in inspector.get_columns("webauthn_credentials")]
+        if "name" in columns:
+            return
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE webauthn_credentials ADD COLUMN name VARCHAR(120)")
+            )
+    except Exception as e:
+        logger.warning(f"WebAuthn name column check failed: {e}")
 
 
 # ROYGBIV Color Scheme 🌈 plus more
@@ -135,6 +158,7 @@ def color_text(text, *color_codes):
 
 
 app = Flask(__name__)
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 app.secret_key = os.environ.get("SECRET_KEY", "ILoveYouForeverXOXO")
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///lingcountrytreasury.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
@@ -248,15 +272,60 @@ def admin_required(f):
 
 
 def run_generation_task(user_id, username):
-    """Start a generation task and return task ID"""
+    """Queue a generation task."""
     try:
-        # Import the function from utils
-        from utils import run_generation_task as utils_run_generation_task
-
-        return utils_run_generation_task(user_id, username)
+        # Always create a task in 'pending' state.
+        # The worker will pick it up.
+        task = GenerationTask(user_id=user_id, status="pending")
+        db.session.add(task)
+        db.session.commit()
+        print(f"Queued generation task {task.id} for user {username}.")
+        return task.id
     except Exception as e:
-        print(f"Error in app.run_generation_task: {e}")
+        print(f"Error queuing generation task: {e}")
         return None
+
+
+
+
+def process_pending_generation_tasks():
+    """
+    A worker function that runs in a background thread to process pending tasks.
+    """
+    with app.app_context():
+        while True:
+            try:
+                # Find the next pending task
+                task = GenerationTask.query.filter_by(status="pending").order_by(GenerationTask.created_at).first()
+
+                if task:
+                    # Check if we have capacity to run a new task
+                    with GENERATION_LOCK:
+                        if len(GENERATION_THREADS) < MAX_GENERATION_THREADS:
+                            task_username = task.user.username if task.user else "Unknown"
+                            print(f"Found pending task {task.id} for user {task_username}. Starting generation.")
+                            # Mark task as processing
+                            task.status = 'processing'
+                            db.session.commit()
+
+                            # Start the generation in a new thread
+                            thread = threading.Thread(target=execute_generation_task, args=(task.id,))
+                            GENERATION_THREADS[task.id] = thread
+                            thread.start()
+                        else:
+                            # print("Max generation threads reached. Waiting...")
+                            pass
+                else:
+                    # No pending tasks, wait a bit
+                    # print("No pending tasks found. Waiting...")
+                    pass
+
+            except Exception as e:
+                print(f"Error in pending task processor: {e}")
+
+            # Wait for a bit before checking again to avoid busy-waiting
+            time.sleep(10)
+
 
 
 @app.route("/blockchain", methods=["GET"])
@@ -677,19 +746,20 @@ import statistics
 def mempool_viewer(page=1):
     """Display detailed mempool information in a web interface WITH PAGINATION"""
     try:
-        # Get timeframe from query parameter
-        selected_timeframe = request.args.get("timeframe", "1h")
-
         # Get mempool data from the new daemon
         mempool_status = blockchain_daemon_instance.get_mempool_status()
         mempool_data = mempool_status["transactions"]
+        allowed_types = {"transfer", "genesis", "GTX_Genesis"}
+        mempool_data = [
+            tx for tx in mempool_data if tx.get("type") in allowed_types
+        ]
 
         # Get blockchain status for additional context
         blockchain_status = blockchain_daemon_instance.get_blockchain_status()
 
         # Pagination settings
         per_page = 15  # Reduced for compact view
-        total_transactions = mempool_status["total"]
+        total_transactions = len(mempool_data)
         total_pages = (total_transactions + per_page - 1) // per_page
 
         # Ensure page is within valid range
@@ -710,9 +780,12 @@ def mempool_viewer(page=1):
 
         # Count by transaction type
         type_counts = {
-            "bills": mempool_status["bills"],
-            "transfers": mempool_status["transfers"],
-            "rewards": mempool_status["rewards"],
+            "bills": len(
+                [tx for tx in mempool_data if tx.get("type") in ["genesis", "GTX_Genesis"]]
+            ),
+            "transfers": len(
+                [tx for tx in mempool_data if tx.get("type") == "transfer"]
+            ),
         }
 
         # Get transaction details for current page
@@ -743,12 +816,6 @@ def mempool_viewer(page=1):
                 tx_info["issued_to"] = tx.get("issued_to", "N/A")
                 tx_info["denomination"] = tx.get("denomination", "N/A")
 
-            elif tx.get("type") == "reward":
-                tx_info["to"] = tx.get("to", "N/A")
-                tx_info["from"] = tx.get("from", "https://bank.linglin.art")
-                tx_info["amount"] = tx.get("amount", "N/A")
-                tx_info["description"] = tx.get("description", "N/A")
-
             transactions.append(tx_info)
 
         # Sort transactions by timestamp (newest first)
@@ -760,7 +827,6 @@ def mempool_viewer(page=1):
             "total_mined_transactions": mined_transactions,
             "mined_genesis": blockchain_status["genesis_transactions"],
             "mined_transfers": blockchain_status["transfer_transactions"],
-            "mined_rewards": blockchain_status["reward_transactions"],
         }
 
         return render_template(
@@ -774,7 +840,6 @@ def mempool_viewer(page=1):
             current_page=page,
             total_pages=total_pages,
             per_page=per_page,
-            selected_timeframe=selected_timeframe,
             current_user=get_current_user(),
             title="Mempool Viewer",
         )
@@ -793,7 +858,6 @@ def mempool_viewer(page=1):
             current_page=1,
             total_pages=1,
             per_page=15,
-            selected_timeframe="1h",
             current_user=get_current_user(),
             title="Mempool Viewer",
         )
@@ -803,57 +867,59 @@ def mempool_viewer(page=1):
 def mempool_activity():
     """API endpoint for mempool activity data"""
     try:
-        timeframe = request.args.get("timeframe", "1h")
-
         # Get all mempool transactions
         mempool_status = blockchain_daemon_instance.get_mempool_status()
         all_transactions = mempool_status["transactions"]
+        allowed_types = {"transfer", "genesis", "GTX_Genesis"}
+        all_transactions = [
+            tx for tx in all_transactions if tx.get("type") in allowed_types
+        ]
 
-        # Calculate time range based on timeframe
-        now = datetime.now()
-        if timeframe == "1h":
-            start_time = now - timedelta(hours=1)
-            interval_minutes = 5  # 12 intervals
-        elif timeframe == "6h":
-            start_time = now - timedelta(hours=6)
-            interval_minutes = 30  # 12 intervals
-        elif timeframe == "24h":
-            start_time = now - timedelta(hours=24)
-            interval_minutes = 120  # 12 intervals
-        elif timeframe == "7d":
-            start_time = now - timedelta(days=7)
-            interval_minutes = 840  # 12 intervals (7 days / 12 intervals)
-        else:
-            start_time = now - timedelta(hours=1)
-            interval_minutes = 5
+        if not all_transactions:
+            return jsonify(
+                {
+                    "timeline": {"transfers": [], "bills": []},
+                    "labels": [],
+                    "peak": 0,
+                    "average_per_minute": 0,
+                    "totals": {"all": 0, "transfers": 0, "bills": 0},
+                    "timeframe": "auto",
+                }
+            )
+
+        tx_times = [tx.get("timestamp", 0) for tx in all_transactions]
+        min_ts = min(tx_times)
+        max_ts = max(tx_times)
+
+        start_time = datetime.fromtimestamp(min_ts)
+        end_time = datetime.fromtimestamp(max_ts)
+
+        total_seconds = max((end_time - start_time).total_seconds(), 0)
+        num_intervals = 12 if total_seconds > 0 else 1
+        interval_seconds = max(total_seconds / max(num_intervals - 1, 1), 60)
+        interval_minutes = interval_seconds / 60
 
         # Initialize data structures
-        num_intervals = 12
         interval_data = {
             "transfers": [0] * num_intervals,
             "bills": [0] * num_intervals,
-            "rewards": [0] * num_intervals,
         }
 
         # Generate labels for x-axis
         labels = []
         for i in range(num_intervals):
             label_time = start_time + timedelta(minutes=interval_minutes * i)
-            if timeframe == "1h":
+            if total_seconds <= 86400:
                 labels.append(label_time.strftime("%H:%M"))
-            elif timeframe == "6h":
-                labels.append(label_time.strftime("%H:%M"))
-            elif timeframe == "24h":
-                labels.append(label_time.strftime("%H:%M"))
-            else:  # 7d
+            else:
                 labels.append(label_time.strftime("%m/%d"))
 
         # Process transactions
         for tx in all_transactions:
             tx_time = datetime.fromtimestamp(tx.get("timestamp", 0))
 
-            # Skip if transaction is outside timeframe
-            if tx_time < start_time or tx_time > now:
+            # Skip if transaction is outside range
+            if tx_time < start_time or tx_time > end_time:
                 continue
 
             # Calculate which interval this transaction belongs to
@@ -868,8 +934,6 @@ def mempool_activity():
                 interval_data["transfers"][interval_index] += 1
             elif tx_type in ["genesis", "GTX_Genesis"]:
                 interval_data["bills"][interval_index] += 1
-            elif tx_type == "reward":
-                interval_data["rewards"][interval_index] += 1
 
         # Calculate statistics
         all_counts = []
@@ -879,17 +943,20 @@ def mempool_activity():
 
         if all_counts:
             peak = max(all_counts)
-            average_per_minute = statistics.mean(all_counts) / (interval_minutes / 60)
+            average_per_minute = (
+                statistics.mean(all_counts) / (interval_minutes / 60)
+                if interval_minutes
+                else 0
+            )
             totals = {
                 "all": sum(all_counts),
                 "transfers": sum(interval_data["transfers"]),
                 "bills": sum(interval_data["bills"]),
-                "rewards": sum(interval_data["rewards"]),
             }
         else:
             peak = 0
             average_per_minute = 0
-            totals = {"all": 0, "transfers": 0, "bills": 0, "rewards": 0}
+            totals = {"all": 0, "transfers": 0, "bills": 0}
 
         return jsonify(
             {
@@ -898,7 +965,7 @@ def mempool_activity():
                 "peak": peak,
                 "average_per_minute": average_per_minute,
                 "totals": totals,
-                "timeframe": timeframe,
+                "timeframe": "auto",
             }
         )
 
@@ -906,12 +973,12 @@ def mempool_activity():
         print(f"❌ Error in mempool_activity API: {e}")
         return jsonify(
             {
-                "timeline": {"transfers": [], "bills": [], "rewards": []},
+                "timeline": {"transfers": [], "bills": []},
                 "labels": [],
                 "peak": 0,
                 "average_per_minute": 0,
-                "totals": {"all": 0, "transfers": 0, "bills": 0, "rewards": 0},
-                "timeframe": timeframe,
+                "totals": {"all": 0, "transfers": 0, "bills": 0},
+                "timeframe": "auto",
                 "error": str(e),
             }
         )
@@ -3684,6 +3751,7 @@ def transaction_explorer(transaction_hash):
             confirmation_percentage=confirmation_percentage,
             validation_percentage=validation_percentage,
             validation_score=validation_score,
+            validation_results={},
             title=f"Transaction {transaction_hash[:12]}...",
             current_user=get_current_user(),
         )
@@ -5364,24 +5432,31 @@ atexit.register(cleanup_stale_generations)
 # Add a helper function to check generation status
 @app.route("/generation-status/<int:user_id>")
 def generation_status(user_id):
-    with GENERATION_LOCK:
-        status = GENERATION_THREADS.get(user_id, {})
-
-    if not status:
-        return jsonify({"status": "not_found"})
-
-    # Check if the task is still in the database as processing
+    # Always read latest task from DB so UI can show progress messages
     task = (
         GenerationTask.query.filter_by(user_id=user_id)
         .order_by(GenerationTask.created_at.desc())
         .first()
     )
 
-    if task:
-        status["db_status"] = task.status
-        status["message"] = task.message
+    if not task:
+        return jsonify({"status": "not_found"})
 
-    return jsonify(status)
+    with GENERATION_LOCK:
+        is_thread_active = task.id in GENERATION_THREADS
+
+    return jsonify(
+        {
+            "status": "found",
+            "task_id": task.id,
+            "db_status": task.status,
+            "message": task.message,
+            "progress": task.progress,
+            "created_at": task.created_at.isoformat() if task.created_at else None,
+            "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+            "thread_active": is_thread_active,
+        }
+    )
 
 
 @app.route("/admin/generate-money/<int:user_id>", methods=["POST"])
@@ -6532,6 +6607,612 @@ def verify_2fa_setup():
             "error",
         )
         return redirect(url_for("setup_2fa"))
+
+
+@app.route("/account-settings")
+def account_settings():
+    current_user = get_current_user()
+    if not current_user:
+        flash("Please log in to access settings", "error")
+        return redirect(url_for("login"))
+
+    _ensure_webauthn_name_column()
+
+    current_user = User.query.get(current_user.id)
+    security_keys = WebAuthnCredential.query.filter_by(
+        user_id=current_user.id
+    ).order_by(WebAuthnCredential.created_at.desc()).all()
+
+    if not current_user.two_factor_secret:
+        current_user.two_factor_secret = pyotp.random_base32()
+        db.session.commit()
+
+    uri = current_user.get_totp_uri()
+    qr_code = generate_qr_code(uri)
+
+    return render_template(
+        "account_settings.html",
+        qr_code=qr_code,
+        security_keys=security_keys,
+        title="Account Settings",
+        current_user=current_user,
+    )
+
+
+@app.route("/account-settings/2fa", methods=["POST"])
+def account_settings_2fa():
+    current_user = get_current_user()
+    if not current_user:
+        flash("Please log in to access settings", "error")
+        return redirect(url_for("login"))
+
+    token = request.form.get("token")
+    if not token:
+        flash("Please enter a 6-digit code", "error")
+        return redirect(url_for("account_settings"))
+
+    import pyotp
+
+    totp = pyotp.TOTP(current_user.two_factor_secret)
+
+    is_valid = False
+    if totp.verify(token):
+        is_valid = True
+    elif totp.verify(token, valid_window=1):
+        is_valid = True
+    elif totp.verify(token, valid_window=2):
+        is_valid = True
+
+    if is_valid:
+        flash("Two-factor authentication updated successfully!", "success")
+    else:
+        flash(
+            "Invalid token. Please check that your authenticator app time is synchronized with the server.",
+            "error",
+        )
+
+    return redirect(url_for("account_settings"))
+
+
+def _get_webauthn_rp_id():
+    return request.host.split(":")[0]
+
+
+def _get_webauthn_origin():
+    forwarded_proto = request.headers.get("X-Forwarded-Proto", "").split(",")[0].strip()
+    scheme = forwarded_proto or request.scheme
+    host = request.host
+    if host == "bank.linglin.art":
+        scheme = "https"
+    return f"{scheme}://{host}"
+
+
+def _webauthn_imports():
+    from webauthn import (
+        generate_registration_options,
+        verify_registration_response,
+        generate_authentication_options,
+        verify_authentication_response,
+    )
+    from webauthn.helpers import options_to_json, bytes_to_base64url, base64url_to_bytes
+    from webauthn.helpers.structs import (
+        RegistrationCredential,
+        AuthenticationCredential,
+        PublicKeyCredentialDescriptor,
+        AuthenticatorSelectionCriteria,
+        UserVerificationRequirement,
+        AuthenticatorAttestationResponse,
+    )
+    try:
+        from webauthn.helpers.structs import AttestationConveyancePreference
+    except Exception:
+        AttestationConveyancePreference = None
+    return (
+        generate_registration_options,
+        verify_registration_response,
+        generate_authentication_options,
+        verify_authentication_response,
+        options_to_json,
+        bytes_to_base64url,
+        base64url_to_bytes,
+        RegistrationCredential,
+        AuthenticationCredential,
+        PublicKeyCredentialDescriptor,
+        AuthenticatorSelectionCriteria,
+        UserVerificationRequirement,
+        AuthenticatorAttestationResponse,
+        AttestationConveyancePreference,
+    )
+
+
+def _normalize_webauthn_credential(credential, base64url_to_bytes):
+    if not isinstance(credential, dict):
+        return credential
+
+    response = credential.get("response") or {}
+    if isinstance(response, dict):
+        for key in [
+            "attestationObject",
+            "clientDataJSON",
+            "authenticatorData",
+            "signature",
+            "userHandle",
+        ]:
+            if key in response and isinstance(response[key], str):
+                response[key] = base64url_to_bytes(response[key])
+        credential["response"] = response
+
+    if "raw_id" in credential and isinstance(credential["raw_id"], str):
+        credential["raw_id"] = base64url_to_bytes(credential["raw_id"])
+
+    if "id" in credential and isinstance(credential["id"], str):
+        credential["id"] = base64url_to_bytes(credential["id"])
+
+    return credential
+
+
+def _has_webauthn_bytes(value):
+    if isinstance(value, (bytes, bytearray)):
+        return True
+    if isinstance(value, dict):
+        return any(_has_webauthn_bytes(v) for v in value.values())
+    if isinstance(value, (list, tuple)):
+        return any(_has_webauthn_bytes(v) for v in value)
+    return False
+
+
+def _parse_webauthn_credential(model, credential):
+    if _has_webauthn_bytes(credential):
+        if hasattr(model, "parse_obj"):
+            return model.parse_obj(credential)
+        return model(**credential)
+
+    if hasattr(model, "parse_raw"):
+        return model.parse_raw(json.dumps(credential))
+    if hasattr(model, "parse_obj"):
+        return model.parse_obj(credential)
+    return model(**credential)
+
+
+def _webauthn_credential_type_summary(credential):
+    if not isinstance(credential, dict):
+        return {"credential": str(type(credential))}
+
+    response = credential.get("response") or {}
+    if not isinstance(response, dict):
+        response = {"_type": str(type(response))}
+
+    return {
+        "id": str(type(credential.get("id"))),
+        "raw_id": str(type(credential.get("raw_id"))),
+        "type": str(type(credential.get("type"))),
+        "response.attestationObject": str(
+            type(response.get("attestationObject"))
+        ),
+        "response.clientDataJSON": str(type(response.get("clientDataJSON"))),
+        "response.signature": str(type(response.get("signature"))),
+        "response.authenticatorData": str(
+            type(response.get("authenticatorData"))
+        ),
+        "response.userHandle": str(type(response.get("userHandle"))),
+    }
+
+
+@app.route("/webauthn/register/options", methods=["POST"])
+def webauthn_register_options():
+    try:
+        current_user = get_current_user()
+        if not current_user:
+            return jsonify({"error": "Login required"}), 401
+
+        (
+            generate_registration_options,
+            _verify_registration_response,
+            _generate_authentication_options,
+            _verify_authentication_response,
+            options_to_json,
+            bytes_to_base64url,
+            base64url_to_bytes,
+            _RegistrationCredential,
+            _AuthenticationCredential,
+            PublicKeyCredentialDescriptor,
+            AuthenticatorSelectionCriteria,
+            UserVerificationRequirement,
+            _AuthenticatorAttestationResponse,
+            AttestationConveyancePreference,
+        ) = _webauthn_imports()
+
+        rp_id = _get_webauthn_rp_id()
+        exclude_credentials = [
+            PublicKeyCredentialDescriptor(
+                id=base64url_to_bytes(cred.credential_id),
+                type="public-key",
+            )
+            for cred in current_user.webauthn_credentials
+        ]
+
+        user_verification = getattr(UserVerificationRequirement, "PREFERRED", None)
+        authenticator_selection = None
+        if user_verification is not None and hasattr(user_verification, "value"):
+            authenticator_selection = AuthenticatorSelectionCriteria(
+                user_verification=user_verification
+            )
+
+        attestation = None
+        if AttestationConveyancePreference is not None:
+            attestation_value = getattr(AttestationConveyancePreference, "NONE", None)
+            if attestation_value is not None and hasattr(attestation_value, "value"):
+                attestation = attestation_value
+
+        options_kwargs = {
+            "rp_id": rp_id,
+            "rp_name": "Ling Country Treasury",
+            "user_id": str(current_user.id).encode(),
+            "user_name": current_user.username,
+            "user_display_name": current_user.username,
+            "exclude_credentials": exclude_credentials,
+        }
+        if attestation is not None:
+            options_kwargs["attestation"] = attestation
+        if authenticator_selection is not None:
+            options_kwargs["authenticator_selection"] = authenticator_selection
+
+        options = generate_registration_options(**options_kwargs)
+
+        session["webauthn_registration_challenge"] = bytes_to_base64url(
+            options.challenge
+        )
+
+        return jsonify(json.loads(options_to_json(options)))
+    except Exception as e:
+        print(f"❌ WebAuthn registration options error: {e}")
+        return (
+            jsonify(
+                {
+                    "error": "WebAuthn registration options failed",
+                    "detail": str(e),
+                }
+            ),
+            500,
+        )
+
+
+@app.route("/webauthn/register/verify", methods=["POST"])
+def webauthn_register_verify():
+    try:
+        current_user = get_current_user()
+        if not current_user:
+            return jsonify({"error": "Login required"}), 401
+
+        _ensure_webauthn_name_column()
+
+        data = request.get_json(silent=True) or {}
+        credential = data.get("credential")
+        if not credential:
+            return jsonify({"error": "Missing credential"}), 400
+
+        credential_label = (data.get("label") or "").strip()
+        if len(credential_label) > 120:
+            credential_label = credential_label[:120]
+
+        raw_id_str = credential.get("rawId") or credential.get("id")
+        raw_id = credential.get("rawId") or credential.get("raw_id")
+        credential = {
+            key: value
+            for key, value in credential.items()
+            if key not in {
+                "authenticatorAttachment",
+                "clientExtensionResults",
+                "rawId",
+            }
+        }
+        if raw_id_str and "id" not in credential:
+            credential["id"] = raw_id_str
+        if raw_id and "raw_id" not in credential:
+            credential["raw_id"] = raw_id
+
+        (
+            _generate_registration_options,
+            verify_registration_response,
+            _generate_authentication_options,
+            _verify_authentication_response,
+            _options_to_json,
+            bytes_to_base64url,
+            base64url_to_bytes,
+            RegistrationCredential,
+            _AuthenticationCredential,
+            _PublicKeyCredentialDescriptor,
+            _AuthenticatorSelectionCriteria,
+            _UserVerificationRequirement,
+            AuthenticatorAttestationResponse,
+            _AttestationConveyancePreference,
+        ) = _webauthn_imports()
+
+        expected_challenge = session.get("webauthn_registration_challenge")
+        if not expected_challenge:
+            return jsonify({"error": "Missing registration challenge"}), 400
+
+        # 确保 WebAuthnCredential 表存在
+        try:
+            WebAuthnCredential.__table__.create(db.engine, checkfirst=True)
+        except Exception:
+            pass
+
+        credential = _normalize_webauthn_credential(
+            credential, base64url_to_bytes
+        )
+        if credential.get("raw_id") is not None:
+            credential["id"] = bytes_to_base64url(credential["raw_id"])
+
+        parsed_credential = RegistrationCredential(
+            id=credential.get("id"),
+            raw_id=credential.get("raw_id"),
+            response=AuthenticatorAttestationResponse(
+                attestation_object=credential.get("response", {}).get(
+                    "attestationObject"
+                ),
+                client_data_json=credential.get("response", {}).get(
+                    "clientDataJSON"
+                ),
+                transports=credential.get("response", {}).get("transports", []),
+            ),
+            type=credential.get("type", "public-key"),
+        )
+
+        # 验证注册响应
+        verification = verify_registration_response(
+            credential=parsed_credential,
+            expected_challenge=base64url_to_bytes(expected_challenge),
+            expected_rp_id=_get_webauthn_rp_id(),
+            expected_origin=_get_webauthn_origin(),
+            require_user_verification=False,
+        )
+
+        # 保存凭证
+        credential_id = bytes_to_base64url(verification.credential_id)
+        public_key = bytes_to_base64url(verification.credential_public_key)
+        sign_count = verification.sign_count
+
+        # 获取传输方式
+        transports = ",".join(
+            credential.get("response", {}).get("transports", []) or []
+        )
+
+        # 检查是否已存在
+        existing_cred = WebAuthnCredential.query.filter_by(
+            credential_id=credential_id
+        ).first()
+        
+        if existing_cred:
+            existing_cred.user_id = current_user.id
+            existing_cred.public_key = public_key
+            existing_cred.sign_count = sign_count
+            existing_cred.transports = transports
+            if credential_label:
+                existing_cred.name = credential_label
+        else:
+            new_cred = WebAuthnCredential(
+                user_id=current_user.id,
+                credential_id=credential_id,
+                name=credential_label or "Security Key",
+                public_key=public_key,
+                sign_count=sign_count,
+                transports=transports,
+            )
+            db.session.add(new_cred)
+
+        db.session.commit()
+
+        session.pop("webauthn_registration_challenge", None)
+        
+        # 返回成功响应
+        saved_count = WebAuthnCredential.query.filter_by(
+            user_id=current_user.id
+        ).count()
+        
+        return jsonify({
+            "success": True, 
+            "count": saved_count,
+            "message": "Security key registered successfully"
+        })
+        
+    except Exception as e:
+        print(f"❌ WebAuthn registration verify error: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            app.logger.error(
+                "WebAuthn credential field types: %s",
+                _webauthn_credential_type_summary(credential),
+            )
+        except Exception:
+            pass
+        db.session.rollback()
+        return (
+            jsonify({
+                "error": "WebAuthn registration failed", 
+                "detail": str(e),
+                "type": type(e).__name__
+            }),
+            400,
+        )
+
+
+@app.route("/webauthn/login/options", methods=["POST"])
+def webauthn_login_options():
+    try:
+        data = request.get_json(silent=True) or {}
+        username = (data.get("username") or "").strip()
+        if not username:
+            return jsonify({"error": "Username required"}), 400
+
+        user = User.query.filter_by(username=username).first()
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        (
+            _generate_registration_options,
+            _verify_registration_response,
+            generate_authentication_options,
+            _verify_authentication_response,
+            options_to_json,
+            bytes_to_base64url,
+            base64url_to_bytes,
+            _RegistrationCredential,
+            _AuthenticationCredential,
+            PublicKeyCredentialDescriptor,
+            _AuthenticatorSelectionCriteria,
+            _UserVerificationRequirement,
+            _AuthenticatorAttestationResponse,
+            _AttestationConveyancePreference,
+        ) = _webauthn_imports()
+
+        allow_credentials = [
+            PublicKeyCredentialDescriptor(
+                id=base64url_to_bytes(cred.credential_id),
+                type="public-key",
+            )
+            for cred in user.webauthn_credentials
+        ]
+
+        if not allow_credentials:
+            return jsonify({"error": "No security keys registered"}), 400
+
+        options = generate_authentication_options(
+            rp_id=_get_webauthn_rp_id(),
+            allow_credentials=allow_credentials,
+        )
+
+        session["webauthn_authentication_challenge"] = bytes_to_base64url(
+            options.challenge
+        )
+        session["webauthn_login_user_id"] = user.id
+
+        return jsonify(json.loads(options_to_json(options)))
+    except Exception as e:
+        print(f"❌ WebAuthn login options error: {e}")
+        return (
+            jsonify(
+                {"error": "WebAuthn login options failed", "detail": str(e)}
+            ),
+            500,
+        )
+
+
+@app.route("/webauthn/login/verify", methods=["POST"])
+def webauthn_login_verify():
+    try:
+        data = request.get_json(silent=True) or {}
+        credential = data.get("credential")
+        if not credential:
+            return jsonify({"error": "Missing credential"}), 400
+
+        raw_id_str = credential.get("rawId") or credential.get("id")
+        raw_id = credential.get("rawId") or credential.get("raw_id")
+        credential = {
+            key: value
+            for key, value in credential.items()
+            if key not in {
+                "authenticatorAttachment",
+                "clientExtensionResults",
+                "rawId",
+            }
+        }
+        if raw_id and "raw_id" not in credential:
+            credential["raw_id"] = raw_id
+
+        credential = _normalize_webauthn_credential(
+            credential, base64url_to_bytes
+        )
+
+        user_id = session.get("webauthn_login_user_id")
+        challenge = session.get("webauthn_authentication_challenge")
+        if not user_id or not challenge:
+            return jsonify({"error": "Missing authentication challenge"}), 400
+
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
+
+        (
+            _generate_registration_options,
+            _verify_registration_response,
+            _generate_authentication_options,
+            verify_authentication_response,
+            _options_to_json,
+            bytes_to_base64url,
+            base64url_to_bytes,
+            _RegistrationCredential,
+            AuthenticationCredential,
+            _PublicKeyCredentialDescriptor,
+            _AuthenticatorSelectionCriteria,
+            _UserVerificationRequirement,
+            _AuthenticatorAttestationResponse,
+            _AttestationConveyancePreference,
+        ) = _webauthn_imports()
+
+        if not raw_id_str:
+            return jsonify({"error": "Invalid credential"}), 400
+
+        stored = WebAuthnCredential.query.filter_by(
+            credential_id=raw_id_str
+        ).first()
+        if not stored:
+            return jsonify({"error": "Security key not found"}), 400
+
+        parsed_auth = _parse_webauthn_credential(
+            AuthenticationCredential, credential
+        )
+
+        verification = verify_authentication_response(
+            credential=parsed_auth,
+            expected_challenge=base64url_to_bytes(challenge),
+            expected_rp_id=_get_webauthn_rp_id(),
+            expected_origin=_get_webauthn_origin(),
+            credential_public_key=base64url_to_bytes(stored.public_key),
+            credential_current_sign_count=stored.sign_count,
+            require_user_verification=False,
+        )
+
+        stored.sign_count = verification.new_sign_count
+        db.session.commit()
+
+        session.pop("webauthn_authentication_challenge", None)
+        session.pop("webauthn_login_user_id", None)
+        session["user_id"] = user.id
+        flash("Logged in with security key", "success")
+        return jsonify({"success": True})
+    except Exception as e:
+        print(f"❌ WebAuthn login verify error: {e}")
+        return (
+            jsonify({"error": "WebAuthn login failed", "detail": str(e)}),
+            400,
+        )
+
+
+@app.route("/webauthn/credential/<int:credential_id>/delete", methods=["POST"])
+@app.route("/webauthn/credential/delete/<int:credential_id>", methods=["POST", "GET"])
+@app.route("/webauthn/credential/<int:credential_id>", methods=["DELETE"])
+def webauthn_delete_credential(credential_id):
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({"error": "Login required"}), 401
+
+    _ensure_webauthn_name_column()
+
+    credential = WebAuthnCredential.query.filter_by(
+        id=credential_id, user_id=current_user.id
+    ).first()
+    if not credential:
+        return jsonify({"error": "Security key not found"}), 404
+
+    db.session.delete(credential)
+    db.session.commit()
+
+    remaining = WebAuthnCredential.query.filter_by(
+        user_id=current_user.id
+    ).count()
+    return jsonify({"success": True, "count": remaining})
 
 
 @app.route("/verify-email/<token>")
@@ -7884,6 +8565,8 @@ def profile(username):
         flash("User not found", "error")
         return redirect(url_for("landing"))
 
+    _ensure_webauthn_name_column()
+
     current_user_obj = get_current_user()
 
     if request.method == "POST":
@@ -7901,6 +8584,10 @@ def profile(username):
         .limit(10)
         .all()
     )
+
+    security_keys = WebAuthnCredential.query.filter_by(
+        user_id=user.id
+    ).order_by(WebAuthnCredential.created_at.desc()).all()
 
     # DEBUG: Check if files exist on disk
     user_images_path = os.path.join(IMAGES_ROOT, username)
@@ -7960,6 +8647,7 @@ def profile(username):
         user=user,
         generation_tasks=generation_tasks,
         banknotes=banknotes,
+        security_keys=security_keys,
         title=f"Profile - {username}",
         current_user=current_user_obj,
     )
@@ -8150,6 +8838,13 @@ with app.app_context():
     # Initialize blockchain manager
 # Initialize the generation queue after all imports are complete
 if __name__ == "__main__":
+    # Start the background task processor in a separate thread
+    # This ensures it runs only once in the main process, not the reloader.
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+        print("Starting background task processor for pending generation tasks.")
+        processor_thread = threading.Thread(target=process_pending_generation_tasks, daemon=True)
+        processor_thread.start()
+
     if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
         if not hasattr(app, "blockchain_daemon_instance"):
             # blockchain_daemon = BlockchainDaemon()

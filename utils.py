@@ -31,14 +31,26 @@ import time
 import queue
 import concurrent.futures
 from typing import Dict, List, Optional, Tuple
+from generate import generate_for_user
+
 
 # Add current directory to Python path
+def _call_generate_for_user(generate_for_user, **kwargs):
+    try:
+        return generate_for_user(**kwargs)
+    except TypeError as e:
+        if "progress_callback" in str(e):
+            kwargs.pop("progress_callback", None)
+            return generate_for_user(**kwargs)
+        raise
+
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 # Configuration
 IMAGES_ROOT = "./images"
 GENERATION_LOCK = threading.Lock()
 GENERATION_THREADS = {}
+MAX_GENERATION_THREADS = 2
 
 # Initialize the advanced QR reader
 
@@ -86,34 +98,32 @@ class GenerationQueue:
                 
                 # Launch generation in separate THREAD (not process)
                 self._launch_generation_thread(user_id, username, task_id)
-                
-                print(f"[QUEUE] Launched generation thread for user {user_id}, task {task_id}")
                 return task_id
-                
         except Exception as e:
-            print(f"[QUEUE ERROR] Failed to start generation: {e}")
+            print(f"[QUEUE ERROR] {e}")
+            self._mark_task_failed(task.id if 'task' in locals() else -1, str(e))
             return None
-    
-    def _launch_generation_thread(self, user_id: int, username: str, task_id: int):
+    def _launch_generation_thread(self, user_id: int, username: str, task_id: int) -> None:
         """Launch generation in a thread with proper app context"""
         def run_generation():
+            from models import db
             try:
                 # Import create_app to create Flask application
                 from app import app as create_app
                 app = create_app
-                
+
                 with app.app_context():
                     from generate import generate_for_user
-                    from models import GenerationTask, db, User
+                    from models import GenerationTask, User
                     from email_service import send_banknote_generation_started_notification
-                    
+
                     # Update task status
                     task = GenerationTask.query.get(task_id)
                     if task:
                         task.status = 'processing'
                         task.message = "Generation in progress..."
                         db.session.commit()
-                    
+
                     # Send email notification that generation has started
                     user = User.query.get(user_id)
                     if user and user.email and user.email_verified:
@@ -125,36 +135,51 @@ class GenerationQueue:
                             )
                         except Exception as email_error:
                             print(f"[EMAIL ERROR] Could not send start notification: {email_error}")
-                    
+
                     denominations = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000]
                     results = []
                     total_pairs = 0
-                    
+
                     # Process denominations
                     for i, denom in enumerate(denominations):
                         try:
+                            base_message = f"Generating denomination {denom} ({i+1}/{len(denominations)})..."
                             if task:
-                                task.message = f"Generating denomination {denom} ({i+1}/{len(denominations)})..."
+                                task.message = base_message
                                 db.session.commit()
-                            
-                            pairs_created = generate_for_user(
+
+                            def progress_callback(message: str):
+                                if not task:
+                                    return
+                                if not message or message == base_message:
+                                    combined_message = base_message
+                                else:
+                                    combined_message = f"{base_message} | {message}"
+                                if task.message == combined_message:
+                                    return
+                                task.message = combined_message
+                                db.session.commit()
+
+                            pairs_created = _call_generate_for_user(
+                                generate_for_user,
                                 username=username,
                                 user_id=user_id,
                                 force_regenerate=False,
                                 specific_denom=denom,
                                 single_denom=True,
-                                max_threads=1
+                                max_threads=1,
+                                progress_callback=progress_callback,
                             )
-                            
+
                             results.append({
                                 'denom': denom,
                                 'success': True,
                                 'pairs_created': pairs_created
                             })
                             total_pairs += pairs_created
-                            
+
                             print(f"[GENERATION] Denomination {denom}: {pairs_created} pairs created")
-                            
+
                         except Exception as e:
                             error_msg = f"Error generating {denom}: {str(e)}"
                             print(f"[GENERATION ERROR] {error_msg}")
@@ -165,11 +190,11 @@ class GenerationQueue:
                                 'success': False,
                                 'error': error_msg
                             })
-                    
+
                     # Calculate final status
                     successful = [r for r in results if r['success']]
                     failed = [r for r in results if not r['success']]
-                    
+
                     if len(successful) == len(denominations):
                         status = 'completed'
                         message = f"All {len(denominations)} denominations generated! {total_pairs} pairs created."
@@ -179,36 +204,36 @@ class GenerationQueue:
                     else:
                         status = 'failed'
                         message = "All denominations failed to generate."
-                    
+
                     # Update task
                     if task:
                         task.status = status
                         task.message = message
                         task.completed_at = datetime.utcnow()
                         db.session.commit()
-                    
+
                     # Clean up
                     with self.lock:
                         if user_id in self.active_tasks and self.active_tasks[user_id] == task_id:
                             del self.active_tasks[user_id]
-                    
+
                     print(f"[THREAD] Generation completed for task {task_id}: {status}")
-                    
+
             except Exception as e:
                 print(f"[THREAD ERROR] {e}")
                 import traceback
                 traceback.print_exc()
-                
+
                 # Mark as failed
                 try:
                     with self.lock:
                         if user_id in self.active_tasks:
                             del self.active_tasks[user_id]
-                    
+
                     from app import app
                     app = create_app
                     with app.app_context():
-                        from models import GenerationTask, db
+                        from models import GenerationTask
                         task = GenerationTask.query.get(task_id)
                         if task:
                             task.status = 'failed'
@@ -217,11 +242,13 @@ class GenerationQueue:
                             db.session.commit()
                 except Exception as inner_e:
                     print(f"[FAILED TO MARK AS FAILED] {inner_e}")
-        
+            finally:
+                db.session.remove()
+
         # Start the thread
         thread = threading.Thread(target=run_generation, daemon=True)
         thread.start()
-        
+
         with self.lock:
             self.active_tasks[user_id] = task_id
     
@@ -262,9 +289,123 @@ class GenerationQueue:
 generation_queue = GenerationQueue(max_workers=1)
 
 # THEN define the functions that use it
-def run_generation_task(user_id: int, username: str) -> Optional[int]:
-    """Non-blocking generation task - returns immediately"""
-    return generation_queue.add_task(user_id, username)
+def execute_generation_task(task_id: int):
+    """
+    Executes a generation task for a given task_id.
+    This function is designed to be run in a separate thread.
+    """
+    from app import app
+    from models import db, GenerationTask, User
+    from generate import generate_for_user
+    from email_service import send_banknote_generation_started_notification
+
+    try:
+        with app.app_context():
+            task = GenerationTask.query.get(task_id)
+            if not task:
+                print(f"[WORKER] Task {task_id} not found.")
+                return
+
+            user = User.query.get(task.user_id)
+            if not user:
+                print(f"[WORKER] User {task.user_id} for task {task_id} not found.")
+                task.status = 'failed'
+                task.message = 'User not found.'
+                db.session.commit()
+                return
+
+            print(f"[WORKER] Starting generation for task {task_id} for user {user.username}")
+
+            # Send email notification that generation has started
+            if user.email and user.email_verified:
+                try:
+                    send_banknote_generation_started_notification(
+                        user.email,
+                        user.username,
+                        task_id=task_id
+                    )
+                except Exception as email_error:
+                    print(f"[EMAIL ERROR] Could not send start notification for task {task_id}: {email_error}")
+
+            denominations = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000]
+            results = []
+            total_pairs = 0
+
+            def progress_callback(message: str):
+                if not task:
+                    return
+                if not message or message == base_message:
+                    combined_message = base_message
+                else:
+                    combined_message = f"{base_message} | {message}"
+                if task.message == combined_message:
+                    return
+                task.message = combined_message
+                db.session.commit()
+
+            for i, denom in enumerate(denominations):
+                try:
+                    base_message = f"Generating denomination {denom} ({i+1}/{len(denominations)})..."
+                    progress_callback(base_message)
+
+                    pairs_created = _call_generate_for_user(
+                        generate_for_user,
+                        username=user.username,
+                        user_id=user.id,
+                        force_regenerate=False,
+                        specific_denom=denom,
+                        single_denom=True,
+                        max_threads=1,
+                        progress_callback=progress_callback,
+                    )
+                    results.append({'denom': denom, 'success': True, 'pairs_created': pairs_created})
+                    total_pairs += pairs_created
+                    print(f"[WORKER] Task {task_id}: Denomination {denom} created {pairs_created} pairs.")
+
+                except Exception as e:
+                    error_msg = f"Error generating denomination {denom}: {str(e)}"
+                    print(f"[WORKER ERROR] Task {task_id}: {error_msg}")
+                    results.append({'denom': denom, 'success': False, 'error': error_msg})
+                    # Continue to next denomination
+
+            # Finalize task status
+            successful = [r for r in results if r['success']]
+            if len(successful) == len(denominations):
+                task.status = 'completed'
+                task.message = f"All {len(denominations)} denominations generated! {total_pairs} pairs created."
+            elif successful:
+                task.status = 'partial'
+                task.message = f"Partial success: {len(successful)}/{len(denominations)} denominations generated."
+            else:
+                task.status = 'failed'
+                task.message = "All denominations failed to generate."
+            
+            task.completed_at = datetime.utcnow()
+            db.session.commit()
+            print(f"[WORKER] Task {task_id} finished with status: {task.status}")
+
+    except Exception as e:
+        print(f"[WORKER FATAL] Unhandled exception in task {task_id}: {e}")
+        import traceback
+        traceback.print_exc()
+        try:
+            with app.app_context():
+                task = GenerationTask.query.get(task_id)
+                if task and task.status == 'processing':
+                    task.status = 'failed'
+                    task.message = f"A fatal worker error occurred: {e}"
+                    db.session.commit()
+        except Exception as db_error:
+            print(f"[WORKER FATAL] Could not even mark task {task_id} as failed: {db_error}")
+
+    finally:
+        # CRITICAL: Clean up the thread from the tracking dictionary
+        with GENERATION_LOCK:
+            if task_id in GENERATION_THREADS:
+                del GENERATION_THREADS[task_id]
+                print(f"[WORKER] Cleaned up thread for task {task_id}. Total active: {len(GENERATION_THREADS)}")
+
+
 
 def get_generation_queue_status() -> Dict:
     """Get current generation queue status"""

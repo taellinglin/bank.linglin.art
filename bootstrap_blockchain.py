@@ -3,9 +3,9 @@ import hashlib
 
 genesis_data = {
     "type": "genesis",
-    "message": "Welcome to LingBanknotes Blockchain - The First Decentralized Digital Currency Platform for Personalized Banknotes",
+    "message": "Sanny and Ling Lin Present the Ling Country Treasury!",
     "timestamp": 1735689600,
-    "creator": "LingBanknotes System",
+    "creator": "Ling Country Treasury",
     "version": "1.0.0",
     "hash": ""  # This will be calculated
 }
