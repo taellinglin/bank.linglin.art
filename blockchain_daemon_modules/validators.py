@@ -275,11 +275,13 @@ def validate_reward_transactions(reward_transactions: List[Dict], block_index: i
         expected_reward = BASE_REWARD * difficulty
         print(f"🌑 Empty block: {BASE_REWARD} * {difficulty} = {expected_reward}")
     else:
-        # REGULAR BLOCK: (Base * difficulty) + fees (linear)
+        # REGULAR BLOCK: Base reward * 10^(difficulty-1) (exponential) + fees
         total_fees = sum(tx.get('fee', 0) for tx in non_reward_txs)
-        base_reward_amount = BASE_REWARD * difficulty
+        base_reward_amount = BASE_REWARD * (10 ** max(0, difficulty - 1))
         expected_reward = base_reward_amount + total_fees
-        print(f"📦 Regular block: ({BASE_REWARD} * {difficulty}) + {total_fees} fees = {expected_reward}")
+        print(
+            f"📦 Regular block: ({BASE_REWARD} * 10^({max(0, difficulty - 1)})) + {total_fees} fees = {expected_reward}"
+        )
     
     print(f"\n💰 REWARD COMPARISON:")
     print(f"   Expected: {expected_reward} LKC")
@@ -294,7 +296,11 @@ def validate_reward_transactions(reward_transactions: List[Dict], block_index: i
             'expected_reward': expected_reward,
             'provided_reward': amount,
             'difficulty': difficulty,
-            'calculation': f'BASE_REWARD({BASE_REWARD}) * {difficulty} = {expected_reward}',
+            'calculation': (
+                f'BASE_REWARD({BASE_REWARD}) * {difficulty} = {expected_reward}'
+                if len(non_reward_txs) == 0
+                else f'BASE_REWARD({BASE_REWARD}) * 10^({max(0, difficulty - 1)}) + fees = {expected_reward}'
+            ),
             'block_hash': block_data.get('hash', '')[:16] + '...',
             'block_timestamp': block_data.get('timestamp'),
             'reward_timestamp': reward_tx.get('timestamp'),
@@ -305,7 +311,11 @@ def validate_reward_transactions(reward_transactions: List[Dict], block_index: i
         
         return {
             'valid': False, 
-            'error': f'Reward amount {amount} != expected {expected_reward} (BASE_REWARD * difficulty = {BASE_REWARD} * {difficulty})',
+            'error': (
+                f'Reward amount {amount} != expected {expected_reward} (BASE_REWARD * difficulty = {BASE_REWARD} * {difficulty})'
+                if len(non_reward_txs) == 0
+                else f'Reward amount {amount} != expected {expected_reward} (BASE_REWARD * 10^({max(0, difficulty - 1)}) + fees)'
+            ),
             'debug': error_details
         }
     
@@ -733,7 +743,7 @@ def validate_transaction_for_block(transaction: Dict, block_index: int, mempool:
             
             # Check if in mempool
             in_mempool = any(tx.get("hash") == tx_hash for tx in mempool)
-            if not in_mempool:
+            if mempool and not in_mempool:
                 return False
             
             # Check if already mined

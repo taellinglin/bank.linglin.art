@@ -1,0 +1,16 @@
+[
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-YFyZ-ZG1k-K2tN",
+    "denomination": 1000.0,
+    "issued_to": "linglinofficial",
+    "timestamp": 1769045323.0267982,
+    "signature": "4f68db8022b1a132e97495112d60bf2e02d780a7c1674b8e323c85cd15923f1a820a0462c7d0c27cd85212705e72a34cb397fb1a84c2c56209e1e43eb58c186d",
+    "public_key": "049abd06c14251635b92606dd9310bf183f8e35796bd5e006a51cfccf61d8a2b0faa684520de88ba254aa9e7e283ab9fb70fd38c6f3fd745ca26952edb2568512b",
+    "metadata_hash": "3c9ccef873eb40f1a129e941532c77539cb4ed54519a5331fe5af99aaad94580",
+    "front_serial": "GTX1000_1769045322942_e0f2106e",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "de31adb7e838433661a1712f746df9bab080924f2b5645dc6388ebfb833dccf1"
+  }
+]

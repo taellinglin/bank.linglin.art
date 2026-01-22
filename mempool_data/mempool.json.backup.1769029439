@@ -1,0 +1,16 @@
+[
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-U6ud-AMEx-eXVE",
+    "denomination": 100.0,
+    "issued_to": "linglinofficial",
+    "timestamp": 1769029431.9244416,
+    "signature": "ee6e4369d82dec384ef52d456a501413a11038082917d6f2666bbdff778e8898be5b149c8ff07f3290e4f4472043eb0ba23154ed7fdf58a4da44c30d4edd84a8",
+    "public_key": "04958e2e7592f4a4e1f519b10da2e31a4d6c82ca64f830ba063c8eaddf79bbef7c8380459034298d56f7f89d3b4ba8974fed462efbb498b205170bca84d198e011",
+    "metadata_hash": "b42d8cb77923487c0bacc686d5b0b9e296c55c3e723b46bc031e20425f404a1c",
+    "front_serial": "GTX100_1769029431838_75696a6e",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "1b1eaefe141fdf0ca1a2319513e8905e082aff292446e59c3db1c71b9041821d"
+  }
+]

@@ -1,0 +1,16 @@
+[
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-MJwb-2s1I-CZLT",
+    "denomination": 10.0,
+    "issued_to": "linglinofficial",
+    "timestamp": 1769026564.0576766,
+    "signature": "2ff1e3cc957795fffd676669136516088fda15a89a18c91a6ca07f83720b61e99d8bc2843cc98490437c6a2a7227885b836c50ceb33b1e395d444210067be41a",
+    "public_key": "04888cebca4a1c600fef86014a84e1105a6f79f4af08042e1ecb64b229ee4de80b838b6330c0405213e5e59c3ed7a2a55ccece40919e1554eb1ef50cfc36401b6d",
+    "metadata_hash": "9a4336ef052aa2dff7d9c010c54a2a40b995db7b34f606b1e64b5f17cb610dba",
+    "front_serial": "GTX10_1769026563970_45a1297d",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "d247cab400bc8e9d56438081d9241c26d96db8298f178f6666b4217abad73a8b"
+  }
+]

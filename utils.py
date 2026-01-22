@@ -115,7 +115,11 @@ class GenerationQueue:
                 with app.app_context():
                     from generate import generate_for_user
                     from models import GenerationTask, User
-                    from email_service import send_banknote_generation_started_notification
+                    from email_service import (
+                        send_banknote_generation_started_notification,
+                        send_generation_completed_notification,
+                        send_generation_failed_notification,
+                    )
 
                     # Update task status
                     task = GenerationTask.query.get(task_id)
@@ -212,6 +216,24 @@ class GenerationQueue:
                         task.completed_at = datetime.utcnow()
                         db.session.commit()
 
+                    # Send completion email
+                    if user and user.email and user.email_verified:
+                        if status in {"completed", "partial"}:
+                            send_generation_completed_notification(
+                                user.email,
+                                user.username,
+                                status=status,
+                                total_pairs=total_pairs,
+                                task_id=task_id,
+                            )
+                        elif status == "failed":
+                            send_generation_failed_notification(
+                                user.email,
+                                user.username,
+                                error_message=message,
+                                task_id=task_id,
+                            )
+
                     # Clean up
                     with self.lock:
                         if user_id in self.active_tasks and self.active_tasks[user_id] == task_id:
@@ -233,13 +255,22 @@ class GenerationQueue:
                     from app import app
                     app = create_app
                     with app.app_context():
-                        from models import GenerationTask
+                        from models import GenerationTask, User
+                        from email_service import send_generation_failed_notification
                         task = GenerationTask.query.get(task_id)
                         if task:
                             task.status = 'failed'
                             task.message = f"Thread error: {str(e)}"
                             task.completed_at = datetime.utcnow()
                             db.session.commit()
+                            user = User.query.get(user_id)
+                            if user and user.email and user.email_verified:
+                                send_generation_failed_notification(
+                                    user.email,
+                                    user.username,
+                                    error_message=task.message,
+                                    task_id=task_id,
+                                )
                 except Exception as inner_e:
                     print(f"[FAILED TO MARK AS FAILED] {inner_e}")
             finally:
@@ -297,7 +328,11 @@ def execute_generation_task(task_id: int):
     from app import app
     from models import db, GenerationTask, User
     from generate import generate_for_user
-    from email_service import send_banknote_generation_started_notification
+    from email_service import (
+        send_banknote_generation_started_notification,
+        send_generation_completed_notification,
+        send_generation_failed_notification,
+    )
 
     try:
         with app.app_context():
@@ -384,6 +419,23 @@ def execute_generation_task(task_id: int):
             db.session.commit()
             print(f"[WORKER] Task {task_id} finished with status: {task.status}")
 
+            if user and user.email and user.email_verified:
+                if task.status in {"completed", "partial"}:
+                    send_generation_completed_notification(
+                        user.email,
+                        user.username,
+                        status=task.status,
+                        total_pairs=total_pairs,
+                        task_id=task_id,
+                    )
+                elif task.status == "failed":
+                    send_generation_failed_notification(
+                        user.email,
+                        user.username,
+                        error_message=task.message,
+                        task_id=task_id,
+                    )
+
     except Exception as e:
         print(f"[WORKER FATAL] Unhandled exception in task {task_id}: {e}")
         import traceback
@@ -395,6 +447,14 @@ def execute_generation_task(task_id: int):
                     task.status = 'failed'
                     task.message = f"A fatal worker error occurred: {e}"
                     db.session.commit()
+                    user = User.query.get(task.user_id) if task else None
+                    if user and user.email and user.email_verified:
+                        send_generation_failed_notification(
+                            user.email,
+                            user.username,
+                            error_message=task.message,
+                            task_id=task_id,
+                        )
         except Exception as db_error:
             print(f"[WORKER FATAL] Could not even mark task {task_id} as failed: {db_error}")
 

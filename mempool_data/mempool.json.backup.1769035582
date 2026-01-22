@@ -1,0 +1,16 @@
+[
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-Gs84-06HP-Khxr",
+    "denomination": 10.0,
+    "issued_to": "linglinofficial",
+    "timestamp": 1769034780.2009706,
+    "signature": "ec37baef01e0a58cc58a1ff584a5b1e33e089b45793f215de057395af7f31b60e57f87451b7dc905264191ee5a22a659293e96145871e5e42ecb4496bc5e32cf",
+    "public_key": "04e758bdb245753d18739ce38628eed71a9a7d58439715e497cdd3aa0424f5e05f61b5da9b72be4bbb866c2a984042ab292ed945d12bed6c15181e4d1a64f12591",
+    "metadata_hash": "73f89dee671950abbc0ad526bdbd2586437cd1bce077786e111822e21fa2a57f",
+    "front_serial": "GTX10_1769034780125_0681d9d4",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "2eddf5102cdac0789dc0021ba82bb9bba7da2b4cb8890dc8ed3f97c0ad695212"
+  }
+]

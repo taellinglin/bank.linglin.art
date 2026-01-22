@@ -118,10 +118,10 @@ class NotificationScheduler:
         try:
             # Find recently completed tasks (within last hour) that might need notification
             one_hour_ago = datetime.utcnow() - timedelta(hours=1)
-            from models import User, GenerationTask
+            from models import User, GenerationTask, Banknote
             from email_service import send_banknote_generation_notification
             completed_tasks = GenerationTask.query.filter(
-            #   GenerationTask.status == 'completed',
+                GenerationTask.status.in_(["completed", "partial"]),
                 GenerationTask.completed_at >= one_hour_ago
             ).all()
             
@@ -146,22 +146,16 @@ class NotificationScheduler:
                     if notification_key in self.notified_users:
                         continue
                     
-                    # Get banknote count and denominations
-                    total_banknotes = 0
-                    denominations = set()
-                    serial_numbers = []
-                    
-                    for task in tasks:
-                        if task.banknote:
-                            total_banknotes += 1
-                            # Extract denomination from banknote
-                            try:
-                                denom = task.banknote.denomination
-                                denominations.add(denom)
-                                if task.banknote.serial_number:
-                                    serial_numbers.append(task.banknote.serial_number)
-                            except:
-                                pass
+                    # Get banknotes created recently for this user (front side only)
+                    recent_banknotes = Banknote.query.filter(
+                        Banknote.user_id == user_id,
+                        Banknote.created_at >= one_hour_ago,
+                        Banknote.side == "front",
+                    ).all()
+
+                    total_banknotes = len(recent_banknotes)
+                    denominations = {b.denomination for b in recent_banknotes if b.denomination}
+                    serial_numbers = [b.serial_number for b in recent_banknotes if b.serial_number]
                     
                     if total_banknotes > 0:
                         denom_str = ", ".join(str(d) for d in sorted(denominations)) if denominations else "Multiple"

@@ -1316,7 +1316,7 @@ def generate_sd_background(prompt, width=1600, height=600, save_path="./backgrou
     }
     
     try:
-        response = requests.post("http://127.0.0.1:3014/sdapi/v1/txt2img", json=payload, timeout=120)
+        response = requests.post("http://127.0.0.1:3333/sdapi/v1/txt2img", json=payload, timeout=120)
         response.raise_for_status()
         
         result = response.json()

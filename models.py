@@ -143,6 +143,8 @@ class Banknote(db.Model):
     pdf_path = db.Column(db.String(500))
     qr_data = db.Column(db.Text)
     is_public = db.Column(db.Boolean, default=True)
+    is_verified = db.Column(db.Boolean, default=False)
+    verification_status = db.Column(db.String(20), default="pending")
     transaction_data = db.Column(db.Text)  # JSON string for blockchain transactions
     digital_signature = db.Column(db.Text, nullable=True)
     public_key = db.Column(db.Text, nullable=True) 
@@ -181,6 +183,7 @@ class SerialNumber(db.Model):
     user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
     banknote_id = db.Column(db.Integer, db.ForeignKey('banknotes.id'), nullable=False)
     is_active = db.Column(db.Boolean, default=True)
+    is_mined = db.Column(db.Boolean, default=False)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     def __repr__(self):

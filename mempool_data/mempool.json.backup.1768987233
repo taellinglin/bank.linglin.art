@@ -1,0 +1,16 @@
+[
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-9jPS2v26HpQWMg-Z8s",
+    "denomination": 1000.0,
+    "issued_to": "linglinofficial",
+    "timestamp": 1768986881.8472624,
+    "signature": "cc039e96f14b6e2705c3a2ef9a350b6f3ce40da4c266aab5e6affcfa04c7b36f7ff52610bca3ec153890fe49375205e15eb7962cd2a00032936dcdf53a42e160",
+    "public_key": "048144001c855249b6f8ae8ef4f90fc1e2978fa619a948875794423a07e5355de192e9364f83bd73c89166e3c84dfba35698d41d32b3a327d56adc1b08ff316362",
+    "metadata_hash": "a08328e69523ee5282a6b766f5edd3a4a26a009a867fdf4130b36ff3f787637c",
+    "front_serial": "GTX1000_1768986881753_800f8c54",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "02e2e4738c2d2bc2c16afe2dd66c56537972384baac181f4e1975e2d0b02cc0d"
+  }
+]

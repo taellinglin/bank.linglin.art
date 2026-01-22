@@ -189,9 +189,9 @@ OUTPUT_ROOT = "./images"  # single folder per name
 PORTRAITS_DIR = "./portraits"
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".bmp")
 # SD API URLs with GPU selection support
-SD_API_URL = "http://localhost:3014/sdapi/v1/txt2img"
-SD_API_URL_GPU0 = os.getenv("SD_API_URL_GPU0", "http://localhost:3014/sdapi/v1/txt2img")
-SD_API_URL_GPU1 = os.getenv("SD_API_URL_GPU1", "http://localhost:3015/sdapi/v1/txt2img")
+SD_API_URL = "http://localhost:3333/sdapi/v1/txt2img"
+SD_API_URL_GPU0 = os.getenv("SD_API_URL_GPU0", "http://localhost:3333/sdapi/v1/txt2img")
+SD_API_URL_GPU1 = os.getenv("SD_API_URL_GPU1", "http://localhost:3333/sdapi/v1/txt2img")
 
 # Check if multi-GPU is available
 MULTI_GPU_ENABLED = os.getenv("MULTI_GPU_ENABLED", "false").lower() == "true"
@@ -757,66 +757,73 @@ def save_to_database(name, denom_numeric, files, user_id):
         if user:
             denom_value = float(denom_str)
             user.balance += denom_value
-            
-            # Update this section in save_to_database function:
-            # In your save_to_database function, replace the blockchain section with:
-
-            # Add genesis transaction to blockchain daemon - WITH DEBUGGING
-            try:
-                from app import blockchain_daemon_instance
-                
-                safe_print(f"[DEBUG] Blockchain daemon instance: {blockchain_daemon_instance}")
-                safe_print(f"[DEBUG] Blockchain daemon type: {type(blockchain_daemon_instance)}")
-                
-                if blockchain_daemon_instance:
-                    safe_print(f"[DEBUG] Blockchain daemon attributes: {[attr for attr in dir(blockchain_daemon_instance) if not attr.startswith('_')]}")
-                    
-                    # Check if mempool exists
-                    if hasattr(blockchain_daemon_instance, 'mempool'):
-                        safe_print(f"[DEBUG] Mempool size: {len(blockchain_daemon_instance.mempool)}")
-                    else:
-                        safe_print(f"[DEBUG] No mempool attribute found")
-                    
-                    # Check if the daemon is running
-                    if hasattr(blockchain_daemon_instance, 'is_running'):
-                        safe_print(f"[DEBUG] Daemon running: {blockchain_daemon_instance.is_running}")
-                    
-                    # Create genesis transaction for the front serial
-                    safe_print(f"[DEBUG] Adding genesis transaction for serial: {files['front_serial']}")
-                    genesis_success = blockchain_daemon_instance.add_genesis_transaction(
-                        serial_number=files['front_serial'],
-                        denomination=denom_value,
-                        issued_to=name
-                    )
-                    
-                    safe_print(f"[DEBUG] Genesis transaction result: {genesis_success}")
-                    
-                    if genesis_success:
-                        safe_print(f"[+] ✓ Genesis transaction added to mempool for serial: {files['front_serial']}")
-                        # Verify it was added
-                        if hasattr(blockchain_daemon_instance, 'mempool'):
-                            safe_print(f"[DEBUG] Mempool size after add: {len(blockchain_daemon_instance.mempool)}")
-                            
-                            # Show what's in the mempool
-                            genesis_txs = [tx for tx in blockchain_daemon_instance.mempool if tx.get('type') in ['genesis', 'GTX_Genesis']]
-                            safe_print(f"[DEBUG] Genesis transactions in mempool: {len(genesis_txs)}")
-                    else:
-                        safe_print(f"[!] Failed to add genesis transaction for serial: {files['front_serial']}")
-                else:
-                    safe_print(f"[!] Blockchain daemon instance is None - not initialized")
-                    
-            except ImportError as e:
-                safe_print(f"[!] Could not import blockchain_daemon_instance: {e}")
-            except Exception as e:
-                safe_print(f"[!] Error with blockchain integration: {e}")
-                import traceback
-                traceback.print_exc()
-                        
             user.last_generation = datetime.datetime.utcnow()
         
         db.session.commit()
         safe_print(f"[+] Added banknote pair to DB for {denom_str} 卢纳币")
         safe_print(f"[+] Digital signature: {files.get('digital_signature', 'N/A')[:20]}...")
+
+        # Add genesis transactions to blockchain AFTER DB commit succeeds
+        try:
+            from app import blockchain_daemon_instance
+
+            safe_print(f"[DEBUG] Blockchain daemon instance: {blockchain_daemon_instance}")
+            safe_print(f"[DEBUG] Blockchain daemon type: {type(blockchain_daemon_instance)}")
+
+            if blockchain_daemon_instance:
+                safe_print(f"[DEBUG] Blockchain daemon attributes: {[attr for attr in dir(blockchain_daemon_instance) if not attr.startswith('_')]}")
+
+                if hasattr(blockchain_daemon_instance, 'mempool'):
+                    safe_print(f"[DEBUG] Mempool size: {len(blockchain_daemon_instance.mempool)}")
+                else:
+                    safe_print(f"[DEBUG] No mempool attribute found")
+
+                if hasattr(blockchain_daemon_instance, 'is_running'):
+                    safe_print(f"[DEBUG] Daemon running: {blockchain_daemon_instance.is_running}")
+
+                safe_print(f"[DEBUG] Adding genesis transaction for serial: {files['front_serial']}")
+                genesis_success = blockchain_daemon_instance.add_genesis_transaction(
+                    serial_number=files['front_serial'],
+                    denomination=float(denom_str),
+                    issued_to=name
+                )
+
+                back_genesis_success = False
+                if files.get('back_serial'):
+                    safe_print(f"[DEBUG] Adding genesis transaction for serial: {files['back_serial']}")
+                    back_genesis_success = blockchain_daemon_instance.add_genesis_transaction(
+                        serial_number=files['back_serial'],
+                        denomination=float(denom_str),
+                        issued_to=name
+                    )
+
+                safe_print(f"[DEBUG] Genesis transaction result (front): {genesis_success}")
+                safe_print(f"[DEBUG] Genesis transaction result (back): {back_genesis_success}")
+
+                if genesis_success:
+                    safe_print(f"[+] ✓ Genesis transaction added to mempool for serial: {files['front_serial']}")
+                else:
+                    safe_print(f"[!] Failed to add genesis transaction for serial: {files['front_serial']}")
+
+                if files.get('back_serial'):
+                    if back_genesis_success:
+                        safe_print(f"[+] ✓ Genesis transaction added to mempool for serial: {files['back_serial']}")
+                    else:
+                        safe_print(f"[!] Failed to add genesis transaction for serial: {files['back_serial']}")
+
+                if hasattr(blockchain_daemon_instance, 'mempool'):
+                    safe_print(f"[DEBUG] Mempool size after add: {len(blockchain_daemon_instance.mempool)}")
+                    genesis_txs = [tx for tx in blockchain_daemon_instance.mempool if tx.get('type') in ['genesis', 'GTX_Genesis']]
+                    safe_print(f"[DEBUG] Genesis transactions in mempool: {len(genesis_txs)}")
+            else:
+                safe_print(f"[!] Blockchain daemon instance is None - not initialized")
+
+        except ImportError as e:
+            safe_print(f"[!] Could not import blockchain_daemon_instance: {e}")
+        except Exception as e:
+            safe_print(f"[!] Error with blockchain integration: {e}")
+            import traceback
+            traceback.print_exc()
         return True
         
     except Exception as e:

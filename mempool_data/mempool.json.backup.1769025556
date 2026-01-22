@@ -1,0 +1,16 @@
+[
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-saF2-jT0--0N0s",
+    "denomination": 1.0,
+    "issued_to": "linglinofficial",
+    "timestamp": 1769025543.70694,
+    "signature": "cc69af6d2f5c022dcfe044c3dd26218e6d0de7c4bbc42277a63a738a70a416355cf79be2f9f81c774a2d50fcfef5a09368a1e8707617035e7469489664787ad1",
+    "public_key": "049bf33bb159b2d848238599490eed4d189c32cf3fbe4afbca46679e497550080e55b7fd4d4393fbcdfd7e66054434b4dabe3c8a26f4d4b97177d53a9e1d0ffd8e",
+    "metadata_hash": "d72a6fda79c1be3473b885908bd8516f396821b8313f72c0c0eb03edc92b0eee",
+    "front_serial": "GTX1_1769025543628_d5ecccf9",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "98f1b1db1c3f71ac2b587f1bd0e494d584e3abefd5ec8c58ebb6db39e95ff970"
+  }
+]

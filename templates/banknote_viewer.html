@@ -16,8 +16,18 @@
                     <span class="stat-label">Denomination</span>
                 </div>
                 <div class="profile-stat">
-                    <span class="stat-value">{{ banknote.side|title }}</span>
-                    <span class="stat-label">Side</span>
+                    <span class="stat-value">
+                        {% if front_note and back_note %}
+                            Front + Back
+                        {% elif front_note %}
+                            Front
+                        {% elif back_note %}
+                            Back
+                        {% else %}
+                            {{ banknote.side|title }}
+                        {% endif %}
+                    </span>
+                    <span class="stat-label">Sides</span>
                 </div>
                 <div class="profile-stat">
                     <span class="stat-value">{{ 'Public' if banknote.is_public else 'Private' }}</span>
@@ -35,30 +45,57 @@
                 <a class="action-btn primary" href="{{ url_for('verify_serial', serial_id=banknote.serial_number) }}">
                     <span>Verify</span>
                 </a>
-                {% if image_path %}
-                <a class="action-btn cyan" href="{{ url_for('serve_banknote_image', filename=image_path) }}" target="_blank" rel="noopener">
-                    <span>PNG</span>
+                {% if front_image_path %}
+                <a class="action-btn cyan" href="{{ url_for('serve_banknote_image', filename=front_image_path) }}" target="_blank" rel="noopener">
+                    <span>Front PNG</span>
+                </a>
+                {% elif front_svg_path %}
+                <a class="action-btn purple" href="{{ url_for('serve_banknote_image', filename=front_svg_path) }}" target="_blank" rel="noopener">
+                    <span>Front SVG</span>
                 </a>
                 {% endif %}
-                {% if svg_path %}
-                <a class="action-btn purple" href="{{ url_for('serve_banknote_image', filename=svg_path) }}" target="_blank" rel="noopener">
-                    <span>SVG</span>
+                {% if back_image_path %}
+                <a class="action-btn cyan" href="{{ url_for('serve_banknote_image', filename=back_image_path) }}" target="_blank" rel="noopener">
+                    <span>Back PNG</span>
+                </a>
+                {% elif back_svg_path %}
+                <a class="action-btn purple" href="{{ url_for('serve_banknote_image', filename=back_svg_path) }}" target="_blank" rel="noopener">
+                    <span>Back SVG</span>
                 </a>
                 {% endif %}
             </div>
         </div>
         <div class="card-content">
-            {% if image_path %}
-                <div class="image-container fullwidth">
-                    <img class="banknote-fullwidth" src="{{ url_for('serve_banknote_image', filename=image_path) }}" alt="Banknote {{ banknote.serial_number }}" />
+            <div class="banknote-grid">
+                <div class="banknote-panel">
+                    <div class="banknote-panel-header">Front</div>
+                    {% if front_image_path %}
+                        <div class="image-container fullwidth">
+                            <img class="banknote-fullwidth" src="{{ url_for('serve_banknote_image', filename=front_image_path) }}" alt="Front {{ banknote.serial_number }}" />
+                        </div>
+                    {% elif front_svg_path %}
+                        <div class="image-container fullwidth">
+                            <img class="banknote-fullwidth" src="{{ url_for('serve_banknote_image', filename=front_svg_path) }}" alt="Front {{ banknote.serial_number }}" />
+                        </div>
+                    {% else %}
+                        <div class="empty-state">Front image not available.</div>
+                    {% endif %}
                 </div>
-            {% elif svg_path %}
-                <div class="image-container fullwidth">
-                    <img class="banknote-fullwidth" src="{{ url_for('serve_banknote_image', filename=svg_path) }}" alt="Banknote {{ banknote.serial_number }}" />
+                <div class="banknote-panel">
+                    <div class="banknote-panel-header">Back</div>
+                    {% if back_image_path %}
+                        <div class="image-container fullwidth">
+                            <img class="banknote-fullwidth" src="{{ url_for('serve_banknote_image', filename=back_image_path) }}" alt="Back {{ banknote.serial_number }}" />
+                        </div>
+                    {% elif back_svg_path %}
+                        <div class="image-container fullwidth">
+                            <img class="banknote-fullwidth" src="{{ url_for('serve_banknote_image', filename=back_svg_path) }}" alt="Back {{ banknote.serial_number }}" />
+                        </div>
+                    {% else %}
+                        <div class="empty-state">Back image not available.</div>
+                    {% endif %}
                 </div>
-            {% else %}
-                <div class="empty-state">No image available.</div>
-            {% endif %}
+            </div>
         </div>
     </div>
 
@@ -246,6 +283,28 @@
     transform: translateY(-2px);
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
     border-color: var(--info);
+}
+
+.banknote-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 1.25rem;
+}
+
+.banknote-panel {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1rem;
+}
+
+.banknote-panel-header {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: var(--text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.75rem;
 }
 
 .stat-value {

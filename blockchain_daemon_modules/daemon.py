@@ -10,7 +10,14 @@ import threading
 import os
 import logging
 import traceback
+import shutil
 from typing import List, Dict, Set, Optional
+
+# Import SM3 hash if available
+try:
+    from sm2 import SM3Hash
+except Exception:
+    SM3Hash = None
 
 # Import lunalib components with fallback for different versions
 logger = logging.getLogger(__name__)
@@ -193,10 +200,17 @@ class BlockchainDaemon:
             'message': 'Genesis Block - 伊森林爱灵林。灵林爱伊森林。'
         }
         
-        # Calculate genesis hash using double SHA-256
+        # Calculate genesis hash (SM3 preferred, fallback to double SHA-256)
         data_string = json.dumps(genesis_data, sort_keys=True)
-        first_hash = hashlib.sha256(data_string.encode('utf-8')).hexdigest()
-        genesis_hash = hashlib.sha256(first_hash.encode('utf-8')).hexdigest()
+        if SM3Hash is not None:
+            try:
+                genesis_hash = SM3Hash.hash(data_string.encode("utf-8")).hex()
+            except Exception:
+                first_hash = hashlib.sha256(data_string.encode("utf-8")).hexdigest()
+                genesis_hash = hashlib.sha256(first_hash.encode("utf-8")).hexdigest()
+        else:
+            first_hash = hashlib.sha256(data_string.encode('utf-8')).hexdigest()
+            genesis_hash = hashlib.sha256(first_hash.encode('utf-8')).hexdigest()
         
         # Collect all GTX_Genesis transactions from mempool
         genesis_txs = [tx for tx in self.mempool if tx.get("type") == "GTX_Genesis"]
@@ -241,6 +255,66 @@ class BlockchainDaemon:
         )
         
         return genesis_block
+
+    def backup_chain_files(self, reason: str = "reset") -> Dict:
+        """Backup blockchain and mempool files with a timestamp suffix."""
+        timestamp = int(time.time())
+        results = {
+            "blockchain_backup": None,
+            "mempool_backup": None,
+            "success": True,
+            "errors": [],
+        }
+
+        try:
+            if os.path.exists(self.blockchain_file):
+                backup_path = f"{self.blockchain_file}.backup.{reason}.{timestamp}"
+                os.makedirs(os.path.dirname(self.blockchain_file), exist_ok=True)
+                shutil.copy2(self.blockchain_file, backup_path)
+                results["blockchain_backup"] = backup_path
+        except Exception as e:
+            results["success"] = False
+            results["errors"].append(f"blockchain backup failed: {e}")
+
+        try:
+            if os.path.exists(self.mempool_file):
+                backup_path = f"{self.mempool_file}.backup.{reason}.{timestamp}"
+                os.makedirs(os.path.dirname(self.mempool_file), exist_ok=True)
+                shutil.copy2(self.mempool_file, backup_path)
+                results["mempool_backup"] = backup_path
+        except Exception as e:
+            results["success"] = False
+            results["errors"].append(f"mempool backup failed: {e}")
+
+        return results
+
+    def reset_blockchain_with_sm3(self) -> Dict:
+        """Backup chain files and start a new chain with SM3-based genesis hash."""
+        backup_result = self.backup_chain_files(reason="sm3_reset")
+
+        try:
+            self.blockchain = []
+            self.mempool = []
+            self.mined_serials = set()
+
+            # Save empty mempool before creating genesis
+            self.save_mempool()
+
+            # Create new genesis block (uses SM3 if available)
+            self._create_and_add_genesis_block()
+
+            return {
+                "success": True,
+                "backup": backup_result,
+                "block_count": len(self.blockchain),
+            }
+        except Exception as e:
+            self.logger.error(f"Failed to reset blockchain: {e}")
+            return {
+                "success": False,
+                "backup": backup_result,
+                "error": str(e),
+            }
     
     def _calculate_merkle_root(self, txs: List[Dict]) -> str:
         """Calculate Merkle root for transactions"""
@@ -340,12 +414,14 @@ class BlockchainDaemon:
     
     def get_mempool_status(self) -> Dict:
         """Get mempool status and statistics"""
-        return transactions.get_mempool_status(self.mempool)
+        mempool_data = self._get_filtered_mempool()
+        return transactions.get_mempool_status(mempool_data)
     
     def get_mempool_transaction(self, tx_hash: str) -> Optional[Dict]:
         """Get a specific transaction from the mempool by hash"""
         try:
-            for tx in self.mempool:
+            mempool_data = self._get_filtered_mempool()
+            for tx in mempool_data:
                 if tx.get('hash') == tx_hash:
                     return {'found': True, 'transaction': tx, 'status': 'pending'}
             return {'found': False, 'status': 'not_in_mempool'}
@@ -381,6 +457,165 @@ class BlockchainDaemon:
     def generate_transaction_hash(self, transaction_data: Dict) -> str:
         """Generate a unique hash for any transaction"""
         return transactions.generate_transaction_hash(transaction_data)
+
+    # ========== LUNALIB INTEGRATION HELPERS ==========
+
+    def _try_lunalib_call(self, target, method_names: List[str], *args, **kwargs):
+        """Try calling a lunalib method if available."""
+        for method_name in method_names:
+            if target and hasattr(target, method_name):
+                method = getattr(target, method_name)
+                if callable(method):
+                    try:
+                        return method(*args, **kwargs)
+                    except Exception as e:
+                        self.logger.debug(f"Lunalib call failed: {method_name}: {e}")
+        return None
+
+    def _normalize_bool_result(self, result) -> Optional[bool]:
+        if isinstance(result, bool):
+            return result
+        if isinstance(result, dict):
+            if "valid" in result:
+                return bool(result.get("valid"))
+            if "success" in result:
+                return bool(result.get("success"))
+        return None
+
+    def _normalize_validation_dict(self, result, default_error: str) -> Optional[Dict]:
+        if isinstance(result, dict):
+            if "valid" in result:
+                if "issues" not in result:
+                    if "errors" in result and isinstance(result.get("errors"), list):
+                        result["issues"] = result.get("errors")
+                    else:
+                        result["issues"] = []
+                return result
+        if isinstance(result, bool):
+            return {
+                "valid": result,
+                "issues": [] if result else [default_error]
+            }
+        return None
+
+    def _get_filtered_mempool(self) -> List[Dict]:
+        """Use lunalib to fetch/filter mempool when available."""
+        mempool_data = None
+
+        if self.mempool_mgr and hasattr(self.mempool_mgr, "test_connection"):
+            try:
+                if self.mempool_mgr.test_connection():
+                    mempool_data = self._try_lunalib_call(
+                        self.mempool_mgr,
+                        ["get_filtered_mempool", "get_mempool_filtered"],
+                    )
+                    if not isinstance(mempool_data, list):
+                        mempool_data = self._try_lunalib_call(
+                            self.mempool_mgr,
+                            ["get_mempool"],
+                        )
+            except Exception as e:
+                self.logger.debug(f"Failed to fetch mempool from lunalib: {e}")
+
+        if not isinstance(mempool_data, list):
+            mempool_data = list(self.mempool)
+
+        filtered = self._try_lunalib_call(
+            self.mempool_mgr,
+            [
+                "filter_mempool",
+                "filter_transactions",
+                "filter_mempool_transactions",
+                "filter_pending_transactions",
+            ],
+            mempool_data,
+        )
+
+        return filtered if isinstance(filtered, list) else mempool_data
+
+    def cleanup_mempool_spam(self, max_age_seconds: Optional[int] = 7 * 24 * 3600) -> Dict:
+        """Remove invalid/duplicate/mined/expired transactions from mempool."""
+        now = time.time()
+        removed_reasons = {
+            "invalid_structure": 0,
+            "duplicate_hash": 0,
+            "duplicate_signature": 0,
+            "duplicate_serial": 0,
+            "mined": 0,
+            "expired": 0,
+            "invalid_entry": 0,
+        }
+
+        seen_hashes = set()
+        seen_signatures = set()
+        seen_serials = set()
+        cleaned = []
+
+        for tx in list(self.mempool):
+            if not isinstance(tx, dict):
+                removed_reasons["invalid_entry"] += 1
+                continue
+
+            try:
+                if not self.validate_transaction_structure(tx):
+                    removed_reasons["invalid_structure"] += 1
+                    continue
+            except Exception:
+                removed_reasons["invalid_structure"] += 1
+                continue
+
+            if max_age_seconds is not None:
+                ts_raw = tx.get("timestamp")
+                try:
+                    ts_val = float(ts_raw)
+                except (TypeError, ValueError):
+                    ts_val = None
+                if ts_val is not None and (now - ts_val) > max_age_seconds:
+                    removed_reasons["expired"] += 1
+                    continue
+
+            if self.is_transaction_mined(tx):
+                removed_reasons["mined"] += 1
+                continue
+
+            tx_hash = tx.get("hash")
+            if tx_hash:
+                if tx_hash in seen_hashes:
+                    removed_reasons["duplicate_hash"] += 1
+                    continue
+                seen_hashes.add(tx_hash)
+
+            tx_signature = tx.get("signature")
+            if tx_signature:
+                if tx_signature in seen_signatures:
+                    removed_reasons["duplicate_signature"] += 1
+                    continue
+                seen_signatures.add(tx_signature)
+
+            serial = (
+                tx.get("serial_number")
+                or tx.get("front_serial")
+                or tx.get("back_serial")
+                or tx.get("serial")
+            )
+            if serial:
+                if serial in seen_serials:
+                    removed_reasons["duplicate_serial"] += 1
+                    continue
+                seen_serials.add(serial)
+
+            cleaned.append(tx)
+
+        removed_count = len(self.mempool) - len(cleaned)
+        if removed_count > 0:
+            self.mempool = cleaned
+            self.save_mempool()
+
+        return {
+            "removed": removed_count,
+            "remaining": len(self.mempool),
+            "reasons": removed_reasons,
+        }
     
     # NOTE: create_reward_transaction has been removed from daemon
     # Use mining.create_reward_transaction() instead for correct exponential rewards:
@@ -397,6 +632,14 @@ class BlockchainDaemon:
     
     def validate_transaction_structure(self, transaction: Dict) -> bool:
         """Validate transaction structure"""
+        lunalib_result = self._try_lunalib_call(
+            self.mempool_mgr,
+            ["validate_transaction", "validate_transaction_structure", "validate_tx"],
+            transaction,
+        )
+        normalized = self._normalize_bool_result(lunalib_result)
+        if normalized is not None:
+            return normalized
         return validators.validate_transaction_structure(transaction)
     
     def validate_transaction_for_block(self, transaction: Dict, block_index: int) -> bool:
@@ -408,14 +651,42 @@ class BlockchainDaemon:
     
     def validate_block(self, block: Dict) -> bool:
         """Validate a mined block"""
+        lunalib_structure = self._try_lunalib_call(
+            self.blockchain_mgr,
+            ["validate_block_structure", "_validate_block_structure"],
+            block,
+        )
+        normalized_structure = self._normalize_validation_dict(
+            lunalib_structure,
+            "Block structure invalid"
+        )
+        structure_validator = self.blockchain_mgr._validate_block_structure
+        if normalized_structure is not None:
+            structure_validator = lambda b: normalized_structure
+
         return validators.validate_block(
             block, self.blockchain, 
-            self.blockchain_mgr._validate_block_structure,
+            structure_validator,
             self.validate_transaction_for_block
         )
     
     def validate_block_for_submission(self, block: Dict) -> Dict:
         """Comprehensive validation for block submission"""
+        lunalib_validation = self._try_lunalib_call(
+            self.blockchain_mgr,
+            ["validate_block_for_submission", "validate_block_submission"],
+            block,
+        )
+        if isinstance(lunalib_validation, dict) and "valid" in lunalib_validation:
+            lunalib_validation.setdefault("errors", [])
+            lunalib_validation.setdefault("warnings", [])
+            return lunalib_validation
+        if isinstance(lunalib_validation, bool):
+            return {
+                "valid": lunalib_validation,
+                "errors": [] if lunalib_validation else ["Lunalib block validation failed"],
+                "warnings": []
+            }
         return validators.validate_block_for_submission(
             block, self.get_network_blockchain_height,
             self.get_last_network_block_hash, self.calculate_block_hash

@@ -7,7 +7,91 @@ import logging
 import traceback
 from typing import Dict, List, Optional
 
+try:
+    import requests
+except Exception:  # pragma: no cover - optional dependency
+    requests = None
+
 logger = logging.getLogger(__name__)
+
+
+def _get_network_endpoints(mempool_mgr) -> List[str]:
+    endpoints = []
+    for attr in ("network_endpoints", "endpoints"):
+        value = getattr(mempool_mgr, attr, None)
+        if isinstance(value, list):
+            endpoints.extend(value)
+    for attr in ("endpoint_url", "base_url", "url"):
+        value = getattr(mempool_mgr, attr, None)
+        if isinstance(value, str) and value:
+            endpoints.append(value)
+    # De-duplicate while preserving order
+    seen = set()
+    unique = []
+    for item in endpoints:
+        if item not in seen:
+            unique.append(item)
+            seen.add(item)
+    return unique
+
+
+def _disable_mempool_compression(mempool_mgr) -> None:
+    for attr in ("use_gzip", "gzip", "compress", "use_compression", "compression"):
+        if hasattr(mempool_mgr, attr):
+            try:
+                setattr(mempool_mgr, attr, False)
+            except Exception:
+                pass
+
+
+def _try_post_transaction(url: str, transaction: Dict) -> bool:
+    if not requests:
+        return False
+
+    payloads = [
+        transaction,
+        {"transaction": transaction},
+    ]
+
+    for payload in payloads:
+        try:
+            response = requests.post(url, json=payload, timeout=10)
+            if response.status_code in (200, 201, 202):
+                return True
+        except Exception as e:
+            logger.debug(f"HTTP broadcast failed for {url}: {e}")
+    return False
+
+
+def _broadcast_via_http(transaction: Dict, mempool_mgr) -> bool:
+    endpoints = _get_network_endpoints(mempool_mgr)
+    if not endpoints:
+        return False
+
+    candidate_paths = [
+        "/mempool",
+        "/mempool/add",
+        "/transactions",
+        "/transactions/add",
+        "/transaction",
+        "/transaction/add",
+        "/api/mempool",
+        "/api/mempool/add",
+        "/api/transactions",
+        "/api/transaction",
+        "/submit_transaction",
+        "/broadcast_transaction",
+    ]
+
+    for endpoint in endpoints:
+        base = endpoint.rstrip("/")
+        for path in candidate_paths:
+            url = f"{base}{path}"
+            if _try_post_transaction(url, transaction):
+                logger.info(f"✅ Broadcasted transaction via HTTP: {url}")
+                return True
+
+    return False
 
 
 def sync_with_network(blockchain: List[Dict], blockchain_mgr, mempool_mgr, 
@@ -128,18 +212,24 @@ def broadcast_transaction_to_network(transaction: Dict, mempool_mgr) -> bool:
             logger.debug("Network unavailable, cannot broadcast transaction")
             return False
         
+        # Avoid gzipped request bodies if the server can't decode them
+        _disable_mempool_compression(mempool_mgr)
+
         # Broadcast using mempool manager
         result = mempool_mgr.broadcast_transaction(transaction)
         
         if result:
             logger.info(f"✅ Broadcasted transaction: {transaction.get('hash', 'unknown')[:16]}...")
             return True
-        else:
-            logger.warning(f"Failed to broadcast transaction")
-            return False
+        
+        logger.warning("Mempool manager broadcast failed, trying HTTP fallback")
+        return _broadcast_via_http(transaction, mempool_mgr)
             
     except Exception as e:
         logger.error(f"Error broadcasting transaction: {e}")
+        # Try fallback if the exception hints at bad JSON/gzip issues
+        if _broadcast_via_http(transaction, mempool_mgr):
+            return True
         return False
 
 

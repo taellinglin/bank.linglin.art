@@ -1,10 +1,14 @@
+
+
 # app.py
 import os
+import shutil
 import time
 import asyncio
 import threading
 import json
 import hashlib
+import gzip
 import logging
 import os
 from typing import Dict
@@ -31,6 +35,7 @@ from PIL import Image, ImageOps
 from flask_migrate import Migrate
 from werkzeug.middleware.proxy_fix import ProxyFix
 from sqlalchemy import desc
+from sqlalchemy.exc import OperationalError
 from models import User, GenerationTask, Banknote, SerialNumber, Settings, db, WebAuthnCredential
 from utils import (
     get_current_user,
@@ -68,6 +73,23 @@ load_dotenv()
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
+# Cached blockchain stats to avoid blocking web requests
+BLOCKCHAIN_STATS_CACHE = {
+    "data": None,
+    "timestamp": 0,
+    "refreshing": False,
+}
+BLOCKCHAIN_STATS_TTL_SECONDS = 30
+BLOCKCHAIN_STATS_LOCK = threading.Lock()
+
+SYSTEM_STATUS_CACHE = {
+    "data": None,
+    "timestamp": 0,
+    "refreshing": False,
+}
+SYSTEM_STATUS_TTL_SECONDS = 15
+SYSTEM_STATUS_LOCK = threading.Lock()
+
 
 def _ensure_webauthn_name_column():
     try:
@@ -86,6 +108,52 @@ def _ensure_webauthn_name_column():
             )
     except Exception as e:
         logger.warning(f"WebAuthn name column check failed: {e}")
+
+
+def _ensure_serial_numbers_is_mined_column():
+    try:
+        from sqlalchemy import inspect, text
+
+        engine = db.engine
+        inspector = inspect(engine)
+        if "serial_numbers" not in inspector.get_table_names():
+            return
+        columns = [col["name"] for col in inspector.get_columns("serial_numbers")]
+        if "is_mined" in columns:
+            return
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE serial_numbers ADD COLUMN is_mined BOOLEAN DEFAULT 0")
+            )
+    except Exception as e:
+        logger.warning(f"SerialNumber is_mined column check failed: {e}")
+
+
+def _ensure_banknotes_verification_columns():
+    try:
+        from sqlalchemy import inspect, text
+
+        engine = db.engine
+        inspector = inspect(engine)
+        if "banknotes" not in inspector.get_table_names():
+            return
+        columns = [col["name"] for col in inspector.get_columns("banknotes")]
+
+        if "is_verified" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE banknotes ADD COLUMN is_verified BOOLEAN DEFAULT 0")
+                )
+
+        if "verification_status" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text(
+                        "ALTER TABLE banknotes ADD COLUMN verification_status VARCHAR(20) DEFAULT 'pending'"
+                    )
+                )
+    except Exception as e:
+        logger.warning(f"Banknote verification column check failed: {e}")
 
 
 # ROYGBIV Color Scheme 🌈 plus more
@@ -162,6 +230,9 @@ app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 app.secret_key = os.environ.get("SECRET_KEY", "ILoveYouForeverXOXO")
 app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///lingcountrytreasury.db"
 app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+    "connect_args": {"timeout": 30, "check_same_thread": False},
+}
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 
 # Initialize email service
@@ -182,6 +253,20 @@ notification_scheduler = None
 DATA_DIR = "./system-data/"
 db.init_app(app)
 migrate = Migrate(app, db)
+# Improve SQLite concurrency
+from sqlalchemy import event
+from sqlalchemy.engine import Engine
+
+
+@event.listens_for(Engine, "connect")
+def _set_sqlite_pragma(dbapi_connection, connection_record):
+    try:
+        cursor = dbapi_connection.cursor()
+        cursor.execute("PRAGMA journal_mode=WAL")
+        cursor.execute("PRAGMA synchronous=NORMAL")
+        cursor.close()
+    except Exception:
+        pass
 # In app.py, near the top with other initializations
 blockchain_daemon_instance = None
 blockchain_daemon_initialized = False
@@ -271,6 +356,19 @@ def admin_required(f):
     return decorated
 
 
+def _user_has_strong_auth(user: User) -> bool:
+    if not user:
+        return False
+    if getattr(user, "two_factor_secret", None):
+        return True
+    try:
+        return (
+            WebAuthnCredential.query.filter_by(user_id=user.id).first() is not None
+        )
+    except Exception:
+        return False
+
+
 def run_generation_task(user_id, username):
     """Queue a generation task."""
     try:
@@ -283,6 +381,10 @@ def run_generation_task(user_id, username):
         return task.id
     except Exception as e:
         print(f"Error queuing generation task: {e}")
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
         return None
 
 
@@ -293,25 +395,46 @@ def process_pending_generation_tasks():
     A worker function that runs in a background thread to process pending tasks.
     """
     with app.app_context():
+        # Normalize queued/processing tasks on startup so they can be resumed
+        try:
+            stuck_tasks = GenerationTask.query.filter(
+                GenerationTask.status.in_(["queued", "processing"])
+            ).all()
+            for task in stuck_tasks:
+                task.status = "pending"
+                if not task.message:
+                    task.message = "Resumed after restart."
+            if stuck_tasks:
+                db.session.commit()
+                print(f"[GENERATION] Resumed {len(stuck_tasks)} queued/processing task(s) after restart")
+        except Exception as e:
+            print(f"[GENERATION] Failed to normalize tasks on startup: {e}")
+
         while True:
             try:
                 # Find the next pending task
-                task = GenerationTask.query.filter_by(status="pending").order_by(GenerationTask.created_at).first()
+                task = GenerationTask.query.filter(
+                    GenerationTask.status.in_(["pending", "queued", "processing"])
+                ).order_by(GenerationTask.created_at).first()
 
                 if task:
                     # Check if we have capacity to run a new task
                     with GENERATION_LOCK:
                         if len(GENERATION_THREADS) < MAX_GENERATION_THREADS:
-                            task_username = task.user.username if task.user else "Unknown"
-                            print(f"Found pending task {task.id} for user {task_username}. Starting generation.")
-                            # Mark task as processing
-                            task.status = 'processing'
-                            db.session.commit()
+                            if task.id in GENERATION_THREADS:
+                                # Already running in this process
+                                pass
+                            else:
+                                task_username = task.user.username if task.user else "Unknown"
+                                print(f"Found pending task {task.id} for user {task_username}. Starting generation.")
+                                # Mark task as processing
+                                task.status = 'processing'
+                                db.session.commit()
 
-                            # Start the generation in a new thread
-                            thread = threading.Thread(target=execute_generation_task, args=(task.id,))
-                            GENERATION_THREADS[task.id] = thread
-                            thread.start()
+                                # Start the generation in a new thread
+                                thread = threading.Thread(target=execute_generation_task, args=(task.id,))
+                                GENERATION_THREADS[task.id] = thread
+                                thread.start()
                         else:
                             # print("Max generation threads reached. Waiting...")
                             pass
@@ -325,6 +448,17 @@ def process_pending_generation_tasks():
 
             # Wait for a bit before checking again to avoid busy-waiting
             time.sleep(10)
+
+
+def start_generation_task_processor():
+    """Start the background task processor once per process."""
+    if getattr(app, "_generation_task_processor_started", False):
+        return
+    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
+        app._generation_task_processor_started = True
+        print("Starting background task processor for pending generation tasks.")
+        processor_thread = threading.Thread(target=process_pending_generation_tasks, daemon=True)
+        processor_thread.start()
 
 
 
@@ -681,7 +815,43 @@ def view_block_detail(block_hash):
         flash(f"Error loading block details: {str(e)}", "error")
         return redirect(url_for("blockchain_viewer"))
 
+# --- Blockchain Range API ---
+from flask import request, jsonify
 
+@app.route('/blockchain/range', methods=['GET'])
+def blockchain_range():
+    """
+    Returns blocks in the range [start, end] (inclusive) as JSON.
+    Query params: start, end (block index, integer)
+    """
+    try:
+        start = int(request.args.get('start', ''))
+        end = int(request.args.get('end', ''))
+    except Exception:
+        return jsonify({'error': 'Invalid start or end parameter'}), 400
+    if start > end or start < 0:
+        return jsonify({'error': 'Invalid range'}), 400
+
+    # Load blockchain data (assume blockchain.json is the canonical source)
+    import os, json
+    chain_path = os.path.join(os.path.dirname(__file__), 'blockchain_daemon', 'blockchain.json')
+    if not os.path.exists(chain_path):
+        return jsonify({'error': 'Blockchain data not found'}), 500
+    with open(chain_path, encoding='utf-8') as f:
+        try:
+            chain = json.load(f)
+        except Exception:
+            return jsonify({'error': 'Failed to load blockchain data'}), 500
+
+    # Defensive: chain may be a dict with 'chain' key or a list
+    if isinstance(chain, dict) and 'chain' in chain:
+        blocks = chain['chain']
+    else:
+        blocks = chain
+
+    # Filter blocks in the requested range
+    result = [b for b in blocks if isinstance(b, dict) and 'index' in b and start <= b['index'] <= end]
+    return jsonify({'blocks': result, 'count': len(result)}), 200
 # --- API: Transaction Verification Detail ---
 @app.route("/transactions/verify/<string:tx_hash>", methods=["GET"])
 def api_verify_transaction(tx_hash):
@@ -746,21 +916,28 @@ import statistics
 def mempool_viewer(page=1):
     """Display detailed mempool information in a web interface WITH PAGINATION"""
     try:
-        # Get mempool data from the new daemon
-        mempool_status = blockchain_daemon_instance.get_mempool_status()
-        mempool_data = mempool_status["transactions"]
+        page_provided = bool(request.view_args and "page" in request.view_args)
+        # Get mempool data locally (avoid network calls)
+        mempool_data = getattr(blockchain_daemon_instance, "mempool", []) or []
         allowed_types = {"transfer", "genesis", "GTX_Genesis"}
         mempool_data = [
             tx for tx in mempool_data if tx.get("type") in allowed_types
         ]
 
-        # Get blockchain status for additional context
+        # Ensure consistent ordering (oldest -> newest) before pagination
+        mempool_data.sort(key=lambda tx: tx.get("timestamp", 0))
+
+        # Get blockchain status for additional context (local only)
         blockchain_status = blockchain_daemon_instance.get_blockchain_status()
 
         # Pagination settings
         per_page = 15  # Reduced for compact view
         total_transactions = len(mempool_data)
-        total_pages = (total_transactions + per_page - 1) // per_page
+        total_pages = max(1, (total_transactions + per_page - 1) // per_page)
+
+        # If no page param provided, default to latest page
+        if not page_provided:
+            page = total_pages
 
         # Ensure page is within valid range
         page = max(1, min(page, total_pages))
@@ -867,9 +1044,8 @@ def mempool_viewer(page=1):
 def mempool_activity():
     """API endpoint for mempool activity data"""
     try:
-        # Get all mempool transactions
-        mempool_status = blockchain_daemon_instance.get_mempool_status()
-        all_transactions = mempool_status["transactions"]
+        # Get all mempool transactions locally (avoid network calls)
+        all_transactions = getattr(blockchain_daemon_instance, "mempool", []) or []
         allowed_types = {"transfer", "genesis", "GTX_Genesis"}
         all_transactions = [
             tx for tx in all_transactions if tx.get("type") in allowed_types
@@ -1949,95 +2125,145 @@ def get_blockchain_stats():
         if not all_blocks:
             return jsonify({"error": "No blockchain data available"}), 404
 
-        # Calculate comprehensive stats
-        current_time = time.time()
-        stats = {
-            "total_blocks": len(all_blocks),
-            "total_transactions": 0,
-            "genesis_count": 0,
-            "transfer_count": 0,
-            "reward_count": 0,
-            "unique_miners": set(),
-            "avg_block_time": 0,
-            "chain_age_days": 0,
-            "blocks_per_day": 0,
-            "txs_per_day": 0,
-            "avg_denomination": 0,
-            "total_value": 0,
-        }
+        def _compute_blockchain_stats(blocks):
+            current_time = time.time()
+            stats = {
+                "total_blocks": len(blocks),
+                "total_transactions": 0,
+                "genesis_count": 0,
+                "transfer_count": 0,
+                "reward_count": 0,
+                "unique_miners": set(),
+                "avg_block_time": 0,
+                "chain_age_days": 0,
+                "blocks_per_day": 0,
+                "txs_per_day": 0,
+                "avg_denomination": 0,
+                "total_value": 0,
+            }
 
-        # Process all blocks
-        timestamps = []
-        denominations = []
+            timestamps = []
+            denominations = []
 
-        for block in all_blocks:
-            if isinstance(block, dict):
-                # Count transactions
-                transactions = block.get("transactions", [])
-                if isinstance(transactions, list):
-                    stats["total_transactions"] += len(transactions)
+            for block in blocks:
+                if isinstance(block, dict):
+                    transactions = block.get("transactions", [])
+                    if isinstance(transactions, list):
+                        stats["total_transactions"] += len(transactions)
 
-                    for tx in transactions:
-                        if isinstance(tx, dict):
-                            tx_type = tx.get("type", "")
-                            if tx_type in ["genesis", "GTX_Genesis"]:
-                                stats["genesis_count"] += 1
-                                # Try to get denomination
-                                if "denomination" in tx:
-                                    try:
-                                        denom = float(tx["denomination"])
-                                        denominations.append(denom)
-                                        stats["total_value"] += denom
-                                    except:
-                                        pass
-                            elif tx_type == "transfer":
-                                stats["transfer_count"] += 1
-                            elif tx_type == "reward":
-                                stats["reward_count"] += 1
+                        for tx in transactions:
+                            if isinstance(tx, dict):
+                                tx_type = tx.get("type", "")
+                                if tx_type in ["genesis", "GTX_Genesis"]:
+                                    stats["genesis_count"] += 1
+                                    if "denomination" in tx:
+                                        try:
+                                            denom = float(tx["denomination"])
+                                            denominations.append(denom)
+                                            stats["total_value"] += denom
+                                        except Exception:
+                                            pass
+                                elif tx_type == "transfer":
+                                    stats["transfer_count"] += 1
+                                elif tx_type == "reward":
+                                    stats["reward_count"] += 1
 
-                # Track miners
-                miner = block.get("miner", "")
-                if miner:
-                    stats["unique_miners"].add(miner)
+                    miner = block.get("miner", "")
+                    if miner:
+                        stats["unique_miners"].add(miner)
 
-                # Track timestamps
-                timestamp = block.get("timestamp", 0)
-                if isinstance(timestamp, str):
-                    try:
-                        timestamp = float(timestamp)
-                    except:
-                        timestamp = 0
-                if timestamp > 0:
-                    timestamps.append(timestamp)
+                    timestamp = block.get("timestamp", 0)
+                    if isinstance(timestamp, str):
+                        try:
+                            timestamp = float(timestamp)
+                        except Exception:
+                            timestamp = 0
+                    if timestamp > 0:
+                        timestamps.append(timestamp)
 
-        # Calculate derived stats
-        stats["unique_miners"] = len(stats["unique_miners"])
+            stats["unique_miners"] = len(stats["unique_miners"])
 
-        if len(timestamps) > 1:
-            timestamps.sort()
-            time_diffs = [
-                timestamps[i + 1] - timestamps[i] for i in range(len(timestamps) - 1)
-            ]
-            stats["avg_block_time"] = round(sum(time_diffs) / len(time_diffs), 2)
+            if len(timestamps) > 1:
+                timestamps.sort()
+                time_diffs = [
+                    timestamps[i + 1] - timestamps[i]
+                    for i in range(len(timestamps) - 1)
+                ]
+                stats["avg_block_time"] = round(sum(time_diffs) / len(time_diffs), 2)
 
-            # Chain age in days
-            chain_age_seconds = current_time - timestamps[0]
-            stats["chain_age_days"] = round(chain_age_seconds / (24 * 60 * 60), 2)
+                chain_age_seconds = current_time - timestamps[0]
+                stats["chain_age_days"] = round(chain_age_seconds / (24 * 60 * 60), 2)
 
-            if stats["chain_age_days"] > 0:
-                stats["blocks_per_day"] = round(
-                    stats["total_blocks"] / stats["chain_age_days"], 2
+                if stats["chain_age_days"] > 0:
+                    stats["blocks_per_day"] = round(
+                        stats["total_blocks"] / stats["chain_age_days"], 2
+                    )
+                    stats["txs_per_day"] = round(
+                        stats["total_transactions"] / stats["chain_age_days"], 2
+                    )
+
+            if denominations:
+                stats["avg_denomination"] = round(
+                    sum(denominations) / len(denominations), 2
                 )
-                stats["txs_per_day"] = round(
-                    stats["total_transactions"] / stats["chain_age_days"], 2
-                )
 
-        if denominations:
-            stats["avg_denomination"] = round(
-                sum(denominations) / len(denominations), 2
-            )
+            return stats
 
-        return jsonify(stats)
+        def _start_background_refresh(blocks):
+            with BLOCKCHAIN_STATS_LOCK:
+                if BLOCKCHAIN_STATS_CACHE.get("refreshing"):
+                    return False
+                BLOCKCHAIN_STATS_CACHE["refreshing"] = True
+
+            def _worker():
+                try:
+                    stats = _compute_blockchain_stats(blocks)
+                    with BLOCKCHAIN_STATS_LOCK:
+                        BLOCKCHAIN_STATS_CACHE["data"] = stats
+                        BLOCKCHAIN_STATS_CACHE["timestamp"] = time.time()
+                except Exception as e:
+                    logger.warning(f"Blockchain stats refresh failed: {e}")
+                finally:
+                    with BLOCKCHAIN_STATS_LOCK:
+                        BLOCKCHAIN_STATS_CACHE["refreshing"] = False
+
+            threading.Thread(target=_worker, daemon=True).start()
+            return True
+
+        with BLOCKCHAIN_STATS_LOCK:
+            cached_stats = BLOCKCHAIN_STATS_CACHE.get("data")
+            cached_at = BLOCKCHAIN_STATS_CACHE.get("timestamp", 0)
+
+        cache_fresh = cached_stats and (time.time() - cached_at) <= BLOCKCHAIN_STATS_TTL_SECONDS
+
+        if cache_fresh:
+            return jsonify(cached_stats)
+
+        _start_background_refresh(all_blocks)
+
+        if cached_stats:
+            response = dict(cached_stats)
+            response["refreshing"] = True
+            return jsonify(response)
+
+        # Return quick placeholder while refresh runs
+        return jsonify(
+            {
+                "total_blocks": len(all_blocks),
+                "total_transactions": 0,
+                "genesis_count": 0,
+                "transfer_count": 0,
+                "reward_count": 0,
+                "unique_miners": 0,
+                "avg_block_time": 0,
+                "chain_age_days": 0,
+                "blocks_per_day": 0,
+                "txs_per_day": 0,
+                "avg_denomination": 0,
+                "total_value": 0,
+                "refreshing": True,
+            }
+        )
 
     except Exception as e:
         print(f"Error in get_blockchain_stats: {e}")
@@ -2183,7 +2409,30 @@ def mempool_status():
 def add_to_mempool():
     """Add a transaction to the mempool (GTX Genesis, transfers, etc.)"""
     try:
-        data = request.get_json()
+        data = None
+        try:
+            data = request.get_json()
+        except Exception:
+            data = None
+
+        if data is None:
+            raw_data = request.get_data() or b""
+            if raw_data:
+                if (request.headers.get("Content-Encoding") or "").lower() == "gzip":
+                    try:
+                        raw_data = gzip.decompress(raw_data)
+                    except Exception as e:
+                        return (
+                            jsonify({"success": False, "error": f"Invalid gzip body: {e}"}),
+                            400,
+                        )
+                try:
+                    data = json.loads(raw_data.decode("utf-8"))
+                except Exception as e:
+                    return (
+                        jsonify({"success": False, "error": f"Failed to decode JSON object: {e}"}),
+                        400,
+                    )
 
         app.logger.info(f"🔍 [MEMPOOL/ADD] Received request")
         app.logger.info(
@@ -4042,6 +4291,7 @@ def verify_serial(serial_id=None):
     blockchain_status = None
     mined_transaction = None
     block_details = None
+    tx_data = None
     validation_results = {
         "serial_db": None,
         "banknote_db": None,
@@ -4049,6 +4299,7 @@ def verify_serial(serial_id=None):
         "mempool": None,
         "blockchain": None,
     }
+    global blockchain_daemon_instance
 
     # Initialize SM2 signature manager
     try:
@@ -4082,10 +4333,31 @@ def verify_serial(serial_id=None):
         result = validate_serial_id(serial_input)
 
     if result and result.get("valid"):
+        def _build_serial_candidates(serial_value: str):
+            if not serial_value:
+                return []
+            candidates = [serial_value]
+            serial_upper = serial_value.upper()
+            if serial_upper.endswith("_FRONT") or serial_upper.endswith("_BACK"):
+                base_serial = serial_value.rsplit("_", 1)[0]
+                if base_serial and base_serial not in candidates:
+                    candidates.append(base_serial)
+            else:
+                candidates.append(f"{serial_value}_FRONT")
+                candidates.append(f"{serial_value}_BACK")
+            return candidates
+
+        serial_candidates = _build_serial_candidates(serial_input)
+
         # LAYER 1: Check Serial Database
-        serial_record = SerialNumber.query.filter_by(
-            serial=serial_input, is_active=True
+        serial_record = SerialNumber.query.filter(
+            SerialNumber.serial.in_(serial_candidates),
+            SerialNumber.is_active.is_(True),
         ).first()
+        if not serial_record:
+            serial_record = SerialNumber.query.filter(
+                SerialNumber.serial.in_(serial_candidates)
+            ).first()
         validation_results["serial_db"] = {
             "found": serial_record is not None,
             "data": {
@@ -4095,31 +4367,104 @@ def verify_serial(serial_id=None):
                 "is_active": serial_record.is_active if serial_record else None,
             },
         }
-
-        if serial_record:
-            # LAYER 2: Check Banknote Database
+        # LAYER 2: Check Banknote Database (fallback to banknote lookup if serial record missing)
+        if serial_record and serial_record.banknote:
             banknote = serial_record.banknote
-            validation_results["banknote_db"] = {
-                "found": banknote is not None,
-                "data": {
-                    "owner": banknote.user.username
-                    if banknote and banknote.user
-                    else None,
-                    "denomination": banknote.denomination if banknote else None,
-                    "side": banknote.side if banknote else None,
-                }
-                if banknote
-                else None,
+        else:
+            banknote = Banknote.query.filter(
+                Banknote.serial_number.in_(serial_candidates)
+            ).first()
+
+        validation_results["banknote_db"] = {
+            "found": banknote is not None,
+            "data": {
+                "owner": banknote.user.username if banknote and banknote.user else None,
+                "denomination": banknote.denomination if banknote else None,
+                "side": banknote.side if banknote else None,
             }
+            if banknote
+            else None,
+        }
 
-            if banknote and hasattr(banknote, "transaction_data"):
-                try:
-                    tx_data = (
-                        json.loads(banknote.transaction_data)
-                        if banknote.transaction_data
-                        else {}
-                    )
+        # LAYER 4/5: Check mempool & blockchain even if DB records are missing
+        def _tx_has_serial(tx, serial_values):
+            if not serial_values or not isinstance(tx, dict):
+                return False
+            if isinstance(serial_values, str):
+                serial_values = [serial_values]
+            for field in ("serial_number", "front_serial", "back_serial", "serial"):
+                field_value = tx.get(field)
+                if not field_value:
+                    continue
+                if field_value in serial_values:
+                    return True
+            return False
 
+        mempool_found = False
+        mempool_tx = None
+        blockchain_found = False
+        blockchain_data = None
+        confirmations = 0
+
+        try:
+            if blockchain_daemon_instance and hasattr(blockchain_daemon_instance, "mempool"):
+                for tx in blockchain_daemon_instance.mempool:
+                    if _tx_has_serial(tx, serial_candidates):
+                        mempool_found = True
+                        mempool_tx = tx.copy()
+                        break
+        except Exception as e:
+            print(f"Error checking mempool: {e}")
+
+        validation_results["mempool"] = {
+            "found": mempool_found,
+            "status": "pending" if mempool_found else "not_found",
+            "mined_from_mempool": False,
+        }
+
+        try:
+            if blockchain_daemon_instance and hasattr(blockchain_daemon_instance, "blockchain"):
+                for block_idx, block in enumerate(blockchain_daemon_instance.blockchain):
+                    for tx in block.get("transactions", []):
+                        if _tx_has_serial(tx, serial_candidates):
+                            blockchain_found = True
+                            blockchain_data = tx.copy()
+                            blockchain_data["block_height"] = block_idx
+                            blockchain_data["block_hash"] = block.get("hash")
+                            confirmations = max(
+                                0,
+                                len(blockchain_daemon_instance.blockchain) - block_idx - 1,
+                            )
+                            break
+                    if blockchain_found:
+                        break
+        except Exception as e:
+            print(f"[BLOCKCHAIN ERROR] Error checking blockchain: {e}")
+
+        validation_results["blockchain"] = {
+            "found": blockchain_found,
+            "data": blockchain_data,
+            "confirmations": confirmations,
+            "status": "mined" if blockchain_found else ("pending" if mempool_found else "unmined"),
+            "daemon_available": blockchain_daemon_instance is not None,
+        }
+
+        # Prefer transaction data from DB, then blockchain, then mempool
+        if banknote and hasattr(banknote, "transaction_data"):
+            try:
+                tx_data = (
+                    json.loads(banknote.transaction_data)
+                    if banknote.transaction_data
+                    else {}
+                )
+            except Exception:
+                tx_data = None
+        if not tx_data:
+            tx_data = blockchain_data or mempool_tx
+
+        if tx_data:
+            try:
+                if True:
                     # Get signature components
                     public_key = tx_data.get("public_key")
                     signature = tx_data.get("signature")
@@ -4143,8 +4488,6 @@ def verify_serial(serial_id=None):
                     # CHECK BLOCKCHAIN STATUS - UPDATED LOGIC
                     # LAYER 4: Check Mempool
                     try:
-                        from app import blockchain_daemon_instance
-
                         mempool_found = False
                         if blockchain_daemon_instance and hasattr(
                             blockchain_daemon_instance, "mempool"
@@ -4175,8 +4518,6 @@ def verify_serial(serial_id=None):
 
                     try:
                         # Check if transaction is in the blockchain cache
-                        from app import blockchain_daemon_instance
-
                         print(
                             f"[BLOCKCHAIN CHECK] Checking for serial: '{front_serial}'"
                         )
@@ -4664,18 +5005,18 @@ def verify_serial(serial_id=None):
                         "signature_type": signature_type,
                     }
 
-                except Exception as e:
-                    print(f"[VERIFY ERROR] Processing error: {e}")
-                    import traceback
+            except Exception as e:
+                print(f"[VERIFY ERROR] Processing error: {e}")
+                import traceback
 
-                    traceback.print_exc()
-                    validation_results["digital_bill"] = {
-                        "found": False,
-                        "signature_valid": False,
-                        "error": str(e),
-                    }
-                    signature_details["error"] = str(e)
-                    signature_valid = False
+                traceback.print_exc()
+                validation_results["digital_bill"] = {
+                    "found": False,
+                    "signature_valid": False,
+                    "error": str(e),
+                }
+                signature_details["error"] = str(e)
+                signature_valid = False
 
     # Calculate validation score and percentage
     validation_score = 0
@@ -4914,9 +5255,12 @@ def admin_panel():
             "A beautiful fantasy landscape with mountains and rivers, mystical atmosphere",
         )
 
-    tasks = GenerationTask.query.order_by(GenerationTask.created_at.desc()).all()
-    serials = SerialNumber.query.order_by(SerialNumber.created_at.desc()).all()
-    queue_status = get_generation_queue_status()
+    users = User.query.order_by(User.created_at.desc()).limit(200).all()
+    banknotes = Banknote.query.order_by(Banknote.created_at.desc()).limit(200).all()
+    tasks = GenerationTask.query.order_by(GenerationTask.created_at.desc()).limit(200).all()
+    serials = SerialNumber.query.order_by(SerialNumber.created_at.desc()).limit(200).all()
+
+    queue_status = get_generation_queue_status() if tasks else None
 
     return render_template(
         "admin_panel.html",
@@ -4927,8 +5271,8 @@ def admin_panel():
         settings=settings,
         portrait_prompt_display=portrait_prompt_display,
         background_prompt_display=background_prompt_display,
-        users=User.query.all(),
-        banknotes=Banknote.query.all(),
+        users=users,
+        banknotes=banknotes,
         tasks=tasks,
         serials=serials,
         current_user=get_current_user(),
@@ -4962,6 +5306,19 @@ def _get_admin_stats_blocking():
     total_txs = 0
     mempool_size = 0
 
+    with BLOCKCHAIN_STATS_LOCK:
+        cached_stats = BLOCKCHAIN_STATS_CACHE.get("data")
+        cached_at = BLOCKCHAIN_STATS_CACHE.get("timestamp", 0)
+
+    cache_fresh = cached_stats and (time.time() - cached_at) <= BLOCKCHAIN_STATS_TTL_SECONDS
+
+    if cache_fresh:
+        blockchain_height = cached_stats.get("total_blocks", 0)
+        total_txs = cached_stats.get("total_transactions", 0)
+        cached_stats = None
+    else:
+        cached_stats = None
+
     def get_blockchain_info():
         """Get blockchain info in a thread with timeout"""
         nonlocal blockchain_height, total_txs, mempool_size
@@ -4977,27 +5334,28 @@ def _get_admin_stats_blocking():
             logger.warning(f"Blockchain stats error: {e}")
             # Fallback will use default values
 
-    # Run blockchain operations in thread with timeout
-    try:
-        thread = threading.Thread(target=get_blockchain_info, daemon=True)
-        thread.start()
-        thread.join(timeout=1.5)  # Wait max 1.5 seconds
+    # Run blockchain operations in thread with timeout (skip if cache is fresh)
+    if not cache_fresh:
+        try:
+            thread = threading.Thread(target=get_blockchain_info, daemon=True)
+            thread.start()
+            thread.join(timeout=1.5)  # Wait max 1.5 seconds
 
-        # If thread timed out, use fallback
-        if thread.is_alive():
-            logger.warning("Blockchain stats thread timed out")
-            # Use database fallback
+            # If thread timed out, use fallback
+            if thread.is_alive():
+                logger.debug("Blockchain stats thread timed out")
+                # Use database fallback
+                mined_serials = SerialNumber.query.filter_by(is_mined=True).count()
+                blockchain_height = mined_serials // 10
+                pending_banknotes = Banknote.query.filter_by(
+                    is_verified=False, verification_status="pending"
+                ).count()
+                mempool_size = pending_banknotes
+        except Exception as e:
+            logger.warning(f"Blockchain thread error: {e}")
+            # Fallback
             mined_serials = SerialNumber.query.filter_by(is_mined=True).count()
             blockchain_height = mined_serials // 10
-            pending_banknotes = Banknote.query.filter_by(
-                is_verified=False, verification_status="pending"
-            ).count()
-            mempool_size = pending_banknotes
-    except Exception as e:
-        logger.warning(f"Blockchain thread error: {e}")
-        # Fallback
-        mined_serials = SerialNumber.query.filter_by(is_mined=True).count()
-        blockchain_height = mined_serials // 10
 
     # Digital bills statistics
     digital_bills_count = 0
@@ -5065,7 +5423,120 @@ def get_system_status():
     """Get system status including daemon, network, and resource usage"""
     import psutil
 
-    status = {
+    with SYSTEM_STATUS_LOCK:
+        cached_status = SYSTEM_STATUS_CACHE.get("data")
+        cached_at = SYSTEM_STATUS_CACHE.get("timestamp", 0)
+
+    cache_fresh = cached_status and (time.time() - cached_at) <= SYSTEM_STATUS_TTL_SECONDS
+    if cache_fresh:
+        return cached_status
+
+    def _compute_status():
+        status = {
+            "daemon_running": False,
+            "network_online": False,
+            "memory_usage": 0,
+            "cpu_usage": 0,
+            "disk_usage": 0,
+            "last_sync": None,
+            "blockchain_height": 0,
+            "mempool_size": 0,
+            "total_transactions": 0,
+        }
+
+        try:
+            daemon_instance = blockchain_daemon_instance if "blockchain_daemon_instance" in globals() else None
+            if daemon_instance and hasattr(daemon_instance, "is_running"):
+                status["daemon_running"] = daemon_instance.is_running
+
+            with BLOCKCHAIN_STATS_LOCK:
+                cached_stats = BLOCKCHAIN_STATS_CACHE.get("data")
+
+            if cached_stats:
+                status["blockchain_height"] = cached_stats.get("total_blocks", 0)
+                status["total_transactions"] = cached_stats.get("total_transactions", 0)
+
+            if daemon_instance and hasattr(daemon_instance, "blockchain"):
+                status["blockchain_height"] = max(
+                    status["blockchain_height"], len(daemon_instance.blockchain)
+                )
+                if daemon_instance.blockchain:
+                    last_block = daemon_instance.blockchain[-1]
+                    timestamp = last_block.get("timestamp", time.time())
+                    status["last_sync"] = time.strftime(
+                        "%Y-%m-%d %H:%M:%S", time.localtime(float(timestamp))
+                    )
+
+            if daemon_instance and hasattr(daemon_instance, "mempool"):
+                try:
+                    status["mempool_size"] = len(daemon_instance.mempool)
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.warning(f"System status daemon error: {e}")
+
+        try:
+            import socket
+
+            socket.setdefaulttimeout(0.5)
+            try:
+                socket.create_connection(("8.8.8.8", 53), timeout=0.5)
+                status["network_online"] = True
+            except Exception:
+                status["network_online"] = False
+        except Exception as e:
+            logger.warning(f"Network check error: {e}")
+            status["network_online"] = False
+
+        try:
+            memory = psutil.virtual_memory()
+            status["memory_usage"] = round(memory.percent, 1)
+
+            status["cpu_usage"] = round(psutil.cpu_percent(interval=0.0), 1)
+
+            disk = psutil.disk_usage(os.path.abspath(os.sep))
+            status["disk_usage"] = round(disk.percent, 1)
+        except Exception as e:
+            logger.warning(f"Error getting system resources: {e}")
+
+        return status
+
+    with SYSTEM_STATUS_LOCK:
+        if SYSTEM_STATUS_CACHE.get("refreshing"):
+            if cached_status:
+                return cached_status
+            return {
+                "daemon_running": False,
+                "network_online": False,
+                "memory_usage": 0,
+                "cpu_usage": 0,
+                "disk_usage": 0,
+                "last_sync": None,
+                "blockchain_height": 0,
+                "mempool_size": 0,
+                "total_transactions": 0,
+                "refreshing": True,
+            }
+        SYSTEM_STATUS_CACHE["refreshing"] = True
+
+    def _worker():
+        try:
+            status = _compute_status()
+            with SYSTEM_STATUS_LOCK:
+                SYSTEM_STATUS_CACHE["data"] = status
+                SYSTEM_STATUS_CACHE["timestamp"] = time.time()
+        finally:
+            with SYSTEM_STATUS_LOCK:
+                SYSTEM_STATUS_CACHE["refreshing"] = False
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+    if cached_status:
+        response = dict(cached_status)
+        response["refreshing"] = True
+        return response
+
+    return {
         "daemon_running": False,
         "network_online": False,
         "memory_usage": 0,
@@ -5075,85 +5546,8 @@ def get_system_status():
         "blockchain_height": 0,
         "mempool_size": 0,
         "total_transactions": 0,
+        "refreshing": True,
     }
-
-    def get_daemon_info():
-        """Get daemon info in thread"""
-        try:
-            global blockchain_daemon_instance
-            if blockchain_daemon_instance and hasattr(
-                blockchain_daemon_instance, "is_running"
-            ):
-                status["daemon_running"] = blockchain_daemon_instance.is_running
-                daemon_instance = blockchain_daemon_instance
-            else:
-                try:
-                    daemon_instance = BlockchainDaemon()
-                    status["daemon_running"] = True
-                except Exception as e:
-                    logger.warning(f"Could not create blockchain daemon: {e}")
-                    daemon_instance = None
-
-            # Get blockchain stats if daemon available
-            if daemon_instance:
-                try:
-                    blockchain_status = daemon_instance.get_blockchain_status()
-                    status["blockchain_height"] = blockchain_status.get("blocks", 0)
-                    status["total_transactions"] = blockchain_status.get(
-                        "total_transactions", 0
-                    )
-
-                    mempool_status = daemon_instance.get_mempool_status()
-                    status["mempool_size"] = mempool_status.get("total", 0)
-
-                    # Get last sync time
-                    if (
-                        hasattr(daemon_instance, "blockchain")
-                        and daemon_instance.blockchain
-                    ):
-                        last_block = daemon_instance.blockchain[-1]
-                        timestamp = last_block.get("timestamp", time.time())
-                        status["last_sync"] = time.strftime(
-                            "%Y-%m-%d %H:%M:%S", time.localtime(timestamp)
-                        )
-                except Exception as e:
-                    logger.warning(f"Error getting blockchain stats: {e}")
-        except Exception as e:
-            logger.warning(f"System status daemon error: {e}")
-
-    # Run daemon check with timeout
-    thread = threading.Thread(target=get_daemon_info, daemon=True)
-    thread.start()
-    thread.join(timeout=1.5)  # Max 1.5 seconds
-
-    # Check network connectivity
-    try:
-        import socket
-
-        socket.setdefaulttimeout(3)
-        try:
-            socket.create_connection(("8.8.8.8", 53), timeout=3)
-            status["network_online"] = True
-        except:
-            status["network_online"] = False
-
-    except Exception as e:
-        logger.warning(f"Network check error: {e}")
-        status["network_online"] = False
-
-    # Get system resource usage
-    try:
-        memory = psutil.virtual_memory()
-        status["memory_usage"] = round(memory.percent, 1)
-
-        status["cpu_usage"] = round(psutil.cpu_percent(interval=0.5), 1)
-
-        disk = psutil.disk_usage("/")
-        status["disk_usage"] = round(disk.percent, 1)
-    except Exception as e:
-        logger.warning(f"Error getting system resources: {e}")
-
-    return status
 
 
 def get_recent_activity():
@@ -5199,33 +5593,32 @@ def get_recent_activity():
             }
         )
 
-    # Get recent blockchain activity if available
+    # Get recent blockchain activity without network calls
     try:
-        from blockchain_daemon import BlockchainDaemon
+        daemon = blockchain_daemon_instance if "blockchain_daemon_instance" in globals() else None
 
-        daemon = BlockchainDaemon()
-        blockchain_status = daemon.get_blockchain_status()
-        if blockchain_status.get("blocks", 0) > 0:
-            activities.append(
-                {
-                    "icon": "⛓️",
-                    "text": f"Blockchain height: {blockchain_status['blocks']} blocks",
-                    "time": "Now",
-                }
-            )
+        if daemon and hasattr(daemon, "blockchain"):
+            block_count = len(daemon.blockchain)
+            if block_count > 0:
+                activities.append(
+                    {
+                        "icon": "⛓️",
+                        "text": f"Blockchain height: {block_count} blocks",
+                        "time": "Now",
+                    }
+                )
 
-        mempool_status = daemon.get_mempool_status()
-        if mempool_status.get("total", 0) > 0:
-            activities.append(
-                {
-                    "icon": "📝",
-                    "text": f"{mempool_status['total']} transactions in mempool",
-                    "time": "Now",
-                }
-            )
-
-        daemon.stop_daemon()
-    except:
+        if daemon and hasattr(daemon, "mempool"):
+            mempool_count = len(daemon.mempool)
+            if mempool_count > 0:
+                activities.append(
+                    {
+                        "icon": "📝",
+                        "text": f"{mempool_count} transactions in mempool",
+                        "time": "Now",
+                    }
+                )
+    except Exception:
         pass
 
     # Add some system events
@@ -5463,6 +5856,11 @@ def generation_status(user_id):
 @admin_required
 def generate_money(user_id):
     """Generate banknotes for a user using the new queue system"""
+    current_user = get_current_user()
+    if not _user_has_strong_auth(current_user):
+        flash("2FA or a security key is required to generate bills.", "error")
+        return redirect(url_for("admin_panel"))
+
     user = User.query.get_or_404(user_id)
 
     # Check if user already has a task in queue or processing
@@ -5484,6 +5882,10 @@ def generate_money(user_id):
         )
         print(f"[ADMIN] Started generation task {task_id} for user {user.username}")
     else:
+        try:
+            db.session.rollback()
+        except Exception:
+            pass
         flash(f"Failed to start generation task for {user.username}.", "error")
         print(f"[ADMIN ERROR] Failed to start generation for user {user.username}")
 
@@ -5605,6 +6007,10 @@ def generate_money_user():
         flash("Please log in to generate money", "error")
         return redirect(url_for("login"))
 
+    if not _user_has_strong_auth(current_user):
+        flash("2FA or a security key is required to generate bills.", "error")
+        return redirect(url_for("account_settings"))
+
     if not current_user.can_generate_money():
         flash(
             f"You can generate money again in {current_user.days_until_next_generation()} days",
@@ -5651,6 +6057,10 @@ def read_prompt_file(filename, default_prompt=""):
         print(f"[!] Error reading {filename}: {e}")
         return default_prompt
 
+# Mirror /api/peers/register to /api/peers (POST)
+@app.post("/api/peers")
+def register_peer_mirror():
+    return register_peer()
 
 @app.route("/admin/settings", methods=["GET", "POST"])
 def admin_settings():
@@ -5667,12 +6077,29 @@ def admin_settings():
 
     if request.method == "POST":
         try:
-            settings.system_name = request.form.get("system_name", "Banknote Generator")
-            settings.max_banknotes = int(request.form.get("max_banknotes", 100))
-            settings.cooldown_days = int(request.form.get("cooldown_days", 7))
+            def _get_text(name, default):
+                value = request.form.get(name, "")
+                value = value.strip() if isinstance(value, str) else value
+                return value if value else default
+
+            def _get_int(name, default):
+                raw = request.form.get(name, "")
+                raw = raw.strip() if isinstance(raw, str) else raw
+                return int(raw) if raw not in (None, "") else default
+
+            def _get_float(name, default):
+                raw = request.form.get(name, "")
+                raw = raw.strip() if isinstance(raw, str) else raw
+                return float(raw) if raw not in (None, "") else default
+
+            settings.system_name = _get_text("system_name", settings.system_name or "Banknote Generator")
+            settings.max_banknotes = _get_int("max_banknotes", settings.max_banknotes or 100)
+            settings.cooldown_days = _get_int("cooldown_days", settings.cooldown_days or 7)
             settings.maintenance_mode = "maintenance_mode" in request.form
             settings.allow_registrations = "allow_registrations" in request.form
-            settings.max_file_size = int(request.form.get("max_file_size", 10))
+            settings.max_file_size = _get_int("max_file_size", settings.max_file_size or 512)
+            settings.blockchain_difficulty = _get_int("blockchain_difficulty", settings.blockchain_difficulty or 6)
+            settings.mining_reward = _get_float("mining_reward", settings.mining_reward or 1.0)
 
             # Banknote generation settings
             portrait_input = request.form.get("portrait_prompt", "").strip()
@@ -5682,22 +6109,27 @@ def admin_settings():
             settings.portrait_prompt = portrait_input if portrait_input else None
             settings.background_prompt = background_input if background_input else None
 
-            settings.bill_width_mm = float(
-                request.form.get("bill_width_mm", settings.bill_width_mm)
-            )
-            settings.bill_height_mm = float(
-                request.form.get("bill_height_mm", settings.bill_height_mm)
-            )
-            settings.bill_title = request.form.get("bill_title", settings.bill_title)
-            settings.bill_subtitle = request.form.get(
-                "bill_subtitle", settings.bill_subtitle
-            )
-            settings.bill_dpi = float(request.form.get("bill_dpi", settings.bill_dpi))
-            settings.font_dir = request.form.get("font_dir", settings.font_dir)
-            settings.bg_dir = request.form.get("bg_dir", settings.bg_dir)
+            settings.bill_width_mm = _get_float("bill_width_mm", settings.bill_width_mm or 160.0)
+            settings.bill_height_mm = _get_float("bill_height_mm", settings.bill_height_mm or 60.0)
+            settings.bill_title = _get_text("bill_title", settings.bill_title or "灵国国库")
+            settings.bill_subtitle = _get_text("bill_subtitle", settings.bill_subtitle or "天圆地方")
+            settings.bill_dpi = _get_float("bill_dpi", settings.bill_dpi or 300.0)
+            settings.font_dir = _get_text("font_dir", settings.font_dir or "./fonts")
+            settings.bg_dir = _get_text("bg_dir", settings.bg_dir or "./backgrounds")
 
-            db.session.commit()
-            flash("Settings updated successfully!", "success")
+            # Retry commit if SQLite is temporarily locked
+            max_attempts = 3
+            for attempt in range(max_attempts):
+                try:
+                    db.session.commit()
+                    flash("Settings updated successfully!", "success")
+                    break
+                except OperationalError as op_err:
+                    db.session.rollback()
+                    if "database is locked" in str(op_err).lower() and attempt < max_attempts - 1:
+                        time.sleep(0.2 * (attempt + 1))
+                        continue
+                    raise
         except ValueError:
             flash("Invalid input values. Please check your entries.", "error")
         except Exception as e:
@@ -5883,6 +6315,13 @@ def get_peers():
     return jsonify(result), 200
 
 
+@app.get("/api/peers/list")
+def get_peers_list():
+    """Alias for listing peers"""
+    result = blockchain_daemon_instance.get_peers_info()
+    return jsonify(result), 200
+
+
 @app.delete("/api/peers/<path:peer_id>")
 def remove_peer(peer_id):
     """Remove a peer from the network"""
@@ -5891,6 +6330,32 @@ def remove_peer(peer_id):
     peer_url = unquote(peer_id)
     result = blockchain_daemon_instance.remove_peer_by_url(peer_url)
     return jsonify(result), 200 if result["success"] else 404
+
+
+@app.route("/admin/cleanup-mempool", methods=["POST"])
+@admin_required
+def admin_cleanup_mempool():
+    """Remove spam/invalid/duplicate/mined transactions from mempool."""
+    try:
+        max_age_hours_raw = request.form.get("max_age_hours") or request.args.get("max_age_hours")
+        max_age_hours = None
+        if max_age_hours_raw is not None and str(max_age_hours_raw).strip() != "":
+            max_age_hours = float(max_age_hours_raw)
+        max_age_seconds = None if max_age_hours is None else int(max_age_hours * 3600)
+
+        result = blockchain_daemon_instance.cleanup_mempool_spam(
+            max_age_seconds=max_age_seconds
+        )
+
+        flash(
+            f"Mempool cleanup: removed {result.get('removed', 0)} spam/invalid txs, remaining {result.get('remaining', 0)}.",
+            "success",
+        )
+        return jsonify({"success": True, "result": result}), 200
+    except Exception as e:
+        current_app.logger.error(f"Mempool cleanup failed: {e}")
+        flash(f"Mempool cleanup failed: {e}", "danger")
+        return jsonify({"success": False, "error": str(e)}), 500
 
 
 @app.route("/admin/reset-user/<int:user_id>", methods=["POST"])
@@ -5937,6 +6402,51 @@ def admin_delete_user(user_id):
     db.session.commit()
 
     flash(f"Deleted user {user.username} and all their data", "success")
+    return redirect(url_for("admin_panel"))
+
+
+@app.route("/admin/reset-banknotes", methods=["POST"])
+@admin_required
+def admin_reset_banknotes():
+    """Reset all banknotes/serials and archive images folder."""
+    archived_path = None
+    try:
+        images_root_abs = os.path.abspath(IMAGES_ROOT)
+        if os.path.exists(images_root_abs) and os.path.isdir(images_root_abs):
+            parent_dir = os.path.dirname(images_root_abs)
+            timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+            base_name = f"old_banknotes_{timestamp}"
+            target_path = os.path.join(parent_dir, base_name)
+            counter = 1
+            while os.path.exists(target_path):
+                target_path = os.path.join(parent_dir, f"{base_name}_{counter}")
+                counter += 1
+            os.rename(images_root_abs, target_path)
+            archived_path = target_path
+
+        os.makedirs(images_root_abs, exist_ok=True)
+
+        banknotes_deleted = Banknote.query.delete()
+        serials_deleted = SerialNumber.query.delete()
+        tasks_deleted = GenerationTask.query.delete()
+        User.query.update({User.balance: 0})
+
+        db.session.commit()
+
+        flash(
+            (
+                f"Reset complete: {banknotes_deleted} banknotes, {serials_deleted} serials, "
+                f"{tasks_deleted} tasks deleted. New images folder created."
+            ),
+            "success",
+        )
+        if archived_path:
+            flash(f"Archived images folder: {archived_path}", "info")
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error resetting banknotes: {str(e)}")
+        flash(f"Error resetting banknotes: {str(e)}", "danger")
+
     return redirect(url_for("admin_panel"))
 
 
@@ -7520,15 +8030,38 @@ def logout():
 
 @app.route("/transaction-viewer/<tx_hash>")
 def transaction_viewer(tx_hash):
-    # ネットワークと同期してから検索
-    try:
-        blockchain_daemon_instance.sync_with_network()
-    except Exception as sync_err:
-        print(f"[SYNC WARNING] Could not sync with network: {sync_err}")
+    # Avoid network sync by default for fast page load
+    sync_requested = request.args.get("sync") == "1"
+    if sync_requested:
+        try:
+            blockchain_daemon_instance.sync_with_network()
+        except Exception as sync_err:
+            print(f"[SYNC WARNING] Could not sync with network: {sync_err}")
     """
     View transaction details from the blockchain
     """
     try:
+        def _find_local_transaction(target_hash: str):
+            mempool = getattr(blockchain_daemon_instance, "mempool", []) or []
+            for tx in mempool:
+                if tx.get("hash") == target_hash:
+                    tx_copy = tx.copy()
+                    tx_copy["status"] = "pending"
+                    tx_copy["confirmations"] = 0
+                    return tx_copy
+
+            blockchain = getattr(blockchain_daemon_instance, "blockchain", []) or []
+            for block_index, block in enumerate(blockchain):
+                for tx in block.get("transactions", []):
+                    if tx.get("hash") == target_hash:
+                        tx_copy = tx.copy()
+                        tx_copy["status"] = "confirmed"
+                        tx_copy["block_height"] = block_index
+                        tx_copy["block_hash"] = block.get("hash")
+                        tx_copy["confirmations"] = len(blockchain) - block_index - 1
+                        return tx_copy
+            return None
+
         # Check if this is a custom reward transaction format: reward_<block_index>_<identifier>
         is_reward_tx = False
         block_data = None
@@ -7553,7 +8086,9 @@ def transaction_viewer(tx_hash):
 
         # If not found with custom format, try normal transaction lookup
         if not tx_data:
-            tx_data = blockchain_daemon_instance.get_transaction(tx_hash)
+            tx_data = _find_local_transaction(tx_hash)
+            if not tx_data and sync_requested:
+                tx_data = blockchain_daemon_instance.get_transaction(tx_hash)
             if isinstance(tx_data, list):
                 tx_data = next((item for item in tx_data if isinstance(item, dict)), None)
             elif not isinstance(tx_data, dict):
@@ -8221,18 +8756,82 @@ def banknote_viewer(serial_id):
             path = path[len("images/"):]
         return path
 
-    image_path = normalize_png_path(banknote.png_path) if banknote.png_path else ""
-    svg_path = ""
-    if not image_path and banknote.svg_path:
-        svg_path = normalize_png_path(banknote.svg_path)
-
     tx_data = banknote.get_transaction_data() if hasattr(banknote, "get_transaction_data") else {}
+
+    def resolve_banknote_by_serial(serial_value: str):
+        if not serial_value:
+            return None
+        from models import Banknote, SerialNumber
+
+        note = Banknote.query.filter_by(serial_number=serial_value).first()
+        if not note:
+            serial_record = SerialNumber.query.filter_by(serial=serial_value).first()
+            if serial_record and serial_record.banknote_id:
+                note = Banknote.query.get(serial_record.banknote_id)
+        return note
+
+    def find_matching_banknote(current_note, tx_payload):
+        candidates = []
+        side = getattr(current_note, "side", "").lower()
+        if side == "front":
+            candidates.append(tx_payload.get("back_serial"))
+        elif side == "back":
+            candidates.append(tx_payload.get("front_serial"))
+
+        candidates.extend([
+            tx_payload.get("front_serial"),
+            tx_payload.get("back_serial"),
+        ])
+
+        if not any(candidates) and isinstance(current_note.serial_number, str):
+            serial_upper = current_note.serial_number.upper()
+            if "FRONT" in serial_upper:
+                candidates.append(current_note.serial_number.replace("FRONT", "BACK"))
+            elif "BACK" in serial_upper:
+                candidates.append(current_note.serial_number.replace("BACK", "FRONT"))
+
+        seen = set()
+        serials = [c for c in candidates if c and not (c in seen or seen.add(c))]
+        for serial in serials:
+            note = resolve_banknote_by_serial(str(serial))
+            if note and note.id != current_note.id:
+                return note
+        return None
+
+    front_note = banknote if (banknote.side or "").lower() == "front" else None
+    back_note = banknote if (banknote.side or "").lower() == "back" else None
+
+    match_note = find_matching_banknote(banknote, tx_data)
+    if match_note:
+        match_side = (match_note.side or "").lower()
+        if match_side == "front" and not front_note:
+            front_note = match_note
+        elif match_side == "back" and not back_note:
+            back_note = match_note
+        elif not back_note and (banknote.side or "").lower() == "front":
+            back_note = match_note
+        elif not front_note and (banknote.side or "").lower() == "back":
+            front_note = match_note
+
+    front_image_path = normalize_png_path(front_note.png_path) if front_note and front_note.png_path else ""
+    back_image_path = normalize_png_path(back_note.png_path) if back_note and back_note.png_path else ""
+
+    front_svg_path = ""
+    back_svg_path = ""
+    if front_note and not front_image_path and front_note.svg_path:
+        front_svg_path = normalize_png_path(front_note.svg_path)
+    if back_note and not back_image_path and back_note.svg_path:
+        back_svg_path = normalize_png_path(back_note.svg_path)
 
     return render_template(
         "banknote_viewer.html",
         banknote=banknote,
-        image_path=image_path,
-        svg_path=svg_path,
+        front_note=front_note,
+        back_note=back_note,
+        front_image_path=front_image_path,
+        back_image_path=back_image_path,
+        front_svg_path=front_svg_path,
+        back_svg_path=back_svg_path,
         transaction_data=tx_data,
         title=f"Banknote {banknote.serial_number}",
         current_user=get_current_user(),
@@ -8835,15 +9434,16 @@ def cleanup_mempool():
 # Initialize Database
 with app.app_context():
     db.create_all()
+    _ensure_serial_numbers_is_mined_column()
+    _ensure_banknotes_verification_columns()
     # Initialize blockchain manager
+    start_generation_task_processor()
+
 # Initialize the generation queue after all imports are complete
 if __name__ == "__main__":
     # Start the background task processor in a separate thread
     # This ensures it runs only once in the main process, not the reloader.
-    if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
-        print("Starting background task processor for pending generation tasks.")
-        processor_thread = threading.Thread(target=process_pending_generation_tasks, daemon=True)
-        processor_thread.start()
+    start_generation_task_processor()
 
     if os.environ.get("WERKZEUG_RUN_MAIN") == "true" or not app.debug:
         if not hasattr(app, "blockchain_daemon_instance"):

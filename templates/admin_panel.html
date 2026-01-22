@@ -655,6 +655,31 @@
                                            value="{{ settings.cooldown_days if settings.cooldown_days else 7 }}">
                                 </div>
                             </div>
+                            <div class="form-row">
+                                <div class="col-md-4 mb-2">
+                                    <label class="small">Blockchain Difficulty</label>
+                                    <input type="number" class="form-control form-control-sm" name="blockchain_difficulty" 
+                                           value="{{ settings.blockchain_difficulty if settings.blockchain_difficulty else 6 }}">
+                                </div>
+                                <div class="col-md-4 mb-2">
+                                    <label class="small">Mining Reward</label>
+                                    <input type="number" step="0.1" class="form-control form-control-sm" name="mining_reward" 
+                                           value="{{ settings.mining_reward if settings.mining_reward else 1.0 }}">
+                                </div>
+                                <div class="col-md-4 mb-2">
+                                    <label class="small">Platform Flags</label>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="maintenance_mode" id="maintenance_mode"
+                                               {% if settings.maintenance_mode %}checked{% endif %}>
+                                        <label class="form-check-label" for="maintenance_mode">Maintenance Mode</label>
+                                    </div>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="allow_registrations" id="allow_registrations"
+                                               {% if settings.allow_registrations %}checked{% endif %}>
+                                        <label class="form-check-label" for="allow_registrations">Allow Registrations</label>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                     
@@ -666,12 +691,12 @@
                                 <div class="col-md-6 mb-2">
                                     <label class="small">Portrait Prompt</label>
                                     <textarea class="form-control form-control-sm" name="portrait_prompt" rows="2" 
-                                              placeholder="Describe the portrait generation prompt">{{ settings.portrait_prompt if settings.portrait_prompt else 'A professional portrait of a person, high quality, detailed face, neutral background' }}</textarea>
+                                              placeholder="Describe the portrait generation prompt">{{ portrait_prompt_display if portrait_prompt_display else (settings.portrait_prompt if settings.portrait_prompt else 'A professional portrait of a person, high quality, detailed face, neutral background') }}</textarea>
                                 </div>
                                 <div class="col-md-6 mb-2">
                                     <label class="small">Background Prompt</label>
                                     <textarea class="form-control form-control-sm" name="background_prompt" rows="2" 
-                                              placeholder="Describe the background generation prompt">{{ settings.background_prompt if settings.background_prompt else 'A beautiful fantasy landscape with mountains and rivers, mystical atmosphere' }}</textarea>
+                                              placeholder="Describe the background generation prompt">{{ background_prompt_display if background_prompt_display else (settings.background_prompt if settings.background_prompt else 'A beautiful fantasy landscape with mountains and rivers, mystical atmosphere') }}</textarea>
                                 </div>
                             </div>
                             

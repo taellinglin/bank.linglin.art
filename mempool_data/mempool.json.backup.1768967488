@@ -1,0 +1,30 @@
+[
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-UJko293WGYuWsQ-GfU",
+    "denomination": 1.0,
+    "issued_to": "linglinofficial",
+    "timestamp": 1768967074.1598334,
+    "signature": "1aa417869a74297b2d520f9faab9b6507278a131263adf1ded1966ef0509dd1de257d195ed26576da7cbc74c3ff39bf28f8e55dcd69c68932db4d9a8f0dc7fc1",
+    "public_key": "04d1bd0d843a48cfa195237deffc05422891d7fa6d6bcaa48ffa5b89f432e386b45e5bf590454518ab1abd640f9d58d9ab002a454782568a465a1e28df65deba34",
+    "metadata_hash": "86be3c6aa42b0623313a54599c6575a4de3cececaadd5adc57d7b867db166ceb",
+    "front_serial": "GTX1_1768967074073_db3b72a0",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "d66635bb5590f9efab2e7aefef8256067f33752f5fca559ca033e7cf3645e42a"
+  },
+  {
+    "type": "GTX_Genesis",
+    "serial_number": "SN-s3zgtj1Kz_x3zA-YPQ",
+    "denomination": 10.0,
+    "issued_to": "linglinofficial",
+    "timestamp": 1768967216.1933107,
+    "signature": "92f439b9095ac7603ba12755e77fd967bdbbfed4c9dcb7755445d67cbac649d0ca5da6e39f6fa9cdb12e096a3e1eed6d18b5444a2bb1456fd8a9b22aee77fbfb",
+    "public_key": "049ca8773f5c2d676394ae5ed0ecbff224c08918baf4c42a602f6d481140ed8e77b28eb0e7063f8feb75d6cac785d8c4faf05efc582bedfc89b2095a8773882e4f",
+    "metadata_hash": "854781f9be705574f62a14ec05998347858d763a5e51d7bd80505e050f6bf8ab",
+    "front_serial": "GTX10_1768967216104_20c7e555",
+    "back_serial": "",
+    "bill_type": "GTX_Genesis",
+    "hash": "bc05f8c4f5594e6f47c9e7925225f302199d4d67df099757b7395aa87cc750d5"
+  }
+]

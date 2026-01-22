@@ -317,60 +317,15 @@
         <div class="graph-section">
             <div class="graph-header">
                 <h3>Block Activity Timeline</h3>
-                <div class="timeline-controls">
-                    <!-- Timeframe Buttons -->
-                    <div class="timeframe-selector">
-                        {% set timeframes = {
-                            '1h': 'Last Hour',
-                            '1d': 'Last Day',
-                            '7d': 'Last Week',
-                            '30d': 'Last Month'
-                        } %}
-                        {% for tf_key, tf_label in timeframes.items() %}
-                            <button class="timeframe-btn {% if selected_timeframe == tf_key %}active{% endif %}" 
-                                    onclick="changeTimeframe('{{ tf_key }}')">
-                                {{ tf_label }}
-                            </button>
-                        {% endfor %}
-                    </div>
-                    
-                    <!-- Timeline Window Slider -->
-                    <div class="block-range-selector">
-                        <div class="range-header">
-                            <label for="blockSlider">Timeline Window:</label>
-                            <span class="range-info" id="rangeInfo"></span>
-                        </div>
-                        <div class="range-inputs">
-                            <div class="range-slider-container">
-                                <input type="range" id="blockSlider" min="0" max="100" value="0" class="range-slider" oninput="updateTimelineWindowFromSlider()">
-                            </div>
-                        </div>
-                    </div>
-                </div>
             </div>
-            
-            <!-- Line Graph Container -->
-            <div class="line-graph-container" id="activityChart">
-                <canvas id="activityCanvas"></canvas>
+            <div class="ring-charts-row" style="display: flex; gap: 2rem; justify-content: center; margin-bottom: 2rem; flex-wrap: wrap;">
+                <canvas id="ringBlocks" width="120" height="120"></canvas>
+                <canvas id="ringTxs" width="120" height="120"></canvas>
+                <canvas id="ringGenesis" width="120" height="120"></canvas>
+                <canvas id="ringRewards" width="120" height="120"></canvas>
             </div>
-            
-            <div class="graph-stats">
-                <div class="graph-stat">
-                    <span class="stat-label">Peak TXs/Block:</span>
-                    <span class="stat-value" id="peakValue">0</span>
-                </div>
-                <div class="graph-stat">
-                    <span class="stat-label">Avg TXs/Block:</span>
-                    <span class="stat-value" id="avgValue">0</span>
-                </div>
-                <div class="graph-stat">
-                    <span class="stat-label">Total Blocks:</span>
-                    <span class="stat-value" id="totalValue">{{ total_blocks|default(0) }}</span>
-                </div>
-                <div class="graph-stat">
-                    <span class="stat-label">Blocks in View:</span>
-                    <span class="stat-value" id="viewBlockCount">0</span>
-                </div>
+            <div class="mini-timeline-row" style="width:100%; height:160px; display:flex; align-items:center; justify-content:center;">
+                <canvas id="cleanTimeline" style="background:var(--bg-secondary); border-radius:16px; width:100%; height:120px; min-width:320px; display:block; box-shadow:0 2px 16px #0004;"></canvas>
             </div>
         </div>
     </div>
@@ -452,6 +407,48 @@
         <button onclick="refreshNow()" class="refresh-btn">Update Now</button>
     </div>
 </div>
+
+<script src="{{ url_for('static', filename='blockchain_charts.js') }}"></script>
+<script>
+// Clean timeline for all-time activity (rewards only, full panel size)
+window.addEventListener('DOMContentLoaded', function() {
+    // Collect all activity events by block index
+    const timelineEvents = [];
+    {% for block in blocks %}
+        {% for tx in block.transactions %}
+            {% set txdate = block.timestamp_readable or block.timestamp or '' %}
+            {% if tx.type == 'reward' %}
+                timelineEvents.push({type: 'reward', block: {{ block.index }}, date: '{{ txdate }}'});
+            {% elif tx.type == 'GTX_Genesis' or tx.type == 'genesis' %}
+                timelineEvents.push({type: 'genesis', block: {{ block.index }}, date: '{{ txdate }}'});
+            {% elif tx.type == 'transfer' %}
+                timelineEvents.push({type: 'transfer', block: {{ block.index }}, date: '{{ txdate }}'});
+            {% endif %}
+        {% endfor %}
+    {% endfor %}
+    // Resize canvas to fill parent
+    const canvas = document.getElementById('cleanTimeline');
+    function resizeTimelineCanvas() {
+        // Use actual pixel size for sharpness
+        const parent = canvas.parentElement;
+        const dpr = window.devicePixelRatio || 1;
+        const width = Math.max(320, parent.offsetWidth);
+        const height = 120;
+        canvas.style.width = width + 'px';
+        canvas.style.height = height + 'px';
+        canvas.width = width * dpr;
+        canvas.height = height * dpr;
+        const ctx = canvas.getContext('2d');
+        ctx.setTransform(1,0,0,1,0,0);
+        ctx.scale(dpr, dpr);
+        window.renderCleanTimeline(canvas, timelineEvents);
+    }
+    window.addEventListener('resize', resizeTimelineCanvas);
+    // Also trigger when activity tab is shown
+    window.showCleanTimeline = resizeTimelineCanvas;
+    resizeTimelineCanvas();
+});
+</script>
 
 
 
@@ -1826,34 +1823,14 @@ function resetFilters() {
     window.location.href = '/blockchain-viewer?genesis=1&transfers=1&rewards=0&filter=all&q=';
 }
 
-// Show Block Details
-function showBlockDetails(blockIndex) {
-    const modal = document.getElementById('blockModal');
-    const modalLoading = document.getElementById('modalLoading');
-    const modalDetails = document.getElementById('modalDetails');
-    
-    modal.style.display = 'flex';
-    modalLoading.style.display = 'flex';
-    modalDetails.style.display = 'none';
-    
-    // In a real app, you would fetch block details from your API
-    // For now, we'll simulate with existing data
-    setTimeout(() => {
-        modalLoading.style.display = 'none';
-        modalDetails.style.display = 'block';
-        modalDetails.innerHTML = `
-            <div class="block-details">
-                <h4>Block #${blockIndex}</h4>
-                <p>Details would be loaded here...</p>
-                <p>In a real implementation, you would fetch block data from your backend API.</p>
-                <div class="detail-actions">
-                    <a href="/block/${blockIndex}" class="action-btn">
-                        <span>View Full Details</span>
-                    </a>
-                </div>
-            </div>
-        `;
-    }, 500);
+
+// Patch openTab to trigger timeline redraw when switching to activity tab
+const _origOpenTab = window.openTab;
+window.openTab = function(tabName) {
+    _origOpenTab(tabName);
+    if (tabName === 'activity' && window.showCleanTimeline) {
+        setTimeout(window.showCleanTimeline, 0);
+    }
 }
 
 function closeModal() {
