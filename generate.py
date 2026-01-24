@@ -189,9 +189,9 @@ OUTPUT_ROOT = "./images"  # single folder per name
 PORTRAITS_DIR = "./portraits"
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".bmp")
 # SD API URLs with GPU selection support
-SD_API_URL = "http://localhost:3333/sdapi/v1/txt2img"
-SD_API_URL_GPU0 = os.getenv("SD_API_URL_GPU0", "http://localhost:3333/sdapi/v1/txt2img")
-SD_API_URL_GPU1 = os.getenv("SD_API_URL_GPU1", "http://localhost:3333/sdapi/v1/txt2img")
+SD_API_URL = "http://localhost:7777/sdapi/v1/txt2img"
+SD_API_URL_GPU0 = os.getenv("SD_API_URL_GPU0", "http://localhost:7777/sdapi/v1/txt2img")
+SD_API_URL_GPU1 = os.getenv("SD_API_URL_GPU1", "http://localhost:7777/sdapi/v1/txt2img")
 
 # Check if multi-GPU is available
 MULTI_GPU_ENABLED = os.getenv("MULTI_GPU_ENABLED", "false").lower() == "true"
@@ -345,10 +345,19 @@ def safe_print(message):
         print(safe_message)
 
 def generate_png_from_svg(svg_path, png_path, size=(1600, 600)):
-    """Generate PNG from SVG file using cairosvg"""
+    """Generate PNG from SVG file using cairosvg (fast path + cache)."""
     try:
-        # Convert SVG to PNG
-        cairosvg.svg2png(url=svg_path, write_to=png_path, output_width=size[0], output_height=size[1])
+        if os.path.exists(png_path) and os.path.exists(svg_path):
+            if os.path.getmtime(png_path) >= os.path.getmtime(svg_path):
+                return True
+
+        png_bytes = cairosvg.svg2png(
+            url=svg_path,
+            output_width=size[0],
+            output_height=size[1],
+        )
+        img = Image.open(BytesIO(png_bytes))
+        img.save(png_path, format="PNG", optimize=False, compress_level=1)
         return True
     except Exception as e:
         print(f"[ERROR] Failed to generate PNG from {svg_path}: {e}")
@@ -525,6 +534,10 @@ def generate_front_back_pair(name, denom, img_path, timestamp_ms, denom_folder, 
     def generate_front_task():
         """Generate front in separate thread"""
         try:
+            if os.path.exists(front_svg_path) and os.path.getsize(front_svg_path) > 0:
+                safe_print(f"[CACHE] Front SVG exists, skipping generation: {front_svg_path}")
+                return True
+
             # Set GPU 0 environment if multi-GPU is enabled
             gpu_env = os.environ.copy()
             if MULTI_GPU_ENABLED:
@@ -571,6 +584,10 @@ def generate_front_back_pair(name, denom, img_path, timestamp_ms, denom_folder, 
     def generate_back_task():
         """Generate back in separate thread"""
         try:
+            if os.path.exists(back_svg_path) and os.path.getsize(back_svg_path) > 0:
+                safe_print(f"[CACHE] Back SVG exists, skipping generation: {back_svg_path}")
+                return True
+
             # Set GPU 1 environment if multi-GPU is enabled
             gpu_env = os.environ.copy()
             if MULTI_GPU_ENABLED:
@@ -610,9 +627,9 @@ def generate_front_back_pair(name, denom, img_path, timestamp_ms, denom_folder, 
             return False
     
     try:
-        if use_parallel and MULTI_GPU_ENABLED:
+        if use_parallel:
             # Generate front and back in parallel using threading
-            safe_print(f"[PARALLEL] Using multi-GPU parallel generation")
+            safe_print(f"[PARALLEL] Using parallel front/back generation")
             import concurrent.futures
             
             with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
@@ -639,9 +656,15 @@ def generate_front_back_pair(name, denom, img_path, timestamp_ms, denom_folder, 
         back_png_path = back_svg_path.replace(".svg", ".png")
         back_pdf_path = back_svg_path.replace(".svg", ".pdf")
         
-        # Generate PNGs
-        generate_png_from_svg(front_svg_path, front_png_path)
-        generate_png_from_svg(back_svg_path, back_png_path)
+        # Generate PNGs in parallel
+        import concurrent.futures
+        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+            front_future = executor.submit(generate_png_from_svg, front_svg_path, front_png_path)
+            back_future = executor.submit(generate_png_from_svg, back_svg_path, back_png_path)
+            front_ok = front_future.result()
+            back_ok = back_future.result()
+            if not (front_ok and back_ok):
+                raise Exception("Failed to generate front/back PNG")
         
         # Generate PDFs (commented out for now)
         # generate_pdf_from_svg(front_svg_path, front_pdf_path)

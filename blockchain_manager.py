@@ -161,17 +161,27 @@ class BlockchainManager:
     
     def create_reward_transaction(self, miner_address: str, bill_count: int):
         """Create mining reward transaction"""
-        base_reward = 50  # Base reward per block
-        total_reward = base_reward * bill_count  # Reward based on bills mined
-        
-        return {
-            "type": "reward",
-            "to": miner_address,
-            "amount": total_reward,
-            "timestamp": time.time(),
-            "block_height": len(self.blockchain) + 1,
-            "description": f"Mining reward for {bill_count} bills"
-        }
+        try:
+            from blockchain_daemon_modules import mining
+
+            return mining.create_reward_transaction(
+                miner_address=miner_address,
+                block_height=len(self.blockchain) + 1,
+                difficulty=1,
+                transaction_count=bill_count,
+                fees=0.0,
+                empty_block=bill_count == 0,
+            )
+        except Exception:
+            return {
+                "type": "reward",
+                "from": "ling country",
+                "to": miner_address,
+                "amount": float(bill_count),
+                "timestamp": time.time(),
+                "block_height": len(self.blockchain) + 1,
+                "description": f"Mining reward for {bill_count} bills",
+            }
     
     def remove_mined_transactions(self, mined_transactions: List[Dict]):
         """Remove mined transactions from mempool"""

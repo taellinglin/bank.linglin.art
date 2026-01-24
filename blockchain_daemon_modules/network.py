@@ -15,6 +15,104 @@ except Exception:  # pragma: no cover - optional dependency
 logger = logging.getLogger(__name__)
 
 
+def _normalize_blockchain_payload(payload) -> List[Dict]:
+    if isinstance(payload, list):
+        return payload
+    if isinstance(payload, dict):
+        for key in ("blocks", "blockchain", "chain", "data"):
+            value = payload.get(key)
+            if isinstance(value, list):
+                return value
+    return []
+
+
+def _get_blockchain_from_manager(blockchain_mgr) -> List[Dict]:
+    candidates = [
+        "get_full_blockchain",
+        "get_blockchain",
+        "get_chain",
+        "get_blocks",
+        "fetch_blockchain",
+        "get_blockchain_data",
+        "get_network_blockchain",
+    ]
+    for name in candidates:
+        method = getattr(blockchain_mgr, name, None)
+        if callable(method):
+            try:
+                payload = method()
+                normalized = _normalize_blockchain_payload(payload)
+                if normalized:
+                    return normalized
+            except Exception as e:
+                logger.debug(f"BlockchainManager.{name} failed: {e}")
+    return []
+
+
+def _get_blockchain_mgr_endpoints(blockchain_mgr) -> List[str]:
+    endpoints = []
+    for attr in ("network_endpoints", "endpoints"):
+        value = getattr(blockchain_mgr, attr, None)
+        if isinstance(value, list):
+            endpoints.extend(value)
+    for attr in ("endpoint_url", "base_url", "url"):
+        value = getattr(blockchain_mgr, attr, None)
+        if isinstance(value, str) and value:
+            endpoints.append(value)
+    # De-duplicate while preserving order
+    seen = set()
+    unique = []
+    for item in endpoints:
+        if item not in seen:
+            unique.append(item)
+            seen.add(item)
+    return unique
+
+
+def _get_blockchain_from_http(mempool_mgr=None, blockchain_mgr=None) -> List[Dict]:
+    if not requests:
+        return []
+    endpoints = []
+    if mempool_mgr is not None:
+        endpoints.extend(_get_network_endpoints(mempool_mgr))
+    if blockchain_mgr is not None:
+        endpoints.extend(_get_blockchain_mgr_endpoints(blockchain_mgr))
+    # De-duplicate while preserving order
+    seen = set()
+    endpoints = [e for e in endpoints if not (e in seen or seen.add(e))]
+    if not endpoints:
+        return []
+    candidate_paths = [
+        "/blockchain",
+        "/blockchain/blocks",
+        "/blockchain/full",
+        "/api/blockchain",
+        "/api/blockchain/blocks",
+    ]
+    for endpoint in endpoints:
+        base = endpoint.rstrip("/")
+        for path in candidate_paths:
+            url = f"{base}{path}"
+            try:
+                response = requests.get(url, timeout=10)
+                if response.status_code != 200:
+                    continue
+                payload = response.json()
+                normalized = _normalize_blockchain_payload(payload)
+                if normalized:
+                    return normalized
+            except Exception as e:
+                logger.debug(f"HTTP blockchain fetch failed for {url}: {e}")
+    return []
+
+
+def _get_network_blockchain(blockchain_mgr, mempool_mgr=None) -> List[Dict]:
+    blockchain = _get_blockchain_from_manager(blockchain_mgr)
+    if blockchain:
+        return blockchain
+    return _get_blockchain_from_http(mempool_mgr=mempool_mgr, blockchain_mgr=blockchain_mgr)
+
+
 def _get_network_endpoints(mempool_mgr) -> List[str]:
     endpoints = []
     for attr in ("network_endpoints", "endpoints"):
@@ -107,7 +205,7 @@ def sync_with_network(blockchain: List[Dict], blockchain_mgr, mempool_mgr,
         logger.info("🔄 Syncing with network...")
         
         # Get network blockchain
-        network_blockchain = blockchain_mgr.get_full_blockchain()
+        network_blockchain = _get_network_blockchain(blockchain_mgr, mempool_mgr)
         
         if not network_blockchain:
             logger.warning("No blockchain data from network")
@@ -181,10 +279,10 @@ def sync_mempool_from_network(mempool_mgr, save_mempool_func):
         logger.debug(f"Error syncing mempool: {e}")
 
 
-def get_network_blockchain_height(blockchain_mgr) -> int:
+def get_network_blockchain_height(blockchain_mgr, mempool_mgr=None) -> int:
     """Get the current blockchain height from network"""
     try:
-        network_blockchain = blockchain_mgr.get_full_blockchain()
+        network_blockchain = _get_network_blockchain(blockchain_mgr, mempool_mgr)
         if network_blockchain:
             return len(network_blockchain)
         return 0
@@ -193,10 +291,10 @@ def get_network_blockchain_height(blockchain_mgr) -> int:
         return 0
 
 
-def get_last_network_block_hash(blockchain_mgr) -> str:
+def get_last_network_block_hash(blockchain_mgr, mempool_mgr=None) -> str:
     """Get the hash of the last block from network"""
     try:
-        network_blockchain = blockchain_mgr.get_full_blockchain()
+        network_blockchain = _get_network_blockchain(blockchain_mgr, mempool_mgr)
         if network_blockchain and len(network_blockchain) > 0:
             return network_blockchain[-1].get('hash', '0' * 64)
         return '0' * 64

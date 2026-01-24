@@ -816,7 +816,7 @@ def generate_character_portrait_from_metadata(encoded_seed, name="", width: int 
     }
     
     try:
-        response = requests.post("http://127.0.0.1:3333/sdapi/v1/txt2img", json=payload, timeout=120)
+        response = requests.post("http://127.0.0.1:7777/sdapi/v1/txt2img", json=payload, timeout=120)
         response.raise_for_status()
         
         result = response.json()
@@ -1247,7 +1247,7 @@ def generate_sd_background(seed_text: str, width: int, height: int,
     }
     
     try:
-        response = requests.post("http://127.0.0.1:3333/sdapi/v1/txt2img", json=payload, timeout=120)
+        response = requests.post("http://127.0.0.1:7777/sdapi/v1/txt2img", json=payload, timeout=120)
         response.raise_for_status()
         
         result = response.json()
@@ -2540,7 +2540,7 @@ def generate_sd_background(prompt, width=512, height=512, save_path="./backgroun
     }
     
     try:
-        response = requests.post("http://127.0.0.1:3333/sdapi/v1/txt2img", json=payload, timeout=120)
+        response = requests.post("http://127.0.0.1:7777/sdapi/v1/txt2img", json=payload, timeout=120)
         response.raise_for_status()
         
         result = response.json()
@@ -2596,7 +2596,7 @@ def generate_sd_background_from_metadata(encoded_seed, name="", width: int = 512
     }
     
     try:
-        response = requests.post("http://127.0.0.1:3333/sdapi/v1/txt2img", json=payload, timeout=120)
+        response = requests.post("http://127.0.0.1:7777/sdapi/v1/txt2img", json=payload, timeout=120)
         response.raise_for_status()
         
         result = response.json()

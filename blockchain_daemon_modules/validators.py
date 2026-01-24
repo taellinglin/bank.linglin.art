@@ -9,7 +9,10 @@ import hashlib
 import time
 import logging
 import re
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FutureTimeout
 from typing import Dict, List, Optional
+
+from blockchain_daemon_modules.mining import calculate_expected_reward
 
 try:
     from lunalib.gtx.digital_bill import DigitalBill
@@ -19,6 +22,8 @@ except ImportError:
     logger.warning("lunalib not available, using fallback validation")
 
 logger = logging.getLogger(__name__)
+
+_SM3_EXECUTOR = ThreadPoolExecutor(max_workers=1, thread_name_prefix="lunalib-sm3-")
 
 
 def _is_valid_luna_address(address: str) -> bool:
@@ -171,6 +176,12 @@ def validate_reward_transactions(reward_transactions: List[Dict], block_index: i
     if not reward_transactions:
         print("✅ No reward transactions to validate")
         return {'valid': True, 'error': None}
+
+    if len(reward_transactions) != 1:
+        return {
+            'valid': False,
+            'error': f'Expected exactly 1 reward transaction, got {len(reward_transactions)}'
+        }
     
     # Quick logging of what we're validating
     print(f"📊 Validating {len(reward_transactions)} reward transaction(s)")
@@ -192,6 +203,15 @@ def validate_reward_transactions(reward_transactions: List[Dict], block_index: i
     # Get all transactions
     all_transactions = block_data.get('transactions', [])
     non_reward_txs = [tx for tx in all_transactions if tx.get('type') != 'reward']
+
+    reward_aliases = {"reward", "coinbase", "mining_reward", "mining", "block_reward"}
+    for tx in non_reward_txs:
+        tx_type = str(tx.get('type') or '').lower()
+        if tx_type in reward_aliases:
+            return {
+                'valid': False,
+                'error': f'Found reward-like transaction type in non-reward list: {tx_type}'
+            }
     
     print(f"📈 Transaction breakdown:")
     print(f"  Total: {len(all_transactions)}")
@@ -212,15 +232,8 @@ def validate_reward_transactions(reward_transactions: List[Dict], block_index: i
         block_hash, difficulty, block_data, previous_block_hash, non_reward_txs
     )
 
-    # ACCEPT if hash meets difficulty, even if format doesn't match
     if not mining_proof_result['valid']:
-        # Check if hash at least meets difficulty requirement
-        if block_hash.startswith('0' * difficulty):
-            print(f"⚠️ Hash meets difficulty but format doesn't match server validation")
-            print(f"   This is ACCEPTED - miner did the computational work")
-            print(f"   Miner and server need to sync hash calculation methods")
-        else:
-            return {'valid': False, 'error': f'Invalid mining proof: {mining_proof_result["error"]}'}
+        return {'valid': False, 'error': f'Invalid mining proof: {mining_proof_result["error"]}'}
     
     print(f"✅ Mining proof validated via: {mining_proof_result.get('method', 'unknown')}")
     
@@ -231,7 +244,7 @@ def validate_reward_transactions(reward_transactions: List[Dict], block_index: i
     reward_tx = reward_transactions[0]
     
     # Basic reward transaction validation
-    required_fields = ['to', 'from', 'amount', 'block_height', 'hash']
+    required_fields = ['to', 'from', 'amount', 'block_height', 'hash', 'timestamp']
     missing_fields = [field for field in required_fields if field not in reward_tx]
     if missing_fields:
         return {'valid': False, 'error': f'Reward transaction missing fields: {missing_fields}'}
@@ -239,6 +252,15 @@ def validate_reward_transactions(reward_transactions: List[Dict], block_index: i
     # Validate recipient matches miner
     if reward_tx.get('to') != miner_address:
         return {'valid': False, 'error': f'Reward recipient {reward_tx.get("to")} != miner {miner_address}'}
+
+    # Validate sender is network/mining reward
+    from_field = reward_tx.get('from')
+    valid_from_values = {'ling country', 'network', 'mining_reward', 'block_reward', 'coinbase'}
+    if str(from_field).strip().lower() not in valid_from_values:
+        return {
+            'valid': False,
+            'error': f'Invalid reward sender: {from_field}. Must be one of {sorted(valid_from_values)}'
+        }
 
     # Validate recipient/miner address format (reject placeholders)
     if not _is_valid_luna_address(miner_address):
@@ -255,14 +277,37 @@ def validate_reward_transactions(reward_transactions: List[Dict], block_index: i
     # Validate block height
     if reward_tx.get('block_height') != block_index:
         return {'valid': False, 'error': f'Reward block_height {reward_tx.get("block_height")} != block index {block_index}'}
+
+    # Validate reward transaction hash format (64 hex)
+    tx_hash = str(reward_tx.get('hash', '')).lower()
+    if len(tx_hash) != 64 or any(ch not in "0123456789abcdef" for ch in tx_hash):
+        return {'valid': False, 'error': 'Invalid reward transaction hash format'}
+
+    # Validate reward amount is positive numeric
+    amount = reward_tx.get('amount', 0)
+    try:
+        amount = float(amount)
+        if amount <= 0:
+            return {'valid': False, 'error': f'Invalid reward amount: {amount}'}
+    except (ValueError, TypeError):
+        return {'valid': False, 'error': f'Invalid reward amount format: {amount}'}
+
+    # Validate reward timestamp close to block timestamp
+    try:
+        reward_ts = float(reward_tx.get('timestamp'))
+        block_ts = float(block_data.get('timestamp'))
+        if abs(block_ts - reward_ts) > 600:
+            return {
+                'valid': False,
+                'error': f'Reward timestamp too far from block timestamp (diff={abs(block_ts - reward_ts)}s)'
+            }
+    except (TypeError, ValueError):
+        return {'valid': False, 'error': 'Invalid reward or block timestamp'}
     
     # ====== STEP 3: CALCULATE & VALIDATE REWARD AMOUNT ======
     print("\n📊 STEP 3: Calculating reward amount...")
     
-    amount = reward_tx.get('amount', 0)
-    
-    # Determine expected reward using exponential calculation
-    BASE_REWARD = 1.0
+    # Determine expected reward using lunalib-compatible calculation
     
     print(f"\n🔍 REWARD TRANSACTION DEBUG:")
     print(f"   Full reward TX: {json.dumps(reward_tx, indent=2)}")
@@ -270,17 +315,57 @@ def validate_reward_transactions(reward_transactions: List[Dict], block_index: i
     print(f"   Difficulty from block: {difficulty}")
     print(f"   Difficulty in reward TX: {reward_tx.get('difficulty', 'NOT SET')}")
     
-    if len(non_reward_txs) == 0:
-        # EMPTY BLOCK: Base reward * difficulty (linear)
-        expected_reward = BASE_REWARD * difficulty
-        print(f"🌑 Empty block: {BASE_REWARD} * {difficulty} = {expected_reward}")
+    total_fees = 0
+    for tx in non_reward_txs:
+        fee = tx.get('fee', 0)
+        try:
+            fee_val = float(fee)
+        except (ValueError, TypeError):
+            return {'valid': False, 'error': f'Invalid transaction fee: {fee}'}
+        if fee_val < 0:
+            return {'valid': False, 'error': f'Negative transaction fee: {fee_val}'}
+        total_fees += fee_val
+    empty_block = len(non_reward_txs) == 0
+    base_reward_for_calc = None
+    try:
+        from models import Settings
+        settings = Settings.query.first()
+        if settings and settings.mining_reward is not None:
+            base_reward_for_calc = float(settings.mining_reward)
+    except Exception:
+        base_reward_for_calc = None
+
+    expected_reward = None
+    try:
+        from lunalib.mining.difficulty import DifficultySystem
+
+        difficulty_system = DifficultySystem()
+        expected_reward = float(
+            difficulty_system.calculate_block_reward(
+                difficulty,
+                block_height=block_index,
+                tx_count=len(non_reward_txs),
+                fees_total=float(total_fees),
+                **({"base_reward": float(base_reward_for_calc)} if base_reward_for_calc is not None else {}),
+            )
+        )
+    except Exception:
+        expected_reward = None
+
+    if expected_reward is None:
+        expected_reward = calculate_expected_reward(
+            difficulty,
+            fees=total_fees,
+            empty_block=empty_block,
+            block_height=block_index,
+            tx_count=len(non_reward_txs),
+            base_reward=base_reward_for_calc,
+        )
+    if empty_block:
+        print(f"🌑 Empty block: BASE_REWARD * {difficulty} = {expected_reward}")
     else:
-        # REGULAR BLOCK: Base reward * 10^(difficulty-1) (exponential) + fees
-        total_fees = sum(tx.get('fee', 0) for tx in non_reward_txs)
-        base_reward_amount = BASE_REWARD * (10 ** max(0, difficulty - 1))
-        expected_reward = base_reward_amount + total_fees
         print(
-            f"📦 Regular block: ({BASE_REWARD} * 10^({max(0, difficulty - 1)})) + {total_fees} fees = {expected_reward}"
+            f"📦 Regular block: (BASE_REWARD * {difficulty}) + {total_fees} fees = {expected_reward}"
         )
     
     print(f"\n💰 REWARD COMPARISON:")
@@ -297,9 +382,9 @@ def validate_reward_transactions(reward_transactions: List[Dict], block_index: i
             'provided_reward': amount,
             'difficulty': difficulty,
             'calculation': (
-                f'BASE_REWARD({BASE_REWARD}) * {difficulty} = {expected_reward}'
-                if len(non_reward_txs) == 0
-                else f'BASE_REWARD({BASE_REWARD}) * 10^({max(0, difficulty - 1)}) + fees = {expected_reward}'
+                f'BASE_REWARD * {difficulty} = {expected_reward}'
+                if empty_block
+                else f'BASE_REWARD * {difficulty} + fees = {expected_reward}'
             ),
             'block_hash': block_data.get('hash', '')[:16] + '...',
             'block_timestamp': block_data.get('timestamp'),
@@ -310,11 +395,11 @@ def validate_reward_transactions(reward_transactions: List[Dict], block_index: i
         print(f"   Error details: {json.dumps(error_details, indent=2)}")
         
         return {
-            'valid': False, 
+            'valid': False,
             'error': (
-                f'Reward amount {amount} != expected {expected_reward} (BASE_REWARD * difficulty = {BASE_REWARD} * {difficulty})'
-                if len(non_reward_txs) == 0
-                else f'Reward amount {amount} != expected {expected_reward} (BASE_REWARD * 10^({max(0, difficulty - 1)}) + fees)'
+                f'Reward amount {amount} != expected {expected_reward} (BASE_REWARD * {difficulty})'
+                if empty_block
+                else f'Reward amount {amount} != expected {expected_reward} (BASE_REWARD * {difficulty} + fees)'
             ),
             'debug': error_details
         }
@@ -340,154 +425,249 @@ def validate_reward_transactions(reward_transactions: List[Dict], block_index: i
     }
 
 
-def validate_mining_proof_internal(block_hash: str, difficulty: int, block_data: Dict, 
+def validate_mining_proof_internal(block_hash: str, difficulty: int, block_data: Dict,
                                    previous_block_hash: str, non_reward_txs: List[Dict]) -> Dict:
-    """Internal mining proof validation - FIXED VERSION"""
+    """Internal mining proof validation using lunalib only."""
     print("=" * 80)
-    print("🔍 DEBUG: validate_mining_proof_internal CALLED - FIXED VERSION")
+    print("🔍 DEBUG: validate_mining_proof_internal CALLED - LUNALIB ONLY")
     print("=" * 80)
-    
+
     print(f"🔍 Validating hash: {block_hash[:16]}...")
     print(f"   Difficulty: {difficulty}")
     print(f"   Non-reward txs: {len(non_reward_txs)}")
     print(f"   Block index: {block_data.get('index')}")
-    
-    # Get all block data
+
     index = block_data.get('index')
     timestamp = block_data.get('timestamp')
-    miner = block_data.get('miner', '')
     nonce = block_data.get('nonce')
-    version = block_data.get('version', '1.0')
-    
-    # ====== METHOD 1: Check the miner's actual format (calculate_block_hash) ======
-    print("\n🔄 Method 1: Checking miner's actual calculate_block_hash format...")
-    
-    try:
-        # Try the format from calculate_block_hash function
-        miner_format_data = {
-            'index': index,
-            'previous_hash': previous_block_hash,
-            'timestamp': timestamp,
-            'transactions': [],  # Empty for empty blocks
-            'nonce': nonce
-        }
-        
-        # Use EXACT same format as calculate_block_hash
-        miner_string = json.dumps(miner_format_data, sort_keys=True, separators=(',', ':'))
-        miner_hash = hashlib.sha256(miner_string.encode()).hexdigest()
-        
-        print(f"   Miner format data: {miner_format_data}")
-        print(f"   JSON string: {miner_string}")
-        print(f"   Calculated hash: {miner_hash}")
-        print(f"   Provided hash:   {block_hash}")
-        
-        if miner_hash == block_hash:
-            print("✅ Method 1 SUCCESS! (Matches miner's calculate_block_hash)")
-            return {'valid': True, 'method': 'miner_calculate_block_hash'}
-    except Exception as e:
-        print(f"⚠️ Method 1 error: {e}")
-    
-    # ====== METHOD 2: Check with ALL fields (server validation format) ======
-    print("\n🔄 Method 2: Checking server validation format...")
-    
-    try:
-        # Server validation format (from debug output)
-        server_format_data = {
-            "difficulty": difficulty,
-            "index": index,
-            "miner": miner,
-            "nonce": nonce,
-            "previous_hash": previous_block_hash,
-            "timestamp": timestamp,
-            "transactions": [],  # EMPTY!
-            "version": version
-        }
-        
-        server_string = json.dumps(server_format_data, sort_keys=True)
-        server_hash = hashlib.sha256(server_string.encode()).hexdigest()
-        
-        print(f"   Server format data: {server_format_data}")
-        print(f"   JSON string: {server_string}")
-        print(f"   Calculated hash: {server_hash}")
-        
-        if server_hash == block_hash:
-            print("✅ Method 2 SUCCESS! (Matches server validation format)")
-            return {'valid': True, 'method': 'server_validation_format'}
-    except Exception as e:
-        print(f"⚠️ Method 2 error: {e}")
-    
-    # ====== METHOD 3: Try with non-reward transactions ======
-    print("\n🔄 Method 3: Checking with non-reward transactions...")
-    
-    try:
-        if non_reward_txs:
-            # Try miner format with actual transactions
-            miner_format_with_txs = {
-                'index': index,
-                'previous_hash': previous_block_hash,
-                'timestamp': timestamp,
-                'transactions': non_reward_txs,  # Include non-reward transactions
-                'nonce': nonce
+
+    def _resolve_lunalib_callable(module_names: List[str], method_names: List[str]):
+        for module_name in module_names:
+            try:
+                module = __import__(module_name, fromlist=["*"])
+            except Exception:
+                continue
+            for method_name in method_names:
+                candidate = getattr(module, method_name, None)
+                if callable(candidate):
+                    return candidate
+        return None
+
+    def _run_threaded(func, *args):
+        future = _SM3_EXECUTOR.submit(func, *args)
+        return future.result(timeout=2.5)
+
+    def _normalize_hash(value):
+        if value is None:
+            return None
+        if hasattr(value, "hexdigest"):
+            return value.hexdigest()
+        if isinstance(value, bytes):
+            return value.hex()
+        if isinstance(value, str):
+            return value.strip()
+        return str(value)
+
+    # --- Lunalib hash calculation (optional, threaded) ---
+    hash_calc = _resolve_lunalib_callable(
+        [
+            "lunalib.blockchain",
+            "lunalib.core.blockchain",
+            "lunalib.mining",
+            "lunalib.hashing",
+            "lunalib.utils",
+        ],
+        [
+            "calculate_block_hash",
+            "calculate_hash",
+            "hash_block",
+            "compute_block_hash",
+        ],
+    )
+
+    sm3_modules = [
+        "lunalib.crypto.sm3",
+        "lunalib.hashing.sm3",
+        "lunalib.core.sm3",
+        "lunalib.sm3",
+        "lunalib.crypto",
+        "lunalib.hashing",
+        "lunalib.utils",
+    ]
+    sm3_hash = _resolve_lunalib_callable(
+        sm3_modules,
+        [
+            "sm3_hash",
+            "hash_sm3",
+            "sm3",
+            "hash",
+            "sm3_hash_hex",
+            "sm3_hexdigest",
+        ],
+    )
+
+    sm3_class = None
+    for module_name in sm3_modules:
+        try:
+            module = __import__(module_name, fromlist=["*"])
+        except Exception:
+            continue
+        sm3_class = getattr(module, "SM3Hash", None)
+        if sm3_class:
+            break
+
+    expected_hash = None
+    if hash_calc is not None:
+        for args in (
+            (block_data,),
+            (index, previous_block_hash, timestamp, block_data.get('transactions', []), nonce),
+            (index, previous_block_hash, timestamp, non_reward_txs, nonce),
+        ):
+            try:
+                expected_hash = _normalize_hash(_run_threaded(hash_calc, *args))
+                if expected_hash:
+                    break
+            except (FutureTimeout, Exception):
+                continue
+
+    def _try_sm3_payload(payload: str) -> Optional[str]:
+        if sm3_hash is not None:
+            try:
+                return _normalize_hash(_run_threaded(sm3_hash, payload))
+            except Exception:
+                try:
+                    return _normalize_hash(_run_threaded(sm3_hash, payload.encode("utf-8")))
+                except Exception:
+                    return None
+        if sm3_class is not None:
+            try:
+                hasher = sm3_class()
+                if hasattr(hasher, "update"):
+                    hasher.update(payload.encode("utf-8"))
+                if hasattr(hasher, "hexdigest"):
+                    return _normalize_hash(hasher.hexdigest())
+                if hasattr(hasher, "digest"):
+                    return _normalize_hash(hasher.digest())
+            except Exception:
+                return None
+        return None
+
+    if expected_hash is None:
+        payloads = []
+        payloads.append(
+            json.dumps(
+                {
+                    'index': index,
+                    'previous_hash': previous_block_hash,
+                    'timestamp': timestamp,
+                    'transactions': block_data.get('transactions', []),
+                    'nonce': nonce,
+                },
+                sort_keys=True,
+                separators=(',', ':'),
+            )
+        )
+        payloads.append(
+            json.dumps(
+                {
+                    'index': index,
+                    'previous_hash': previous_block_hash,
+                    'timestamp': timestamp,
+                    'transactions': non_reward_txs,
+                    'nonce': nonce,
+                },
+                sort_keys=True,
+                separators=(',', ':'),
+            )
+        )
+        transactions_hash = block_data.get("transactions_hash")
+        miner = block_data.get("miner")
+        if transactions_hash and miner and timestamp is not None and nonce is not None:
+            payloads.append(f"{previous_block_hash}{timestamp}{transactions_hash}{miner}{nonce}")
+
+        for payload in payloads:
+            expected_hash = _try_sm3_payload(payload)
+            if expected_hash:
+                break
+
+    if expected_hash:
+        if expected_hash != block_hash:
+            return {
+                'valid': False,
+                'error': f'Hash mismatch (lunalib): expected {expected_hash[:16]}..., got {block_hash[:16]}...'
             }
-            
-            miner_txs_string = json.dumps(miner_format_with_txs, sort_keys=True, separators=(',', ':'))
-            miner_txs_hash = hashlib.sha256(miner_txs_string.encode()).hexdigest()
-            
-            print(f"   Calculated hash: {miner_txs_hash}")
-            
-            if miner_txs_hash == block_hash:
-                print("✅ Method 3 SUCCESS! (With non-reward transactions)")
-                return {'valid': True, 'method': 'miner_with_transactions'}
-    except Exception as e:
-        print(f"⚠️ Method 3 error: {e}")
-    
-    # ====== METHOD 4: Try without separators ======
-    print("\n🔄 Method 4: Checking without custom separators...")
-    
-    try:
-        simple_format = {
-            'index': index,
-            'previous_hash': previous_block_hash,
-            'timestamp': timestamp,
-            'transactions': [],
-            'nonce': nonce
+
+    # --- Lunalib mining proof validation ---
+    pow_validator = _resolve_lunalib_callable(
+        [
+            "lunalib.blockchain",
+            "lunalib.core.blockchain",
+            "lunalib.mining",
+            "lunalib.mining.proof",
+            "lunalib.mining.miner",
+        ],
+        [
+            "validate_mining_proof",
+            "validate_pow",
+            "validate_proof_of_work",
+            "validate_mining_proof_internal",
+        ],
+    )
+
+    if pow_validator is None:
+        if expected_hash and expected_hash == block_hash:
+            if block_hash.startswith('0' * difficulty):
+                return {
+                    'valid': True,
+                    'method': 'lunalib_hash_difficulty'
+                }
+            return {
+                'valid': False,
+                'error': f'Hash does not meet difficulty {difficulty}'
+            }
+        return {
+            'valid': False,
+            'error': 'Lunalib mining proof validator unavailable'
         }
-        
-        simple_string = json.dumps(simple_format, sort_keys=True)  # NO custom separators
-        simple_hash = hashlib.sha256(simple_string.encode()).hexdigest()
-        
-        print(f"   Calculated hash: {simple_hash}")
-        
-        if simple_hash == block_hash:
-            print("✅ Method 4 SUCCESS! (Without custom separators)")
-            return {'valid': True, 'method': 'simple_format'}
+
+    try:
+        try:
+            import inspect
+            params = list(inspect.signature(pow_validator).parameters.values())
+            if len(params) <= 1:
+                result = pow_validator(block_data)
+            else:
+                result = pow_validator(block_data, previous_block_hash)
+        except Exception:
+            result = pow_validator(block_data, previous_block_hash)
     except Exception as e:
-        print(f"⚠️ Method 4 error: {e}")
-    
-    # ====== METHOD 5: Final check - accept if hash meets difficulty ======
-    print("\n🔄 Method 5: Accepting based on difficulty alone...")
-    
-    # Check if hash meets difficulty requirement
-    if block_hash.startswith('0' * difficulty):
-        print(f"✅ Hash meets difficulty {difficulty} requirement")
-        print(f"⚠️ WARNING: Hash matches difficulty but not any validation format")
-        print(f"   This means miner and server are using different hash algorithms")
-        
-        # Show what the miner is ACTUALLY calculating vs what server expects
-        print(f"\n🔍 Problem Analysis:")
-        print(f"   Miner likely calculates hash from: {miner_format_data}")
-        print(f"   Server expects hash from: {server_format_data}")
-        print(f"   These are DIFFERENT formats!")
-        
-        # Accept anyway since miner did the work
-        return {'valid': True, 'method': 'difficulty_only', 'warning': 'Format mismatch'}
-    
-    print("\n❌ ALL VALIDATION METHODS FAILED")
-    print(f"   Block hash: {block_hash}")
-    print(f"   Difficulty: {difficulty}")
-    print(f"   Hash doesn't meet difficulty requirement")
-    
-    return {'valid': False, 'error': f'Hash verification failed. Provided: {block_hash[:16]}...'}
+        return {
+            'valid': False,
+            'error': f'Lunalib mining proof validation error: {e}'
+        }
+
+    if isinstance(result, dict):
+        if "valid" in result:
+            return {
+                'valid': bool(result.get('valid')),
+                'method': result.get('method') or result.get('validation_method') or 'lunalib'
+            }
+        if "success" in result:
+            return {
+                'valid': bool(result.get('success')),
+                'method': result.get('method') or result.get('validation_method') or 'lunalib'
+            }
+
+    if isinstance(result, bool):
+        return {
+            'valid': result,
+            'method': 'lunalib'
+        }
+
+    return {
+        'valid': False,
+        'error': 'Unexpected response from lunalib mining proof validator'
+    }
 
 
 def is_reward_transaction_duplicate(reward_tx: Dict, is_transaction_mined_func) -> bool:

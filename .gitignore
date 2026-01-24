@@ -10,6 +10,9 @@ outdir
 security_patterns
 linux_venv
 dist
+blockchain_data
+mempool_data
+wallet_data
 db.old
 db
 build

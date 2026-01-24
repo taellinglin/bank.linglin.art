@@ -24,6 +24,7 @@ import bleach
 from bleach.sanitizer import ALLOWED_TAGS, ALLOWED_ATTRIBUTES
 from sqlalchemy.exc import IntegrityError
 import sys
+import builtins
 import cv2
 import numpy as np
 from urllib.parse import urlparse, parse_qs
@@ -45,6 +46,92 @@ def _call_generate_for_user(generate_for_user, **kwargs):
         raise
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+
+
+class Colors:
+    BLACK = "\033[30m"
+    RED = "\033[31m"
+    GREEN = "\033[32m"
+    YELLOW = "\033[33m"
+    BLUE = "\033[34m"
+    MAGENTA = "\033[35m"
+    CYAN = "\033[36m"
+    WHITE = "\033[37m"
+    BRIGHT_BLACK = "\033[90m"
+    BRIGHT_RED = "\033[91m"
+    BRIGHT_GREEN = "\033[92m"
+    BRIGHT_YELLOW = "\033[93m"
+    BRIGHT_BLUE = "\033[94m"
+    BRIGHT_MAGENTA = "\033[95m"
+    BRIGHT_CYAN = "\033[96m"
+    BRIGHT_WHITE = "\033[97m"
+    BOLD = "\033[1m"
+    DIM = "\033[2m"
+    UNDERLINE = "\033[4m"
+    END = "\033[0m"
+
+
+def _supports_color() -> bool:
+    if os.environ.get("NO_COLOR"):
+        return False
+    try:
+        return sys.stdout.isatty()
+    except Exception:
+        return False
+
+
+def color_text(text: str, *color_codes: str) -> str:
+    if not color_codes or not _supports_color():
+        return text
+    return f"{''.join(color_codes)}{text}{Colors.END}"
+
+
+def _colorize_generation_line(line: str) -> str:
+    normalized = line.strip()
+    if normalized.startswith("[+]"):
+        return color_text(line, Colors.BRIGHT_GREEN)
+    if normalized.startswith("[!]"):
+        return color_text(line, Colors.BRIGHT_RED, Colors.BOLD)
+    if normalized.startswith("[SIGN]"):
+        return color_text(line, Colors.BRIGHT_MAGENTA)
+    if normalized.startswith("[PARALLEL]"):
+        return color_text(line, Colors.BRIGHT_CYAN)
+    if normalized.startswith("[GENERATION]") or normalized.startswith("[WORKER]"):
+        return color_text(line, Colors.BRIGHT_BLUE)
+    if normalized.startswith("[WORKER ERROR]") or normalized.startswith("[WORKER FATAL]"):
+        return color_text(line, Colors.BRIGHT_RED, Colors.BOLD)
+    if normalized.startswith("Created SM2-signed bill"):
+        return color_text(line, Colors.BRIGHT_GREEN, Colors.BOLD)
+    if normalized.startswith("Signature:") or normalized.startswith("Public Key:"):
+        return color_text(line, Colors.BRIGHT_BLACK)
+    if "WARNING" in normalized:
+        return color_text(line, Colors.BRIGHT_YELLOW)
+    if normalized.startswith("="):
+        return color_text(line, Colors.BRIGHT_BLACK)
+    return line
+
+
+_generation_print_enabled = False
+
+
+def enable_generation_console_colors() -> None:
+    global _generation_print_enabled
+    if _generation_print_enabled or not _supports_color():
+        return
+
+    original_print = builtins.print
+
+    def _colored_print(*args, **kwargs):
+        file = kwargs.get("file", None)
+        if file is not None and file is not sys.stdout:
+            return original_print(*args, **kwargs)
+        sep = kwargs.get("sep", " ")
+        text = sep.join(str(arg) for arg in args)
+        colored = _colorize_generation_line(text)
+        return original_print(colored, **kwargs)
+
+    builtins.print = _colored_print
+    _generation_print_enabled = True
 
 # Configuration
 IMAGES_ROOT = "./images"
@@ -100,7 +187,7 @@ class GenerationQueue:
                 self._launch_generation_thread(user_id, username, task_id)
                 return task_id
         except Exception as e:
-            print(f"[QUEUE ERROR] {e}")
+            print(color_text(f"[QUEUE ERROR] {e}", Colors.BRIGHT_RED, Colors.BOLD))
             self._mark_task_failed(task.id if 'task' in locals() else -1, str(e))
             return None
     def _launch_generation_thread(self, user_id: int, username: str, task_id: int) -> None:
@@ -111,6 +198,8 @@ class GenerationQueue:
                 # Import create_app to create Flask application
                 from app import app as create_app
                 app = create_app
+
+                enable_generation_console_colors()
 
                 with app.app_context():
                     from generate import generate_for_user
@@ -138,7 +227,12 @@ class GenerationQueue:
                                 task_id=task_id
                             )
                         except Exception as email_error:
-                            print(f"[EMAIL ERROR] Could not send start notification: {email_error}")
+                            print(
+                                color_text(
+                                    f"[EMAIL ERROR] Could not send start notification: {email_error}",
+                                    Colors.BRIGHT_YELLOW,
+                                )
+                            )
 
                     denominations = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000]
                     results = []
@@ -182,11 +276,16 @@ class GenerationQueue:
                             })
                             total_pairs += pairs_created
 
-                            print(f"[GENERATION] Denomination {denom}: {pairs_created} pairs created")
+                            print(
+                                color_text(
+                                    f"[GENERATION] Denomination {denom}: {pairs_created} pairs created",
+                                    Colors.BRIGHT_GREEN,
+                                )
+                            )
 
                         except Exception as e:
                             error_msg = f"Error generating {denom}: {str(e)}"
-                            print(f"[GENERATION ERROR] {error_msg}")
+                            print(color_text(f"[GENERATION ERROR] {error_msg}", Colors.BRIGHT_RED, Colors.BOLD))
                             import traceback
                             traceback.print_exc()
                             results.append({
@@ -336,6 +435,7 @@ def execute_generation_task(task_id: int):
 
     try:
         with app.app_context():
+            enable_generation_console_colors()
             task = GenerationTask.query.get(task_id)
             if not task:
                 print(f"[WORKER] Task {task_id} not found.")

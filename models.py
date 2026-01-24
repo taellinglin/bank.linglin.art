@@ -246,7 +246,7 @@ class Settings(db.Model):
     allow_registrations = db.Column(db.Boolean, default=True)
     max_file_size = db.Column(db.Integer, default=512)  # MB
     blockchain_difficulty = db.Column(db.Integer, default=6)
-    mining_reward = db.Column(db.Float, default=1.0)
+    mining_reward = db.Column(db.Float, default=0.0001)
     
     # Banknote generation settings
     portrait_prompt = db.Column(db.Text, default="A professional portrait of a person, high quality, detailed face, neutral background")

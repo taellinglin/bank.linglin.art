@@ -26,3 +26,4 @@ celery
 redis
 sqlalchemy_utils
 python-dotenv
+lunalib==2.5.0

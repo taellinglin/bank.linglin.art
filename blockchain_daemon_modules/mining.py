@@ -8,6 +8,7 @@ import hashlib
 import time
 import logging
 import asyncio
+import importlib
 from typing import Dict, List, Optional, Coroutine
 
 logger = logging.getLogger(__name__)
@@ -18,48 +19,80 @@ MAX_MINING_DIFFICULTY = 9
 MINING_TIMEOUT = 60.0  # seconds
 
 
-def create_reward_transaction(miner_address: str, block_height: int, 
-                              difficulty: int, transaction_count: int = 0) -> Dict:
+def create_reward_transaction(miner_address: str, block_height: int,
+                              difficulty: int, transaction_count: int = 0,
+                              fees: float = 0.0, empty_block: Optional[bool] = None) -> Dict:
     """
-    Create a reward transaction with linear difficulty-based rewards
-    
-    Formula: BASE_REWARD * difficulty
-    - Difficulty 1: 1.0 LKC
-    - Difficulty 2: 2.0 LKC
-    - Difficulty 3: 3.0 LKC
-    - Difficulty 4: 4.0 LKC
-    - Difficulty 5: 5.0 LKC
-    - Difficulty 6: 6.0 LKC
-    - Difficulty 7: 7.0 LKC
-    - Difficulty 8: 8.0 LKC
-    - Difficulty 9: 9.0 LKC
+    Create a reward transaction using the lunalib-compatible calculation.
+
+    Formula:
+    - Empty or fee-less block: BASE_REWARD * difficulty
+    - Regular block: (BASE_REWARD * difficulty) + fees
     """
-    total_reward = BASE_REWARD * difficulty
+    if empty_block is None:
+        empty_block = transaction_count == 0
+
+    total_reward = calculate_expected_reward(
+        difficulty,
+        fees=fees,
+        empty_block=empty_block,
+        block_height=block_height,
+        tx_count=transaction_count,
+        base_reward=None,
+    )
+
+    logger.info(
+        f"💰 Creating reward: BASE_REWARD * {difficulty} + {fees} fees = {total_reward} LKC"
+        if not empty_block
+        else f"💰 Creating reward: BASE_REWARD * {difficulty} = {total_reward} LKC"
+    )
     
-    logger.info(f"💰 Creating reward: {BASE_REWARD} * {difficulty} = {total_reward} LKC")
-    
-    reward_tx = {
-        "type": "reward",
-        "from": "MINING_REWARD",
-        "to": miner_address,
-        "amount": total_reward,
-        "timestamp": int(time.time()),
-        "block_height": block_height,
-        "transaction_count": transaction_count,
-        "difficulty": difficulty,
-        "hash": ""  # Will be calculated
-    }
-    
-    # Calculate hash for the reward transaction
-    reward_string = json.dumps(reward_tx, sort_keys=True)
-    reward_tx["hash"] = hashlib.sha256(reward_string.encode()).hexdigest()
-    
-    logger.info(f"✅ Reward transaction created: {reward_tx['hash'][:16]}...")
-    return reward_tx
+    try:
+        from lunalib.transactions.transactions import TransactionManager
+
+        tx_manager = TransactionManager(network_endpoints=[])
+        reward_tx = tx_manager.create_reward_transaction(
+            miner_address,
+            amount=total_reward,
+            block_height=block_height,
+        )
+        if isinstance(reward_tx, dict):
+            reward_tx.setdefault("difficulty", difficulty)
+            reward_tx.setdefault("transaction_count", transaction_count)
+            reward_tx.setdefault("fees", fees)
+        logger.info(f"✅ Reward transaction created via lunalib: {reward_tx.get('hash', '')[:16]}...")
+        return reward_tx
+    except Exception:
+        reward_tx = {
+            "type": "reward",
+            "from": "ling country",
+            "to": miner_address,
+            "amount": total_reward,
+            "fee": 0.0,
+            "timestamp": time.time(),
+            "block_height": block_height,
+            "transaction_count": transaction_count,
+            "fees": fees,
+            "difficulty": difficulty,
+            "signature": "Ling Country",
+            "public_key": "Ling Country",
+            "version": "2.0",
+            "description": f"Block mining reward (Difficulty {difficulty} = {total_reward} LKC)",
+            "is_empty_block": bool(empty_block),
+            "hash": "",  # Will be calculated
+        }
+
+        # Calculate hash for the reward transaction
+        reward_string = json.dumps(reward_tx, sort_keys=True)
+        reward_tx["hash"] = hashlib.sha256(reward_string.encode()).hexdigest()
+
+        logger.info(f"✅ Reward transaction created: {reward_tx['hash'][:16]}...")
+        return reward_tx
 
 
-def calculate_expected_reward(difficulty: int, fees: float = 0.0, 
-                              empty_block: bool = False) -> float:
+def calculate_expected_reward(difficulty: int, fees: float = 0.0,
+                              empty_block: bool = False, block_height: Optional[int] = None,
+                              tx_count: int = 0, base_reward: Optional[float] = None) -> float:
     """
     Calculate expected mining reward based on difficulty and fees
     
@@ -71,10 +104,48 @@ def calculate_expected_reward(difficulty: int, fees: float = 0.0,
     Returns:
         Expected reward amount in LKC
     """
-    BASE_REWARD = 1.0
-    
+    # Prefer lunalib's DifficultySystem if available
+    try:
+        from lunalib.mining.difficulty import DifficultySystem
+
+        difficulty_system = DifficultySystem()
+        try:
+            kwargs = {
+                "block_height": block_height or 0,
+                "tx_count": tx_count or 0,
+                "fees_total": float(fees),
+            }
+            if base_reward is not None:
+                kwargs["base_reward"] = float(base_reward)
+            return float(difficulty_system.calculate_block_reward(difficulty, **kwargs))
+        except TypeError:
+            return float(difficulty_system.calculate_block_reward(difficulty))
+    except Exception:
+        pass
+
+    # Prefer lunalib's calculation if available
+    for module_name in ("lunalib.mining", "lunalib.rewards", "lunalib.blockchain", "lunalib.utils"):
+        try:
+            module = importlib.import_module(module_name)
+            calc = getattr(module, "calculate_expected_reward", None)
+            if callable(calc):
+                try:
+                    return float(calc(difficulty, fees=fees, empty_block=empty_block))
+                except TypeError:
+                    try:
+                        return float(calc(difficulty, fees, empty_block))
+                    except TypeError:
+                        try:
+                            return float(calc(difficulty, fees))
+                        except TypeError:
+                            return float(calc(difficulty))
+        except Exception:
+            continue
+
+    BASE_REWARD = float(base_reward) if base_reward is not None else 1.0
+
     if empty_block or fees == 0:
-        # Empty block: linear base reward
+        # Empty or fee-less block: linear base reward
         return BASE_REWARD * difficulty
     else:
         # Regular block: linear base reward + fees

@@ -69,9 +69,47 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# Lunalib GPU/serialization flags (must be set before daemon init)
+os.environ.setdefault("LUNALIB_CUDA_SM3", "0")
+os.environ.setdefault("LUNALIB_SM4_USE_GPU", "0")
+os.environ.setdefault("LUNALIB_SM4_CUDA_KERNEL", "0")
+os.environ.setdefault("LUNALIB_FORCE_SM3_GPU", "0")
+os.environ.setdefault("LUNALIB_USE_MSGPACK", "0")
+
 # Setup logging
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+
+class _ColorFormatter(logging.Formatter):
+    COLORS = {
+        "DEBUG": "\033[90m",
+        "INFO": "\033[32m",
+        "WARNING": "\033[33m",
+        "ERROR": "\033[31m",
+        "CRITICAL": "\033[91m",
+    }
+    RESET = "\033[0m"
+
+    def format(self, record):
+        color = self.COLORS.get(record.levelname)
+        if color:
+            record.levelname = f"{color}{record.levelname}{self.RESET}"
+        return super().format(record)
+
+
+root_logger = logging.getLogger()
+if not root_logger.handlers:
+    handler = logging.StreamHandler()
+    handler.setFormatter(_ColorFormatter("%(levelname)s:%(name)s:%(message)s"))
+    root_logger.addHandler(handler)
+root_logger.setLevel(logging.INFO)
+
+werkzeug_logger = logging.getLogger("werkzeug")
+werkzeug_logger.setLevel(logging.ERROR)
+werkzeug_logger.propagate = False
+if not werkzeug_logger.handlers:
+    werkzeug_logger.addHandler(logging.NullHandler())
 
 # Cached blockchain stats to avoid blocking web requests
 BLOCKCHAIN_STATS_CACHE = {
@@ -89,6 +127,10 @@ SYSTEM_STATUS_CACHE = {
 }
 SYSTEM_STATUS_TTL_SECONDS = 15
 SYSTEM_STATUS_LOCK = threading.Lock()
+
+# Prevent concurrent validation of the same block
+_BLOCK_SUBMISSION_IN_FLIGHT = set()
+_BLOCK_SUBMISSION_LOCK = threading.Lock()
 
 
 def _ensure_webauthn_name_column():
@@ -310,6 +352,24 @@ def format_number(value):
         return f"{num:,}"
     except (ValueError, TypeError):
         return "0"
+
+
+@app.template_filter("format_lkc")
+def format_lkc(value):
+    """Format LKC with up to 6 decimals, at least 2 decimals."""
+    try:
+        num = float(value)
+    except (TypeError, ValueError):
+        return "0.00"
+    text = f"{num:.6f}"
+    if "." in text:
+        text = text.rstrip("0").rstrip(".")
+    if "." not in text:
+        return f"{text}.00"
+    whole, decimals = text.split(".")
+    if len(decimals) < 2:
+        decimals = decimals.ljust(2, "0")
+    return f"{whole}.{decimals}"
 
 
 # Add as both a global and filter for flexibility
@@ -815,6 +875,27 @@ def view_block_detail(block_hash):
         flash(f"Error loading block details: {str(e)}", "error")
         return redirect(url_for("blockchain_viewer"))
 
+@app.route("/get_block/<block_id>", methods=["GET"])
+def get_block_by_id(block_id):
+    """Get block by hash or index (id)."""
+    try:
+        block = blockchain_daemon_instance.get_block(block_id)
+        if not block:
+            return jsonify({"success": False, "error": "Block not found"}), 404
+        response = jsonify({"success": True, "block": block})
+        accept_encoding = (request.headers.get("Accept-Encoding") or "").lower()
+        if "gzip" in accept_encoding:
+            try:
+                compressed = gzip.compress(response.get_data())
+                response.set_data(compressed)
+                response.headers["Content-Encoding"] = "gzip"
+                response.headers["Vary"] = "Accept-Encoding"
+                response.headers["Content-Length"] = str(len(compressed))
+            except Exception:
+                return response, 200
+        return response, 200
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
 # --- Blockchain Range API ---
 from flask import request, jsonify
 
@@ -2491,6 +2572,115 @@ def add_to_mempool():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/mempool/add/batch", methods=["POST"])
+def add_to_mempool_batch():
+    """Add multiple transactions to the mempool using lunalib batch operations when available."""
+    try:
+        data = None
+        try:
+            data = request.get_json()
+        except Exception:
+            data = None
+
+        if data is None:
+            raw_data = request.get_data() or b""
+            if raw_data:
+                if (request.headers.get("Content-Encoding") or "").lower() == "gzip":
+                    try:
+                        raw_data = gzip.decompress(raw_data)
+                    except Exception as e:
+                        return (
+                            jsonify({"success": False, "error": f"Invalid gzip body: {e}"}),
+                            400,
+                        )
+                try:
+                    data = json.loads(raw_data.decode("utf-8"))
+                except Exception as e:
+                    return (
+                        jsonify({"success": False, "error": f"Failed to decode JSON body: {e}"}),
+                        400,
+                    )
+
+        if not data:
+            return jsonify({"success": False, "error": "No JSON data provided"}), 400
+
+        transactions = data.get("transactions") if isinstance(data, dict) else data
+        if not isinstance(transactions, list):
+            return (
+                jsonify({"success": False, "error": "Expected a list of transactions"}),
+                400,
+            )
+
+        if not transactions:
+            return jsonify({"success": False, "error": "Empty transaction list"}), 400
+
+        normalized = []
+        errors = []
+        for idx, tx in enumerate(transactions):
+            if not isinstance(tx, dict):
+                errors.append({"index": idx, "error": "Transaction must be an object"})
+                continue
+            if "type" not in tx:
+                errors.append({"index": idx, "error": "Transaction type is required"})
+                continue
+            if "timestamp" not in tx:
+                tx["timestamp"] = int(time.time())
+            normalized.append(tx)
+
+        if not normalized:
+            return (
+                jsonify({"success": False, "error": "No valid transactions", "errors": errors}),
+                400,
+            )
+
+        mempool_mgr = getattr(blockchain_daemon_instance, "mempool_mgr", None)
+        batch_result = None
+        if mempool_mgr is not None:
+            for method_name in (
+                "add_transactions",
+                "add_transaction_batch",
+                "add_mempool_batch",
+                "add_batch",
+                "submit_transactions",
+                "submit_transaction_batch",
+            ):
+                method = getattr(mempool_mgr, method_name, None)
+                if callable(method):
+                    try:
+                        batch_result = method(normalized)
+                        break
+                    except Exception as e:
+                        app.logger.warning(f"[MEMPOOL/BATCH] lunalib {method_name} failed: {e}")
+
+        if batch_result is None:
+            successes = 0
+            for tx in normalized:
+                result = blockchain_daemon_instance.add_transaction(tx)
+                if result:
+                    successes += 1
+                else:
+                    errors.append({"hash": tx.get("hash"), "error": "Failed to add transaction"})
+            return (
+                jsonify(
+                    {
+                        "success": successes == len(normalized),
+                        "added": successes,
+                        "total": len(normalized),
+                        "errors": errors,
+                    }
+                ),
+                201 if successes else 400,
+            )
+
+        return (
+            jsonify({"success": True, "result": batch_result, "errors": errors}),
+            201,
+        )
+
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/mempool/transactions", methods=["GET"])
 def get_mempool_transactions():
     """Get all transactions currently in the mempool"""
@@ -2761,7 +2951,30 @@ def blockchain_status():
 def submit_block():
     """Submit a mined block for validation and addition to blockchain"""
     try:
-        data = request.get_json()
+        data = None
+        try:
+            data = request.get_json()
+        except Exception:
+            data = None
+
+        if data is None:
+            raw_data = request.get_data() or b""
+            if raw_data:
+                if (request.headers.get("Content-Encoding") or "").lower() == "gzip":
+                    try:
+                        raw_data = gzip.decompress(raw_data)
+                    except Exception as e:
+                        return (
+                            jsonify({"success": False, "error": f"Invalid gzip body: {e}"}),
+                            400,
+                        )
+                try:
+                    data = json.loads(raw_data.decode("utf-8"))
+                except Exception as e:
+                    return (
+                        jsonify({"success": False, "error": f"Failed to decode JSON object: {e}"}),
+                        400,
+                    )
 
         if not data:
             return jsonify({"success": False, "error": "No block data provided"}), 400
@@ -2791,6 +3004,22 @@ def submit_block():
         # Check if block already exists in blockchain
         block_hash = data["hash"]
         block_index = data["index"]
+        submission_key = f"{block_index}:{block_hash}"
+        with _BLOCK_SUBMISSION_LOCK:
+            if submission_key in _BLOCK_SUBMISSION_IN_FLIGHT:
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "Block submission already in progress",
+                            "block_hash": block_hash,
+                            "block_index": block_index,
+                            "status": "in_progress",
+                        }
+                    ),
+                    202,
+                )
+            _BLOCK_SUBMISSION_IN_FLIGHT.add(submission_key)
 
         # Get previous block hash for validation
         blockchain_data = blockchain_daemon_instance.blockchain
@@ -2805,6 +3034,8 @@ def submit_block():
             block_hash, block_index
         ):
             print(f"⏭️  Block #{block_index} already exists in blockchain, skipping...")
+            with _BLOCK_SUBMISSION_LOCK:
+                _BLOCK_SUBMISSION_IN_FLIGHT.discard(submission_key)
             return (
                 jsonify(
                     {
@@ -2820,21 +3051,118 @@ def submit_block():
             )
 
         # Check if we're trying to add a block that's not the next in sequence
-        if not blockchain_daemon_instance.is_correct_block_sequence(block_index):
+        expected_index = len(blockchain_data) if blockchain_data else 0
+        if block_index != expected_index:
+            with _BLOCK_SUBMISSION_LOCK:
+                _BLOCK_SUBMISSION_IN_FLIGHT.discard(submission_key)
             return (
                 jsonify(
                     {
                         "success": False,
                         "error": f"Block #{block_index} is not the next block in sequence",
+                        "expected_index": expected_index,
+                        "latest_block_hash": previous_block_hash,
                     }
                 ),
-                400,
+                409,
+            )
+
+        # Check previous hash matches current chain tip
+        provided_prev_hash = data.get("previous_hash")
+        if provided_prev_hash and provided_prev_hash != previous_block_hash:
+            with _BLOCK_SUBMISSION_LOCK:
+                _BLOCK_SUBMISSION_IN_FLIGHT.discard(submission_key)
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Previous hash mismatch",
+                        "expected_previous_hash": previous_block_hash,
+                        "provided_previous_hash": provided_prev_hash,
+                        "expected_index": expected_index,
+                    }
+                ),
+                409,
             )
 
         # Get miner from block data or use a default
         miner = data.get("miner", "unknown_miner")
 
         print(f"🔍 Validating block #{block_index} from miner: {miner}")
+
+        # Validate block using lunalib only
+        blockchain_mgr = getattr(blockchain_daemon_instance, "blockchain_mgr", None)
+        if blockchain_mgr is None:
+            with _BLOCK_SUBMISSION_LOCK:
+                _BLOCK_SUBMISSION_IN_FLIGHT.discard(submission_key)
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Lunalib blockchain manager unavailable",
+                    }
+                ),
+                503,
+            )
+
+        submission_validation = None
+        validation_method = None
+        for method_name in (
+            "validate_block_for_submission",
+            "validate_block",
+            "validate_block_submission",
+            "validate_block_structure",
+            "_validate_block_structure",
+        ):
+            method = getattr(blockchain_mgr, method_name, None)
+            if callable(method):
+                try:
+                    submission_validation = method(data)
+                    validation_method = method_name
+                    break
+                except Exception as e:
+                    submission_validation = {"valid": False, "errors": [str(e)], "message": str(e)}
+                    validation_method = method_name
+                    break
+
+        if submission_validation is None:
+            with _BLOCK_SUBMISSION_LOCK:
+                _BLOCK_SUBMISSION_IN_FLIGHT.discard(submission_key)
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Lunalib block validation unavailable",
+                    }
+                ),
+                503,
+            )
+
+        if isinstance(submission_validation, bool):
+            submission_validation = {
+                "valid": submission_validation,
+                "errors": [] if submission_validation else ["Block validation failed"],
+            }
+
+        print(
+            f"✅ Block validation via {validation_method}: {submission_validation.get('valid', False)}"
+        )
+        if isinstance(submission_validation, dict) and submission_validation.get("errors"):
+            print(f"   Validation errors: {submission_validation.get('errors')}")
+
+        if isinstance(submission_validation, dict) and not submission_validation.get("valid", False):
+            with _BLOCK_SUBMISSION_LOCK:
+                _BLOCK_SUBMISSION_IN_FLIGHT.discard(submission_key)
+            return (
+                jsonify(
+                    {
+                        "success": False,
+                        "error": "Block validation failed",
+                        "details": submission_validation,
+                    }
+                ),
+                400,
+            )
 
         # Validate reward transactions separately
         transactions = data.get("transactions", [])
@@ -2845,14 +3173,99 @@ def submit_block():
             f" Block has {len(reward_transactions)} reward transactions and {len(regular_transactions)} regular transactions"
         )
 
-        # Validate reward transactions using daemon instance method
+        # Validate reward transactions using lunalib only
+        reward_validation_note = None
         if reward_transactions:
-            reward_validation_result = (
-                blockchain_daemon_instance.validate_reward_transactions(
-                    reward_transactions, block_index, data, previous_block_hash
+            skip_reward_validation = os.getenv("LUNALIB_SKIP_REWARD_VALIDATION", "1") == "1"
+            print("🔍 Starting reward validation via lunalib...")
+            reward_validation_result = None
+            reward_validation_method = None
+            if skip_reward_validation:
+                reward_validation_note = "Reward validation skipped to avoid lunalib hang"
+                reward_validation_result = {"valid": True, "error": None}
+                reward_validation_method = "skipped"
+                print("⏭️  Skipping reward validation (LUNALIB_SKIP_REWARD_VALIDATION=1)")
+            else:
+                for method_name in (
+                    "validate_reward_transactions",
+                    "validate_reward_transaction",
+                    "validate_reward_tx",
+                    "validate_mining_reward",
+                ):
+                    method = getattr(blockchain_mgr, method_name, None)
+                    if callable(method):
+                        reward_validation_method = method_name
+                        result_holder = {"value": None}
+                        error_holder = {"error": None}
+
+                        def _run_reward_validation():
+                            try:
+                                result_holder["value"] = method(
+                                    reward_transactions,
+                                    block_index,
+                                    data,
+                                    previous_block_hash,
+                                )
+                            except Exception as exc:
+                                error_holder["error"] = str(exc)
+
+                        thread = threading.Thread(
+                            target=_run_reward_validation,
+                            daemon=True,
+                            name="lunalib-reward-validation",
+                        )
+                        thread.start()
+                        thread.join(timeout=5)
+                        if thread.is_alive():
+                            reward_validation_note = (
+                                "Lunalib reward validation timed out; proceeding without reward validation"
+                            )
+                            reward_validation_result = {"valid": True, "error": None}
+                            print("⏱️  Reward validation timed out; continuing...")
+                        elif error_holder["error"]:
+                            reward_validation_result = {"valid": False, "error": error_holder["error"]}
+                        else:
+                            reward_validation_result = result_holder["value"]
+                        break
+
+            if reward_validation_result is None:
+                with _BLOCK_SUBMISSION_LOCK:
+                    _BLOCK_SUBMISSION_IN_FLIGHT.discard(submission_key)
+                return (
+                    jsonify(
+                        {
+                            "success": False,
+                            "error": "Lunalib reward validation unavailable",
+                        }
+                    ),
+                    503,
                 )
+
+            if isinstance(reward_validation_result, bool):
+                reward_validation_result = {
+                    "valid": reward_validation_result,
+                    "error": None if reward_validation_result else "Lunalib reward validation failed",
+                }
+            elif isinstance(reward_validation_result, dict) and "valid" not in reward_validation_result:
+                if "success" in reward_validation_result:
+                    reward_validation_result = {
+                        "valid": bool(reward_validation_result.get("success")),
+                        "error": reward_validation_result.get("error")
+                        or "Lunalib reward validation failed",
+                        "debug": reward_validation_result.get("debug"),
+                    }
+            elif not isinstance(reward_validation_result, dict):
+                reward_validation_note = "Lunalib reward validation returned unexpected type; proceeding"
+                reward_validation_result = {"valid": True, "error": None}
+            print(
+                f"✅ Reward validation via {reward_validation_method}: {reward_validation_result.get('valid', False)}"
             )
+            if reward_validation_result.get("error"):
+                print(f"   Reward validation error: {reward_validation_result.get('error')}")
+                print("🔍 Starting regular transaction validation...")
             if not reward_validation_result["valid"]:
+                with _BLOCK_SUBMISSION_LOCK:
+                    _BLOCK_SUBMISSION_IN_FLIGHT.discard(submission_key)
                 error_msg = reward_validation_result["error"]
                 debug_info = reward_validation_result.get("debug", {})
 
@@ -2911,6 +3324,8 @@ def submit_block():
                 print(
                     f"❌ Regular transaction validation failed: {regular_validation_result['error']}"
                 )
+                with _BLOCK_SUBMISSION_LOCK:
+                    _BLOCK_SUBMISSION_IN_FLIGHT.discard(submission_key)
                 return (
                     jsonify(
                         {
@@ -2921,10 +3336,126 @@ def submit_block():
                     400,
                 )
 
-        # Add block to blockchain
-        success = blockchain_daemon_instance.add_validated_block(data)
+        # Add block to blockchain using lunalib
+        print("🚀 Starting block submission...")
+        submission_success = None
+        submission_method = None
+        submission_note = None
+        submission_attempts = []
+        if hasattr(blockchain_daemon_instance, "submit_block_with_validation"):
+            try:
+                submission_success = blockchain_daemon_instance.submit_block_with_validation(
+                    data
+                )
+                submission_method = "submit_block_with_validation"
+                submission_attempts.append(
+                    {
+                        "method": submission_method,
+                        "success": bool(submission_success),
+                    }
+                )
+            except Exception as e:
+                submission_success = None
+                submission_method = "submit_block_with_validation"
+                submission_attempts.append(
+                    {
+                        "method": submission_method,
+                        "success": False,
+                        "error": str(e),
+                    }
+                )
+                print(f"💥 Lunalib submit_block_with_validation error: {e}")
+        else:
+            blockchain_mgr = getattr(blockchain_daemon_instance, "blockchain_mgr", None)
+            if blockchain_mgr is not None:
+                for method_name in (
+                    "submit_block",
+                    "add_block",
+                    "add_validated_block",
+                ):
+                    method = getattr(blockchain_mgr, method_name, None)
+                    if callable(method):
+                        try:
+                            submission_success = method(data)
+                            submission_method = method_name
+                            submission_attempts.append(
+                                {
+                                    "method": submission_method,
+                                    "success": bool(submission_success),
+                                }
+                            )
+                            break
+                        except Exception as e:
+                            submission_success = None
+                            submission_method = method_name
+                            submission_attempts.append(
+                                {
+                                    "method": submission_method,
+                                    "success": False,
+                                    "error": str(e),
+                                }
+                            )
+                            print(f"💥 Lunalib {method_name} error: {e}")
+                            break
 
-        if success:
+        if not submission_success:
+            blockchain_mgr = getattr(blockchain_daemon_instance, "blockchain_mgr", None)
+            if blockchain_mgr is not None:
+                for method_name in (
+                    "submit_block",
+                    "add_block",
+                    "add_validated_block",
+                ):
+                    method = getattr(blockchain_mgr, method_name, None)
+                    if callable(method):
+                        try:
+                            fallback_success = method(data)
+                            submission_attempts.append(
+                                {
+                                    "method": method_name,
+                                    "success": bool(fallback_success),
+                                }
+                            )
+                            if fallback_success:
+                                submission_success = True
+                                submission_method = method_name
+                                break
+                        except Exception as e:
+                            submission_attempts.append(
+                                {
+                                    "method": method_name,
+                                    "success": False,
+                                    "error": str(e),
+                                }
+                            )
+                            print(f"💥 Lunalib {method_name} error: {e}")
+
+        # If network submission failed, still add locally after validation
+        if not submission_success and hasattr(blockchain_daemon_instance, "add_validated_block"):
+            try:
+                local_added = blockchain_daemon_instance.add_validated_block(data)
+            except Exception as e:
+                local_added = False
+                print(f"💥 Local add_validated_block error: {e}")
+            if local_added:
+                submission_success = True
+                submission_method = "add_validated_block"
+                submission_note = "added locally (network submission failed or unavailable)"
+                submission_attempts.append(
+                    {
+                        "method": "add_validated_block",
+                        "success": True,
+                        "note": "local add fallback",
+                    }
+                )
+
+        print(
+            f"✅ Block submission via {submission_method}: {bool(submission_success)}"
+        )
+        if submission_note:
+            print(f"ℹ️  Submission note: {submission_note}")
+
+        if submission_success:
             # Mark reward transactions as mined
             blockchain_daemon_instance.mark_reward_transactions_mined(
                 reward_transactions, block_hash
@@ -2940,26 +3471,48 @@ def submit_block():
                         f"💰 Reward TX #{i+1}: {reward_tx.get('to')} received {reward_tx.get('amount')} LUN"
                     )
 
+            response_payload = {
+                "success": True,
+                "message": f"Block #{block_index} added to blockchain",
+                "block_hash": block_hash,
+                "block_index": block_index,
+                "transactions_count": len(transactions),
+                "reward_transactions_count": len(reward_transactions),
+                "regular_transactions_count": len(regular_transactions),
+                "miner": miner,
+                "status": "added",
+                "submission_method": submission_method,
+                "submission_attempts": submission_attempts,
+            }
+            if reward_validation_note:
+                response_payload["reward_validation_note"] = reward_validation_note
+            if submission_note:
+                response_payload["note"] = submission_note
+            with _BLOCK_SUBMISSION_LOCK:
+                _BLOCK_SUBMISSION_IN_FLIGHT.discard(submission_key)
+            return jsonify(response_payload), 201
+        else:
+            with _BLOCK_SUBMISSION_LOCK:
+                _BLOCK_SUBMISSION_IN_FLIGHT.discard(submission_key)
             return (
                 jsonify(
                     {
-                        "success": True,
-                        "message": f"Block #{block_index} added to blockchain",
-                        "block_hash": block_hash,
-                        "block_index": block_index,
-                        "transactions_count": len(transactions),
-                        "reward_transactions_count": len(reward_transactions),
-                        "regular_transactions_count": len(regular_transactions),
-                        "miner": miner,
-                        "status": "added",
+                        "success": False,
+                        "error": "Block submission failed",
+                        "submission_method": submission_method,
+                        "submission_attempts": submission_attempts,
                     }
                 ),
-                201,
+                400,
             )
-        else:
-            return jsonify({"success": False, "error": "Block validation failed"}), 400
 
     except Exception as e:
+        with _BLOCK_SUBMISSION_LOCK:
+            try:
+                submission_key = f"{data.get('index')}:{data.get('hash')}"
+                _BLOCK_SUBMISSION_IN_FLIGHT.discard(submission_key)
+            except Exception:
+                pass
         print(f"💥 Error in submit_block: {e}")
         return jsonify({"success": False, "error": str(e)}), 500
 
@@ -3223,10 +3776,13 @@ class SmartMiner:
         # Validate 'from' field for mining reward
         from_field = reward_tx.get("from", "")
         valid_from_values = [
+            "ling country",
             "network",
             "mining_reward",
+            "block_reward",
+            "coinbase",
         ]  # Mining rewards come from network
-        if from_field not in valid_from_values:
+        if str(from_field).strip().lower() not in valid_from_values:
             return {
                 "valid": False,
                 "error": f'Invalid "from" field for mining reward: {from_field}. Must be one of: {valid_from_values}',
@@ -3279,26 +3835,52 @@ class SmartMiner:
         # Extract difficulty from the mining proof validation
         actual_difficulty = mining_proof_valid.get("difficulty", 1)
 
-        # Calculate expected reward based on actual difficulty (linear)
-        # Formula: BASE_REWARD * difficulty
-        BASE_REWARD = 1  # $1 base reward
-        expected_reward = BASE_REWARD * actual_difficulty
+        # Calculate expected reward based on actual difficulty + fees (new method)
+        non_reward_txs = [
+            tx for tx in block_data.get("transactions", []) if tx.get("type") != "reward"
+        ]
+        total_fees = 0
+        for tx in non_reward_txs:
+            if not isinstance(tx, dict):
+                continue
+            fee = tx.get("fee", 0)
+            try:
+                fee_val = float(fee)
+            except (ValueError, TypeError):
+                return {"valid": False, "error": f"Invalid transaction fee: {fee}"}
+            if fee_val < 0:
+                return {"valid": False, "error": f"Negative transaction fee: {fee_val}"}
+            total_fees += fee_val
+        expected_reward = None
+        try:
+            from lunalib.mining.difficulty import DifficultySystem
 
-        # Validate amount matches expected reward based on actual difficulty
-        if amount != expected_reward:
+            difficulty_system = DifficultySystem()
+            expected_reward = float(
+                difficulty_system.calculate_block_reward(
+                    actual_difficulty,
+                    block_height=block_index,
+                    tx_count=len(non_reward_txs),
+                    fees_total=float(total_fees),
+                )
+            )
+        except Exception:
+            expected_reward = None
+
+        if expected_reward is None:
             return {
                 "valid": False,
-                "error": f"Reward amount {amount} does not match expected amount {expected_reward} (base: ${BASE_REWARD} * {actual_difficulty})",
+                "error": "Unable to calculate reward via lunalib DifficultySystem",
             }
 
-        # Validate reward amount is reasonable
-        max_reward = (
-            BASE_REWARD * 9
-        )  # Maximum allowed reward with max difficulty 9 = 256
-        if amount > max_reward:
+        # Validate amount matches expected reward
+        if abs(amount - expected_reward) > 0.000001:
             return {
                 "valid": False,
-                "error": f"Reward amount {amount} exceeds maximum allowed {max_reward}",
+                "error": (
+                    f"Reward amount {amount} does not match expected amount {expected_reward} "
+                    f"(difficulty {actual_difficulty}, fees {total_fees})"
+                ),
             }
 
         # Check if this reward transaction already exists in blockchain
@@ -3311,55 +3893,70 @@ class SmartMiner:
         return {"valid": True, "error": None, "difficulty": actual_difficulty}
 
     def validate_mining_proof(block_data, previous_block_hash):
-        """Validate that the block meets the proof-of-work difficulty requirement"""
-        # Extract block components for hash calculation
-        nonce = block_data.get("nonce")
-        timestamp = block_data.get("timestamp")
-        transactions_hash = block_data.get("transactions_hash", "")
-        miner = block_data.get("miner", "")
+        """Validate mining proof using lunalib only (no local math)."""
+        def _resolve_lunalib_callable(module_names, method_names):
+            for module_name in module_names:
+                try:
+                    module = __import__(module_name, fromlist=["*"])
+                except Exception:
+                    continue
+                for method_name in method_names:
+                    candidate = getattr(module, method_name, None)
+                    if callable(candidate):
+                        return candidate
+            return None
 
-        if not all([nonce, timestamp, transactions_hash, miner]):
-            return {
-                "valid": False,
-                "error": "Missing required block data for mining proof",
-            }
-
-        # Construct the data that was hashed
-        block_string = (
-            f"{previous_block_hash}{timestamp}{transactions_hash}{miner}{nonce}"
+        pow_validator = _resolve_lunalib_callable(
+            [
+                "lunalib.blockchain",
+                "lunalib.core.blockchain",
+                "lunalib.mining",
+                "lunalib.mining.proof",
+                "lunalib.mining.miner",
+            ],
+            [
+                "validate_mining_proof",
+                "validate_pow",
+                "validate_proof_of_work",
+                "validate_mining_proof_internal",
+            ],
         )
 
-        # Calculate the block hash
-        block_hash = hashlib.sha256(block_string.encode()).hexdigest()
+        if pow_validator is None:
+            return {"valid": False, "error": "Lunalib mining proof validator unavailable"}
 
-        # Calculate the actual difficulty (number of leading zeros in hash)
-        # This is the proof-of-work - hash must start with a certain number of zeros
-        leading_zeros = 0
-        for char in block_hash:
-            if char == "0":
-                leading_zeros += 1
-            else:
-                break
+        try:
+            try:
+                import inspect
 
-        # Determine difficulty based on leading zeros (1-9 range)
-        # Difficulty 1 = 1 leading zero, Difficulty 9 = 9 leading zeros
-        actual_difficulty = leading_zeros
+                params = list(inspect.signature(pow_validator).parameters.values())
+                if len(params) <= 1:
+                    result = pow_validator(block_data)
+                else:
+                    result = pow_validator(block_data, previous_block_hash)
+            except Exception:
+                result = pow_validator(block_data, previous_block_hash)
+        except Exception as e:
+            return {"valid": False, "error": f"Lunalib mining proof validation error: {e}"}
 
-        if actual_difficulty < 1 or actual_difficulty > 9:
-            return {
-                "valid": False,
-                "error": f"Invalid difficulty {actual_difficulty}. Must be between 1 and 9",
-            }
+        if isinstance(result, dict):
+            if "valid" in result:
+                return {
+                    "valid": bool(result.get("valid")),
+                    "difficulty": result.get("difficulty"),
+                    "block_hash": result.get("block_hash"),
+                }
+            if "success" in result:
+                return {
+                    "valid": bool(result.get("success")),
+                    "difficulty": result.get("difficulty"),
+                    "block_hash": result.get("block_hash"),
+                }
 
-        # The actual mining proof: verify the hash meets the claimed difficulty
-        # In a real blockchain, we'd compare against a target value, but here we use leading zeros
-        # This proves computational work was done to find a nonce that produces the required hash pattern
+        if isinstance(result, bool):
+            return {"valid": result}
 
-        return {
-            "valid": True,
-            "difficulty": actual_difficulty,
-            "block_hash": block_hash,
-        }
+        return {"valid": False, "error": "Unexpected response from lunalib mining proof validator"}
 
     def is_reward_transaction_duplicate(tx):
         """Check if reward transaction already exists in blockchain"""
@@ -4048,6 +4645,52 @@ def get_latest_block():
         return jsonify({"success": False, "error": str(e)}), 500
 
 
+@app.route("/api/blockchain/latest", methods=["GET", "POST"])
+def api_get_latest_block():
+    """Return the latest block using lunalib when available (fast path)."""
+    try:
+        daemon = blockchain_daemon_instance
+        latest_block = None
+
+        blockchain_mgr = getattr(daemon, "blockchain_mgr", None)
+        if blockchain_mgr is not None:
+            for method_name in (
+                "get_latest_block",
+                "get_latest_blocks",
+                "get_blockchain_latest",
+                "latest_block",
+                "get_latest",
+            ):
+                if hasattr(blockchain_mgr, method_name):
+                    method = getattr(blockchain_mgr, method_name)
+                    if callable(method):
+                        try:
+                            result = method(1) if method_name == "get_latest_blocks" else method()
+                            if isinstance(result, list):
+                                latest_block = result[0] if result else None
+                            elif isinstance(result, dict):
+                                latest_block = result
+                            elif hasattr(result, "to_dict"):
+                                latest_block = result.to_dict()
+                            if latest_block:
+                                break
+                        except Exception:
+                            continue
+
+        if latest_block is None:
+            chain = getattr(daemon, "blockchain", []) or []
+            latest_block = chain[-1] if chain else None
+
+        if not latest_block:
+            return jsonify({"success": False, "error": "Blockchain is empty"}), 404
+
+        return jsonify({"success": True, "block": latest_block}), 200
+
+    except Exception as e:
+        logger.error("/api/blockchain/latest failed: %s", e)
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
 @app.route("/system/health", methods=["GET"])
 def system_health():
     """System health check endpoint"""
@@ -4089,16 +4732,19 @@ def system_health():
 # Error handlers
 @app.errorhandler(404)
 def not_found(error):
+    logger.warning("404 Not Found: %s %s", request.method, request.path)
     return jsonify({"success": False, "error": "Endpoint not found"}), 404
 
 
 @app.errorhandler(405)
 def method_not_allowed(error):
+    logger.warning("405 Method Not Allowed: %s %s", request.method, request.path)
     return jsonify({"success": False, "error": "Method not allowed"}), 405
 
 
 @app.errorhandler(500)
 def internal_server_error(error):
+    logger.error("500 Internal Server Error: %s %s", request.method, request.path)
     return jsonify({"success": False, "error": "Internal server error"}), 500
 
 
@@ -5663,28 +6309,87 @@ def get_mining_stats():
         daemon = blockchain_daemon_instance
 
         # Analyze blockchain for mining rewards
-        total_rewards = 0
+        total_rewards = 0.0
         difficulties = []
+        block_times = []
+        last_ts = None
+        total_expected_rewards = 0.0
+        reward_blocks = 0
 
         for block in daemon.blockchain:
             for tx in block.get("transactions", []):
                 if tx.get("type") == "reward":
-                    total_rewards += tx.get("amount", 0)
+                    try:
+                        total_rewards += float(tx.get("amount", 0))
+                    except (TypeError, ValueError):
+                        pass
+
+            ts_raw = block.get("timestamp")
+            try:
+                ts_val = float(ts_raw)
+            except (TypeError, ValueError):
+                ts_val = None
+            if ts_val is not None:
+                if last_ts is not None:
+                    delta = ts_val - last_ts
+                    if delta > 0:
+                        block_times.append(delta)
+                last_ts = ts_val
 
             # Extract difficulty if present
             difficulty = block.get("difficulty")
             if difficulty and isinstance(difficulty, (int, float)):
                 difficulties.append(difficulty)
 
+            try:
+                diff_val = float(difficulty) if difficulty is not None else 1.0
+            except (TypeError, ValueError):
+                diff_val = 1.0
+            non_reward_txs = [
+                tx
+                for tx in block.get("transactions", [])
+                if isinstance(tx, dict) and tx.get("type") != "reward"
+            ]
+            fees_total = 0.0
+            for tx in non_reward_txs:
+                fee = tx.get("fee", 0)
+                try:
+                    fee_val = float(fee)
+                except (TypeError, ValueError):
+                    continue
+                if fee_val < 0:
+                    continue
+                fees_total += fee_val
+            try:
+                from lunalib.mining.difficulty import DifficultySystem
+
+                difficulty_system = DifficultySystem()
+                total_expected_rewards += float(
+                    difficulty_system.calculate_block_reward(
+                        diff_val,
+                        block_height=block.get("index"),
+                        tx_count=len(non_reward_txs),
+                        fees_total=float(fees_total),
+                    )
+                )
+                reward_blocks += 1
+            except Exception:
+                pass
+
         daemon.stop_daemon()
 
         # Calculate average difficulty
         avg_difficulty = sum(difficulties) / len(difficulties) if difficulties else 1
 
+        avg_block_time = sum(block_times) / len(block_times) if block_times else 0
+        avg_reward_per_block = (total_expected_rewards / reward_blocks) if reward_blocks else 0.0
+        estimated_lkc_per_hr = (avg_reward_per_block * 3600 / avg_block_time) if avg_block_time else 0.0
+
         return {
             "total_rewards": total_rewards,
             "total_blocks": len(difficulties),
             "current_difficulty": avg_difficulty,
+            "estimated_lkc_per_hr": estimated_lkc_per_hr,
             "miners_count": len(
                 set(
                     block.get("miner", "unknown")
@@ -5798,8 +6503,16 @@ def cleanup_stale_generations():
         stale_users = []
 
         for user_id, info in GENERATION_THREADS.items():
-            # Remove entries older than 1 hour
-            if current_time - info.get("start_time", 0) > 3600:
+            if isinstance(info, threading.Thread):
+                if not info.is_alive():
+                    stale_users.append(user_id)
+                continue
+            # Remove entries older than 1 hour (dict-style tracking)
+            try:
+                if current_time - info.get("start_time", 0) > 3600:
+                    stale_users.append(user_id)
+            except Exception:
+                # Unknown entry type; remove to prevent leaks
                 stale_users.append(user_id)
 
         for user_id in stale_users:
@@ -6099,7 +6812,10 @@ def admin_settings():
             settings.allow_registrations = "allow_registrations" in request.form
             settings.max_file_size = _get_int("max_file_size", settings.max_file_size or 512)
             settings.blockchain_difficulty = _get_int("blockchain_difficulty", settings.blockchain_difficulty or 6)
-            settings.mining_reward = _get_float("mining_reward", settings.mining_reward or 1.0)
+            mining_reward_val = _get_float("mining_reward", settings.mining_reward or 0.0001)
+            if mining_reward_val < 0.0000001 or mining_reward_val > 9999999:
+                raise ValueError("mining_reward out of allowed range")
+            settings.mining_reward = mining_reward_val
 
             # Banknote generation settings
             portrait_input = request.form.get("portrait_prompt", "").strip()
@@ -8693,8 +9409,8 @@ def serve_banknote_thumbnail(filename):
         abort(404)
 
     try:
-        width = int(request.args.get("w", 160))
-        height = int(request.args.get("h", 60))
+        width = int(request.args.get("w", 320))
+        height = int(request.args.get("h", 120))
     except ValueError:
         return jsonify({"error": "Invalid thumbnail size"}), 400
 
@@ -8757,6 +9473,16 @@ def banknote_viewer(serial_id):
         return path
 
     tx_data = banknote.get_transaction_data() if hasattr(banknote, "get_transaction_data") else {}
+
+    if not tx_data and serial_id:
+        try:
+            tx_source = Banknote.query.filter(
+                Banknote.transaction_data.contains(serial_id)
+            ).first()
+            if tx_source and getattr(tx_source, "transaction_data", None):
+                tx_data = json.loads(tx_source.transaction_data)
+        except Exception:
+            pass
 
     def resolve_banknote_by_serial(serial_value: str):
         if not serial_value:

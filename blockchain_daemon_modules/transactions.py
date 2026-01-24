@@ -9,9 +9,40 @@ import hashlib
 import secrets
 import logging
 import traceback
+import re
 from typing import Dict, List, Optional
 
 logger = logging.getLogger(__name__)
+
+
+def _is_valid_luna_address(address: str) -> bool:
+    if not address or not isinstance(address, str):
+        return False
+    normalized = address.strip()
+    if not normalized:
+        return False
+    if normalized.startswith("LUN_"):
+        return True
+    return bool(re.fullmatch(r"[0-9a-fA-F]{32}", normalized))
+
+
+def _normalize_gtx_genesis_fields(tx: Dict) -> None:
+    issued_to = tx.get("issued_to") or ""
+    if not _is_valid_luna_address(issued_to):
+        fallback = f"LUN_{hashlib.sha256(str(tx.get('serial_number', '')).encode()).hexdigest()[:32]}"
+        tx.setdefault("issued_to_name", issued_to)
+        tx["issued_to"] = fallback
+
+    tx.setdefault("bill_serial", tx.get("serial_number"))
+    tx.setdefault("mining_difficulty", 1)
+    tx.setdefault("nonce", 0)
+    tx.setdefault("from", "genesis")
+    tx.setdefault("to", tx.get("issued_to"))
+    tx.setdefault("amount", tx.get("denomination", 0))
+    tx.setdefault("fee", 0)
+    tx.setdefault("version", "1.0")
+    tx.setdefault("description", "GTX Genesis bill issuance")
+    tx.setdefault("is_genesis", True)
 
 
 def generate_transaction_hash(transaction_data: Dict) -> str:
@@ -63,11 +94,15 @@ def add_genesis_transaction(serial_number: str, denomination: float, issued_to: 
         signature = digital_bill.sign(private_key)
         
         # Create genesis transaction
+        bill_serial = getattr(digital_bill, "bill_serial", None) or serial_number
         genesis_transaction = {
             "type": "GTX_Genesis",
             "serial_number": serial_number,
+            "bill_serial": bill_serial,
             "denomination": denomination,
             "issued_to": issued_to,
+            "mining_difficulty": 1,
+            "nonce": 0,
             "timestamp": time.time(),
             "signature": signature,
             "public_key": public_key,
@@ -76,6 +111,8 @@ def add_genesis_transaction(serial_number: str, denomination: float, issued_to: 
             "back_serial": digital_bill.back_serial,
             "bill_type": digital_bill.bill_type
         }
+
+        _normalize_gtx_genesis_fields(genesis_transaction)
         
         # Calculate hash
         tx_string = json.dumps(genesis_transaction, sort_keys=True)
@@ -185,6 +222,8 @@ def add_transaction(transaction: Dict, mempool: List[Dict], validate_transaction
     """Add a transaction to mempool with enhanced logging"""
     try:
         tx_type = transaction.get('type', 'unknown')
+        if tx_type == "GTX_Genesis":
+            _normalize_gtx_genesis_fields(transaction)
         logger.info(f"🔍 [ADD_TX] Starting: {tx_type} transaction")
         logger.info(f"🔍 [ADD_TX] Transaction keys: {list(transaction.keys())}")
         logger.debug(f"🔍 [ADD_TX] Full transaction data: {json.dumps(transaction, indent=2, default=str)}")

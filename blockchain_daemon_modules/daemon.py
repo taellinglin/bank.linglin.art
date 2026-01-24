@@ -11,6 +11,8 @@ import os
 import logging
 import traceback
 import shutil
+import sys
+from pathlib import Path
 from typing import List, Dict, Set, Optional
 
 # Import SM3 hash if available
@@ -21,6 +23,30 @@ except Exception:
 
 # Import lunalib components with fallback for different versions
 logger = logging.getLogger(__name__)
+
+
+def _ensure_lunalib_root_in_path() -> None:
+    """Ensure LunaLib root is on PYTHONPATH without hardcoding a path."""
+    candidates = []
+    env_path = os.environ.get("LUNALIB_ROOT") or os.environ.get("LUNALIB_PATH")
+    if env_path:
+        candidates.append(Path(env_path))
+    repo_root = Path(__file__).resolve().parents[1]
+    candidates.append(repo_root / "LunaLib")
+    candidates.append(repo_root / "lunalib")
+
+    for candidate in candidates:
+        try:
+            if candidate and candidate.exists():
+                path_str = str(candidate)
+                if path_str not in sys.path:
+                    sys.path.insert(0, path_str)
+                break
+        except Exception:
+            continue
+
+
+_ensure_lunalib_root_in_path()
 
 # Try to import lunalib 1.6.9 components
 LunalibDaemon = None
@@ -367,11 +393,11 @@ class BlockchainDaemon:
     
     def get_network_blockchain_height(self) -> int:
         """Get the current blockchain height from network"""
-        return network.get_network_blockchain_height(self.blockchain_mgr)
+        return network.get_network_blockchain_height(self.blockchain_mgr, self.mempool_mgr)
     
     def get_last_network_block_hash(self) -> str:
         """Get the hash of the last block from network"""
-        return network.get_last_network_block_hash(self.blockchain_mgr)
+        return network.get_last_network_block_hash(self.blockchain_mgr, self.mempool_mgr)
     
     # ========== TRANSACTION METHODS ==========
     
@@ -618,7 +644,7 @@ class BlockchainDaemon:
         }
     
     # NOTE: create_reward_transaction has been removed from daemon
-    # Use mining.create_reward_transaction() instead for correct exponential rewards:
+    # Use mining.create_reward_transaction() instead for lunalib reward calculation:
     #   from blockchain_daemon_modules import mining
     #   reward_tx = mining.create_reward_transaction(miner_address, block_height, difficulty, tx_count)
     
@@ -634,16 +660,50 @@ class BlockchainDaemon:
         """Validate transaction structure"""
         lunalib_result = self._try_lunalib_call(
             self.mempool_mgr,
-            ["validate_transaction", "validate_transaction_structure", "validate_tx"],
+            [
+                "validate_transaction",
+                "validate_transaction_structure",
+                "validate_tx",
+                "_validate_transaction_basic",
+            ],
             transaction,
         )
         normalized = self._normalize_bool_result(lunalib_result)
         if normalized is not None:
             return normalized
+        self.logger.warning("Lunalib validation unavailable for transaction structure, using local validator")
         return validators.validate_transaction_structure(transaction)
     
     def validate_transaction_for_block(self, transaction: Dict, block_index: int) -> bool:
         """Validate transaction for inclusion in block"""
+        lunalib_result = self._try_lunalib_call(
+            self.mempool_mgr,
+            [
+                "validate_transaction_for_block",
+                "validate_tx_for_block",
+                "validate_transaction_in_block",
+                "_validate_transaction_basic",
+            ],
+            transaction,
+            block_index,
+        )
+        if lunalib_result is None:
+            lunalib_result = self._try_lunalib_call(
+                self.mempool_mgr,
+                [
+                    "validate_transaction_for_block",
+                    "validate_tx_for_block",
+                    "validate_transaction_in_block",
+                    "validate_transaction",
+                    "validate_tx",
+                    "_validate_transaction_basic",
+                ],
+                transaction,
+            )
+        normalized = self._normalize_bool_result(lunalib_result)
+        if normalized is not None:
+            return normalized
+        self.logger.warning("Lunalib validation unavailable for transaction in block, using local validator")
         return validators.validate_transaction_for_block(
             transaction, block_index, self.mempool, self.mined_serials,
             self.gtx_genesis, self.is_transaction_mined
@@ -653,20 +713,40 @@ class BlockchainDaemon:
         """Validate a mined block"""
         lunalib_structure = self._try_lunalib_call(
             self.blockchain_mgr,
-            ["validate_block_structure", "_validate_block_structure"],
+            [
+                "validate_block",
+                "validate_block_for_submission",
+                "validate_block_submission",
+                "validate_block_structure",
+                "_validate_block_structure",
+            ],
             block,
         )
         normalized_structure = self._normalize_validation_dict(
             lunalib_structure,
             "Block structure invalid"
         )
-        structure_validator = self.blockchain_mgr._validate_block_structure
         if normalized_structure is not None:
-            structure_validator = lambda b: normalized_structure
-
+            if not normalized_structure.get("valid"):
+                return False
+            return validators.validate_block(
+                block, self.blockchain,
+                lambda b: normalized_structure,
+                self.validate_transaction_for_block
+            )
+        normalized_bool = self._normalize_bool_result(lunalib_structure)
+        if normalized_bool is not None:
+            if not normalized_bool:
+                return False
+            return validators.validate_block(
+                block, self.blockchain,
+                self.blockchain_mgr._validate_block_structure,
+                self.validate_transaction_for_block
+            )
+        self.logger.warning("Lunalib validation unavailable for block, using local validator")
         return validators.validate_block(
-            block, self.blockchain, 
-            structure_validator,
+            block, self.blockchain,
+            self.blockchain_mgr._validate_block_structure,
             self.validate_transaction_for_block
         )
     
@@ -687,6 +767,7 @@ class BlockchainDaemon:
                 "errors": [] if lunalib_validation else ["Lunalib block validation failed"],
                 "warnings": []
             }
+        self.logger.warning("Lunalib block validation unavailable, using local validator")
         return validators.validate_block_for_submission(
             block, self.get_network_blockchain_height,
             self.get_last_network_block_hash, self.calculate_block_hash
@@ -694,11 +775,65 @@ class BlockchainDaemon:
     
     def validate_regular_transactions(self, txs: List[Dict]) -> Dict:
         """Validate regular (non-reward) transactions"""
+        lunalib_result = self._try_lunalib_call(
+            self.mempool_mgr,
+            [
+                "validate_regular_transactions",
+                "validate_transactions",
+                "validate_txs",
+                "validate_transfer_transactions",
+                "_validate_transaction_basic",
+            ],
+            txs,
+        )
+        normalized = self._normalize_validation_dict(
+            lunalib_result,
+            "Lunalib regular transaction validation failed"
+        )
+        if normalized is not None:
+            return {
+                "valid": bool(normalized.get("valid")),
+                "error": None if normalized.get("valid") else (normalized.get("issues") or ["Lunalib validation failed"])[0]
+            }
+        if isinstance(lunalib_result, bool):
+            return {
+                "valid": lunalib_result,
+                "error": None if lunalib_result else "Lunalib regular transaction validation failed"
+            }
+        self.logger.warning("Lunalib regular transaction validation unavailable, using local validator")
         return validators.validate_regular_transactions(txs)
     
     def validate_reward_transactions(self, reward_txs: List[Dict], block_index: int, 
                                     block_data: Dict, previous_block_hash: str) -> Dict:
         """Validate reward transactions with mining proof"""
+        lunalib_result = self._try_lunalib_call(
+            self.blockchain_mgr,
+            [
+                "validate_reward_transactions",
+                "validate_reward_transaction",
+                "validate_reward_tx",
+                "validate_mining_reward",
+            ],
+            reward_txs,
+            block_index,
+            block_data,
+            previous_block_hash,
+        )
+        normalized = self._normalize_validation_dict(
+            lunalib_result,
+            "Lunalib reward validation failed"
+        )
+        if normalized is not None:
+            return {
+                "valid": bool(normalized.get("valid")),
+                "error": None if normalized.get("valid") else (normalized.get("issues") or ["Lunalib reward validation failed"])[0]
+            }
+        if isinstance(lunalib_result, bool):
+            return {
+                "valid": lunalib_result,
+                "error": None if lunalib_result else "Lunalib reward validation failed"
+            }
+        self.logger.warning("Lunalib reward validation unavailable, using local validator")
         return validators.validate_reward_transactions(
             reward_txs, block_index, block_data, previous_block_hash,
             self.is_transaction_mined, self.mempool_mgr
@@ -706,16 +841,40 @@ class BlockchainDaemon:
     
     def validate_mining_proof(self, block_data: Dict, previous_block_hash: str) -> Dict:
         """Public wrapper for mining proof validation"""
+        lunalib_result = self._try_lunalib_call(
+            self.blockchain_mgr,
+            [
+                "validate_mining_proof",
+                "validate_pow",
+                "validate_proof_of_work",
+            ],
+            block_data,
+            previous_block_hash,
+        )
+        normalized = self._normalize_validation_dict(
+            lunalib_result,
+            "Lunalib mining proof validation failed"
+        )
+        if normalized is not None:
+            return {
+                "valid": bool(normalized.get("valid")),
+                "difficulty": normalized.get("difficulty"),
+                "block_hash": normalized.get("block_hash"),
+                "validation_method": normalized.get("method") or normalized.get("validation_method")
+            }
+        if isinstance(lunalib_result, bool):
+            return {
+                "valid": lunalib_result,
+                "error": None if lunalib_result else "Lunalib mining proof validation failed"
+            }
+        self.logger.warning("Lunalib mining proof validation unavailable, using local validator")
         block_hash = block_data.get('hash', '')
         difficulty = block_data.get('difficulty', 0)
         all_transactions = block_data.get('transactions', [])
         non_reward_txs = [tx for tx in all_transactions if tx.get('type') != 'reward']
-        
         result = validators.validate_mining_proof_internal(
             block_hash, difficulty, block_data, previous_block_hash, non_reward_txs
         )
-        
-        # Format for compatibility
         if result['valid']:
             return {
                 'valid': True,
@@ -723,11 +882,10 @@ class BlockchainDaemon:
                 'block_hash': block_hash,
                 'validation_method': result.get('method', 'unknown')
             }
-        else:
-            return {
-                'valid': False,
-                'error': result.get('error', 'Unknown validation error')
-            }
+        return {
+            'valid': False,
+            'error': result.get('error', 'Unknown validation error')
+        }
     
     def calculate_block_hash(self, index: int, previous_hash: str, timestamp: float,
                             txs: List[Dict], nonce: int) -> str:

@@ -31,6 +31,10 @@ def get_block(blockchain: List[Dict], block_identifier, mempool_mgr,
         if not blockchain:
             logger.warning("Blockchain is empty")
             return None
+
+        if not isinstance(block_identifier, (str, int)):
+            logger.warning(f"Invalid block identifier: {block_identifier}")
+            return None
         
         # Handle "latest" request
         if block_identifier == "latest":

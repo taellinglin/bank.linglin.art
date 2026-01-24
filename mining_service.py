@@ -53,11 +53,14 @@ async def mine_block_async(daemon: BlockchainDaemon, miner_address: str,
             return None
         
         # Create reward transaction
+        total_fees = sum(tx.get("fee", 0) for tx in pending_txs if isinstance(tx, dict))
         reward_tx = mining.create_reward_transaction(
             miner_address,
             len(daemon.blockchain),
             difficulty,
-            len(pending_txs)
+            len(pending_txs),
+            fees=total_fees,
+            empty_block=len(pending_txs) == 0
         )
         
         # Add reward to transactions
@@ -105,11 +108,14 @@ def mine_block_blocking(daemon: BlockchainDaemon, miner_address: str,
             return None
         
         # Create reward transaction
+        total_fees = sum(tx.get("fee", 0) for tx in pending_txs if isinstance(tx, dict))
         reward_tx = mining.create_reward_transaction(
             miner_address,
             len(daemon.blockchain),
             difficulty,
-            len(pending_txs)
+            len(pending_txs),
+            fees=total_fees,
+            empty_block=len(pending_txs) == 0
         )
         
         transactions_to_mine = pending_txs + [reward_tx]
