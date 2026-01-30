@@ -1,0 +1,787 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="profile-container">
+    <div class="profile-header-card">
+        <div class="avatar-section">
+            <div class="avatar-wrapper">
+                <div class="avatar-initials">🧾</div>
+                <div class="avatar-glow"></div>
+            </div>
+        </div>
+        <div class="profile-info-section">
+            <h1 class="profile-username">EisenScript Guide</h1>
+            <p class="profile-subtitle">How to use Lunamint EisenScript with practical examples.</p>
+        </div>
+    </div>
+
+    <div class="guide-layout">
+        <aside class="guide-sidebar">
+            <div class="sidebar-card">
+                <div class="sidebar-title">Categories</div>
+                <button class="sidebar-item active" onclick="openGuideSection('elements')">Elements</button>
+                <button class="sidebar-item" onclick="openGuideSection('filters')">Filters</button>
+                <button class="sidebar-item" onclick="openGuideSection('misc')">Misc</button>
+            </div>
+        </aside>
+
+        <section class="guide-main">
+            <div id="elements" class="guide-section active">
+                <div class="info-card">
+                    <div class="card-header">
+                        <div class="header-icon">🧩</div>
+                        <h3 class="header-title">Elements</h3>
+                    </div>
+                    <div class="card-content">
+                                                <p class="helper-text">Complete EisenScript reference for all supported elements and parameters.</p>
+                                                <pre class="code-block"># EisenScript Reference (Complete)
+
+## Syntax
+
+- Lines starting with # are comments.
+- Commands are case-insensitive.
+- Key/value arguments are written as key=value.
+- Quote values containing spaces or special characters.
+- Units:
+    - *_mm values are millimeters.
+    - Canvas size is in pixels.
+
+## Elements (All Supported)
+
+### size
+Sets the canvas size in pixels.
+
+Parameters:
+- width (positional)
+- height (positional)
+
+Example:
+size 1600 600
+
+### background
+Sets the canvas background color.
+
+Parameters:
+- color (positional)
+
+Example:
+background #1f1f1f
+
+### rect
+Draws a rectangle.
+
+Parameters:
+- x y w h (positional)
+- fill (positional, optional; default #000)
+
+Example:
+rect 20 20 200 100 #333333
+
+### circle
+Draws a circle.
+
+Parameters:
+- x y r (positional)
+- fill (positional, optional; default #000)
+
+Example:
+circle 200 200 40 #333333
+
+### line
+Draws a line.
+
+Parameters:
+- x1 y1 x2 y2 (positional)
+- stroke (positional, optional; default #000)
+- width (positional, optional; default 1.0)
+
+Example:
+line 10 10 500 10 #cccccc 2
+
+### text
+Draws text.
+
+Parameters:
+- x y size fill (positional)
+- text (positional remainder)
+
+Example:
+text 60 80 32 #111111 "LunaMint Banknote"
+
+### text_dial
+Warped polar text dial (concentric rings).
+
+Parameters:
+- cx_mm, cy_mm, radius_mm
+- text
+- rings
+- font
+- font_dir
+- font_size_mm
+- spacing_mm
+- ring_gap_mm
+- rotation_seed
+- snap_grid_px
+- clip_radius_mm
+- case (upper | lower | preserve)
+- inner_radius_mm
+
+Example:
+text_dial cx_mm=80 cy_mm=45 radius_mm=30 text="LUNAMINT" rings=6 font="Daemon Full Working" font_size_mm=1.2
+
+### text_grid
+Warped text grid cipher.
+
+Parameters:
+- x_mm, y_mm, width_mm, height_mm
+- text
+- font
+- font_dir
+- font_size_mm
+- spacing_mm
+- snap_grid_px
+
+Example:
+text_grid x_mm=10 y_mm=10 width_mm=60 height_mm=60 text="LUNAMINT" font="Daemon Full Working" font_size_mm=1.2
+
+### letter_border
+Letter-based border mask.
+
+Parameters:
+- x_mm, y_mm, width_mm, height_mm
+- border_thickness_mm
+- text
+- font
+- font_dir
+- font_size_mm
+- spacing_mm
+- fill_color
+- opacity
+- case
+- base_fill
+- pattern (stripes | solid)
+- pattern_color
+- pattern_opacity
+
+### hash_mandala
+Hash-driven mandala based on text or file input.
+
+Parameters:
+- cx_mm, cy_mm, radius_mm
+- data or data_text
+- data_path
+- data_type
+- font
+- font_dir
+- font_size_mm
+- charset
+- rings
+- sectors
+- opacity
+- stroke_width_mm
+- colorize
+- use_roygbiv
+- grid_density
+- inset_scale
+- outset_scale
+- snap_grid_px
+- ring_rows
+- sector_density
+- fill_empty
+- background_color
+- background_opacity
+- border_color
+- border_width_mm
+- radial_lines
+- tick_major
+- tick_minor
+- core_rings
+- core_radials
+- core_letter_every
+- cardinal_markers
+- stroke_only
+- stroke_color
+- stroke_color_secondary
+- flat_glyphs
+- glyph_fill
+- glyph_stroke
+- glyph_stroke_width_scale
+- min_cols_per_sector
+- taper_outer_strength
+- taper_radial_strength
+- ring_label_every
+- ring_label_alternate
+- ring_label_text
+- ring_label_size_scale
+- sector_padding_deg
+- ring_padding_mm
+- sector_outline
+- sector_outline_color
+- sector_outline_width_mm
+- ring_pattern_mode
+- sm2_row_variance
+- label_every
+- label_radius_ratio
+- label_font_size_mm
+- label_stroke_width_mm
+- sector_boxes
+- sector_box_size_mm
+- center_digit
+- center_digit_size_mm
+- center_digit_fill_background
+
+### hash_mandala_rect
+Rectangular variant of hash_mandala.
+
+Parameters:
+- x_mm, y_mm, width_mm, height_mm
+- All parameters listed in hash_mandala
+
+### midi_dial
+MIDI note/CC visualization dial.
+
+Parameters:
+- cx_mm, cy_mm, radius_mm
+- file (path to MIDI)
+- font
+- font_dir
+- font_size_mm
+- note_charset
+- cc_charset
+- note_opacity
+- cc_opacity
+- background_color
+- background_opacity
+- outer_stroke
+- outer_stroke_width_mm
+- note_stroke
+- note_stroke_width_mm
+- cc_mark_length_mm
+- cc_mark_width_mm
+- cc_ring_offset_mm
+- inner_radius_ratio
+- outer_radius_ratio
+- rotation_deg
+
+### sd_background
+Generates an SD background and optionally applies a filter.
+
+Common parameters:
+- seed_text
+- bg_dir
+- background_prompt
+- filter
+- margin
+- background_segments (used by vectorize)
+
+Filter-specific parameters (glyph_grid):
+- glyph_font
+- glyph_font_dir
+- glyph_font_size_mm
+- glyph_charset
+- glyph_invert
+- glyph_snap_grid_px
+- glyph_opacity
+- glyph_fill_dark
+- glyph_fill_light
+- glyph_stroke_dark
+- glyph_stroke_light
+- glyph_stroke_width_mm
+- glyph_inset_scale
+- glyph_outset_scale
+- glyph_threshold
+- glyph_colorize
+- glyph_cell_padding_mm
+- glyph_dpi
+
+### front_banknote
+Full banknote renderer with rich background and security features.
+
+Parameters:
+- seed_text
+- input_image_path
+- width_mm
+- height_mm
+- title
+- subtitle
+- serial_id
+- timestamp
+- denomination
+- specimen
+- bg_dir
+- background_prompt
+- border_inset_mm
+- border_thickness_mm
+- enable_qr_border
+- enable_background
+- background_filter
+- background_margin
+- background_segments
+- mosaic_font
+- mosaic_font_dir
+- mosaic_font_size_mm
+- mosaic_charset
+- mosaic_invert
+- mosaic_snap_grid_px
+- mosaic_opacity
+- glyph_font
+- glyph_font_dir
+- glyph_font_size_mm
+- glyph_charset
+- glyph_invert
+- glyph_snap_grid_px
+- glyph_opacity
+- glyph_fill_dark
+- glyph_fill_light
+- glyph_stroke_dark
+- glyph_stroke_light
+- glyph_stroke_width_mm
+- glyph_inset_scale
+- glyph_outset_scale
+- glyph_threshold
+- glyph_colorize
+- glyph_cell_padding_mm
+- enable_microgrid
+- enable_decorative_border
+- enable_center_seal
+- enable_center_text
+- enable_corner_decorations
+- enable_corner_denoms
+- enable_microprint
+- microprint_repetitions
+- microprint_text
+- center_radius_scale
+- small_radius_scale
+- text_seal_scale
+- secondary_ring_scale
+- center_seal_scale
+- title_font
+- subtitle_font
+- corner_font
+- seal_chinese_font
+- seal_english_font
+- showcase_widgets
+- ascii_stamp_prompt
+- showcase_labels
+- label_font
+- label_size_mm
+- qr_url
+- require_signed_qr
+- sm2_private_key
+- sm2_public_key
+- verify_base_url
+- issuer_id
+- validity_days
+- pow_difficulty
+- sm4_key
+- sm4_enable
+- qr_stamp_width
+- qr_stamp_height
+- qr_rows
+- qr_side
+- qr_stamp
+- aztec
+- aztec_scale
+- aztec_border
+- aztec_rotation_base
+- aztec_offset_x
+- aztec_offset_y
+- aztec_border_opacity</pre>
+                    </div>
+                </div>
+            </div>
+
+            <div id="filters" class="guide-section">
+                <div class="info-card">
+                    <div class="card-header">
+                        <div class="header-icon">🎨</div>
+                        <h3 class="header-title">Filters</h3>
+                    </div>
+                    <div class="card-content">
+                        <p class="helper-text">Filters supported by sd_background and front_banknote background_filter.</p>
+                        <pre class="code-block">## Filters (All Supported)
+
+These are valid for sd_background filter=... and front_banknote background_filter=....
+
+### vectorize
+Vectorizes an SD background into SVG segments.
+
+Parameters:
+- background_prompt
+- background_margin
+- background_segments
+- bg_dir
+- seed_text
+
+### glyph_grid
+Glyph grid filter over an SD background.
+
+Parameters:
+- background_prompt
+- background_margin
+- bg_dir
+- seed_text
+- glyph_* options listed in sd_background
+
+### letter_mosaic
+Letter mosaic filter over an SD background.
+
+Parameters:
+- background_prompt
+- background_margin
+- bg_dir
+- seed_text
+
+Config defaults (not exposed as EisenScript args):
+- font_name
+- font_dir
+- font_size_mm
+- charset
+- invert
+- snap_grid_px
+- opacity
+- dpi
+
+### triangle_mosaic
+Triangle mosaic filter over an SD background.
+
+Parameters:
+- background_prompt
+- background_margin
+- bg_dir
+- seed_text
+
+Config defaults (not exposed as EisenScript args):
+- base_cell
+- min_cell
+- max_depth
+- variance_threshold
+- opacity
+
+### none / image / raw
+Embeds the raw generated image without applying a filter.
+
+Parameters:
+- background_prompt
+- background_margin
+- bg_dir
+- seed_text</pre>
+                    </div>
+                </div>
+            </div>
+
+            <div id="misc" class="guide-section">
+                <div class="info-card">
+                    <div class="card-header">
+                        <div class="header-icon">📌</div>
+                        <h3 class="header-title">Misc</h3>
+                    </div>
+                    <div class="card-content">
+                        <pre class="code-block">## SD API Configuration
+
+- Environment: SD_API_BASE_URL or SD_API_URL
+- Gradio sidebar field (Eisen tab)
+
+## Notes
+
+- MIDI file paths should be relative to project root, for example: file="MIDI Collection/YourFile.mid"
+- Quote any value containing spaces or special characters.
+- MIDI file paths should be relative to the project root:
+  - file="MIDI Collection/YourFile.mid"</pre>
+                        <div class="actions-row">
+                            <a class="action-btn cyan" href="https://pypi.org/project/lunamint/" target="_blank" rel="noopener">
+                                <span>Open Lunamint</span>
+                                <div class="btn-icon">↗</div>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </div>
+</div>
+
+<style>
+body {
+    background: linear-gradient(120deg, #1e293b 0%, #232946 100%);
+    min-height: 100vh;
+}
+
+.profile-container {
+    max-width: 1100px;
+    margin: 2.5rem auto 2.5rem auto;
+    padding: 2.5rem 2.5rem 2rem 2.5rem;
+    background: rgba(30, 41, 59, 0.97);
+    border-radius: 18px;
+    box-shadow: 0 6px 32px 0 rgba(0,0,0,0.18), 0 1.5px 8px 0 rgba(0,0,0,0.10);
+    border: 1.5px solid var(--border, #2e3a4e);
+}
+
+.profile-header-card {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    background: var(--bg-secondary, #232946);
+    border-radius: 14px;
+    box-shadow: 0 2px 8px 0 rgba(0,0,0,0.10);
+    padding: 1.5rem 2rem 1.5rem 1.5rem;
+    margin-bottom: 2.2rem;
+    border: 1px solid var(--border, #2e3a4e);
+}
+
+.avatar-section {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.avatar-wrapper {
+    position: relative;
+    width: 64px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.avatar-initials {
+    font-size: 2.5rem;
+    background: linear-gradient(120deg, #32d7ee 0%, #7f53ac 100%);
+    color: #fff;
+    border-radius: 50%;
+    width: 64px;
+    height: 64px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 2px 8px 0 rgba(50,215,238,0.10);
+    z-index: 1;
+}
+.avatar-glow {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    border-radius: 50%;
+    box-shadow: 0 0 18px 6px rgba(50,215,238,0.18);
+    z-index: 0;
+}
+
+.profile-info-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+.profile-username {
+    font-size: 2.1rem;
+    font-weight: 700;
+    color: var(--text-primary, #e3e3e3);
+    margin-bottom: 0.1rem;
+}
+.profile-subtitle {
+    color: var(--text-secondary, #bfc9d9);
+    margin-top: 0.35rem;
+    font-size: 1.1rem;
+}
+
+.guide-layout {
+    display: grid;
+    grid-template-columns: 260px 1fr;
+    gap: 1.5rem;
+    align-items: start;
+}
+
+.guide-sidebar {
+    position: sticky;
+    top: 2.5rem;
+    z-index: 2;
+}
+
+.sidebar-card {
+    background: var(--bg-tertiary, #232946);
+    border: 1.5px solid var(--border, #2e3a4e);
+    border-radius: 12px;
+    padding: 1.2rem 1rem 1.2rem 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+    box-shadow: 0 2px 8px 0 rgba(0,0,0,0.10);
+}
+
+.sidebar-title {
+    font-size: 0.85rem;
+    color: var(--text-secondary, #bfc9d9);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.25rem;
+    font-weight: 700;
+}
+
+.sidebar-item {
+    background: var(--bg-secondary, #232946);
+    color: var(--text-primary, #e3e3e3);
+    border: 1.5px solid var(--border, #2e3a4e);
+    border-radius: 8px;
+    padding: 0.7rem 0.85rem;
+    text-align: left;
+    cursor: pointer;
+    font-weight: 600;
+    transition: all 0.2s ease;
+    font-size: 1.05rem;
+}
+.sidebar-item.active,
+.sidebar-item:hover {
+    border-color: var(--info, #32d7ee);
+    color: var(--info, #32d7ee);
+    background: rgba(50, 215, 238, 0.10);
+}
+
+.guide-section {
+    display: none;
+}
+.guide-section.active {
+    display: block;
+}
+
+.info-card {
+    background: var(--bg-secondary, #232946);
+    border-radius: 14px;
+    box-shadow: 0 2px 8px 0 rgba(0,0,0,0.10);
+    border: 1.5px solid var(--border, #2e3a4e);
+    margin-bottom: 2.2rem;
+    padding: 2.1rem 2.2rem 2.1rem 2.2rem;
+}
+.card-header {
+    display: flex;
+    align-items: center;
+    gap: 1.1rem;
+    margin-bottom: 1.1rem;
+}
+.header-icon {
+    font-size: 2.1rem;
+    color: var(--info, #32d7ee);
+    background: rgba(50,215,238,0.10);
+    border-radius: 50%;
+    width: 48px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 4px 0 rgba(50,215,238,0.08);
+}
+.header-title {
+    font-size: 1.45rem;
+    font-weight: 700;
+    color: var(--text-primary, #e3e3e3);
+}
+
+.card-content {
+    margin-top: 0.5rem;
+}
+
+.helper-text {
+    color: var(--text-secondary, #bfc9d9);
+    font-size: 1.02rem;
+    margin-bottom: 0.7rem;
+}
+
+.code-block {
+    background: var(--bg-tertiary, #232946);
+    border: 1.5px solid var(--border, #2e3a4e);
+    border-radius: 8px;
+    padding: 1.2rem 1.2rem 1.2rem 1.2rem;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    color: var(--text-secondary, #bfc9d9);
+    font-size: 0.97rem;
+    line-height: 1.6;
+    font-family: 'JetBrains Mono', 'Fira Mono', 'Consolas', monospace;
+}
+
+.guide-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    color: var(--text-secondary, #bfc9d9);
+    margin: 0;
+    padding-left: 1.2rem;
+}
+.guide-list li {
+    line-height: 1.5;
+}
+
+.actions-row {
+    margin-top: 1.2rem;
+}
+.action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: linear-gradient(120deg, #32d7ee 0%, #7f53ac 100%);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 0.7rem 1.2rem;
+    font-weight: 600;
+    font-size: 1.05rem;
+    text-decoration: none;
+    box-shadow: 0 2px 8px 0 rgba(50,215,238,0.10);
+    transition: background 0.2s;
+}
+.action-btn.cyan:hover {
+    background: linear-gradient(120deg, #7f53ac 0%, #32d7ee 100%);
+    color: #fff;
+}
+.btn-icon {
+    font-size: 1.1rem;
+    margin-left: 0.2rem;
+}
+
+@media (max-width: 1200px) {
+    .profile-container {
+        padding: 1.2rem 0.5rem 1.2rem 0.5rem;
+    }
+    .guide-layout {
+        grid-template-columns: 1fr;
+    }
+    .guide-sidebar {
+        position: static;
+        margin-bottom: 1.5rem;
+    }
+    .info-card {
+        padding: 1.2rem 0.7rem 1.2rem 0.7rem;
+    }
+}
+@media (max-width: 700px) {
+    .profile-header-card {
+        flex-direction: column;
+        gap: 0.7rem;
+        padding: 1rem 0.7rem 1rem 0.7rem;
+    }
+    .profile-username {
+        font-size: 1.3rem;
+    }
+    .header-title {
+        font-size: 1.1rem;
+    }
+    .info-card {
+        padding: 0.7rem 0.3rem 0.7rem 0.3rem;
+    }
+}
+</style>
+
+<script>
+function openGuideSection(sectionId) {
+    document.querySelectorAll('.guide-section').forEach(section => {
+        section.classList.remove('active');
+    });
+    document.getElementById(sectionId).classList.add('active');
+
+    document.querySelectorAll('.sidebar-item').forEach(button => {
+        button.classList.remove('active');
+    });
+    const buttons = document.querySelectorAll('.sidebar-item');
+    for (let button of buttons) {
+        if (button.getAttribute('onclick').includes(sectionId)) {
+            button.classList.add('active');
+            break;
+        }
+    }
+}
+</script>
+{% endblock %}

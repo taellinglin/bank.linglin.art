@@ -150,7 +150,10 @@
                             {% else %}
                                 <div class="compact-time">--:--:--</div>
                             {% endif %}
-                            <div class="compact-age" title="Time in mempool">
+                               <div class="compact-age" title="Time in mempool"
+                                   data-timestamp="{{ tx.timestamp|default(0) }}"
+                                   data-entry-timestamp="{{ tx.entry_timestamp|default(tx.timestamp_readable)|default('') }}"
+                                   data-timestamp-readable="{{ tx.timestamp_readable|default('') }}">
                                 {% if tx.age %}
                                     {{ tx.age }}s
                                 {% endif %}
@@ -173,11 +176,19 @@
                                     </div>
                                 {% elif tx.type in ['genesis', 'GTX_Genesis'] %}
                                     <div class="party-row">
-                                        <span class="party-label">Serial:</span>
-                                        <code class="party-serial mono" title="{{ tx.serial_number }}">
-                                            {{ tx.serial_number[:10] if tx.serial_number else 'N/A' }}...
+                                        <span class="party-label">Front:</span>
+                                        <code class="party-serial mono" title="{{ tx.front_serial or tx.serial_number }}">
+                                            {{ (tx.front_serial or tx.serial_number)[:10] if (tx.front_serial or tx.serial_number) else 'N/A' }}...
                                         </code>
                                     </div>
+                                    {% if tx.back_serial %}
+                                    <div class="party-row">
+                                        <span class="party-label">Back:</span>
+                                        <code class="party-serial mono" title="{{ tx.back_serial }}">
+                                            {{ tx.back_serial[:10] }}...
+                                        </code>
+                                    </div>
+                                    {% endif %}
                                     <div class="party-row">
                                         <span class="party-label">Issuer:</span>
                                         <code class="party-address mono" title="{{ tx.issued_by|default('System') }}">
@@ -210,7 +221,10 @@
                             <div class="status-badge pending">
                                 <span class="status-dot"></span>
                                 <span class="status-text">Pending</span>
-                                <span class="status-time" title="Time in mempool">
+                                  <span class="status-time" title="Time in mempool"
+                                      data-timestamp="{{ tx.timestamp|default(0) }}"
+                                      data-entry-timestamp="{{ tx.entry_timestamp|default(tx.timestamp_readable)|default('') }}"
+                                      data-timestamp-readable="{{ tx.timestamp_readable|default('') }}">
                                     {% if tx.age %}
                                         {{ tx.age }}s
                                     {% endif %}
@@ -250,9 +264,15 @@
                                             </div>
                                         {% elif tx.type in ['genesis', 'GTX_Genesis'] %}
                                             <div class="detail-row">
-                                                <span class="detail-label">Serial Number:</span>
-                                                <code class="detail-value mono">{{ tx.serial_number|default('N/A') }}</code>
+                                                <span class="detail-label">Serial (Front):</span>
+                                                <code class="detail-value mono">{{ tx.front_serial|default(tx.serial_number)|default('N/A') }}</code>
                                             </div>
+                                            {% if tx.back_serial %}
+                                            <div class="detail-row">
+                                                <span class="detail-label">Serial (Back):</span>
+                                                <code class="detail-value mono">{{ tx.back_serial }}</code>
+                                            </div>
+                                            {% endif %}
                                             <div class="detail-row">
                                                 <span class="detail-label">Issued To:</span>
                                                 <code class="detail-value mono">{{ tx.issued_to|default('N/A') }}</code>
@@ -306,7 +326,12 @@
                                         </div>
                                         <div class="detail-row">
                                             <span class="detail-label">Time in Mempool:</span>
-                                            <span class="detail-value highlight">{{ tx.age|default(0) }} seconds</span>
+                                              <span class="detail-value highlight"
+                                                  data-timestamp="{{ tx.timestamp|default(0) }}"
+                                                  data-entry-timestamp="{{ tx.entry_timestamp|default(tx.timestamp_readable)|default('') }}"
+                                                  data-timestamp-readable="{{ tx.timestamp_readable|default('') }}">
+                                                {{ tx.age|default(0) }} seconds
+                                            </span>
                                         </div>
                                         <div class="detail-row">
                                             <span class="detail-label">Priority:</span>
@@ -429,36 +454,37 @@
 }
 
 .mempool-container {
-    max-width: 100%;
+    max-width: 1100px;
     margin: 0 auto;
-    padding: 1rem;
+    padding: 0.9rem;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: 0.9rem;
 }
 
 /* Compact Stats Grid */
 .compact-stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-    gap: 0.75rem;
-    margin-bottom: 1.25rem;
+    grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+    gap: 0.6rem;
+    margin-bottom: 1rem;
 }
 
 .compact-stat-card {
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 0.875rem;
+    border-radius: 6px;
+    padding: 0.7rem;
     text-align: center;
     transition: all 0.2s ease;
 }
 
 .compact-stat-card:hover {
     border-color: var(--border-light);
-    transform: translateY(-1px);
+    transform: none;
 }
 
 .compact-stat-value {
-    font-size: 1.75rem;
+    font-size: 1.35rem;
     font-weight: 700;
     color: var(--text-primary);
     margin-bottom: 0.25rem;
@@ -466,7 +492,7 @@
 }
 
 .compact-stat-label {
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     font-weight: 600;
     color: var(--text-secondary);
     text-transform: uppercase;
@@ -513,9 +539,9 @@
 .compact-graph-section {
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 1rem;
-    margin-bottom: 1.25rem;
+    border-radius: 6px;
+    padding: 0.8rem;
+    margin-bottom: 1rem;
 }
 
 .compact-section-header {
@@ -594,13 +620,13 @@
 .compact-table-section {
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 8px;
+    border-radius: 6px;
     overflow: hidden;
     margin-bottom: 1rem;
 }
 
 .compact-table-header {
-    padding: 0.875rem 1rem;
+    padding: 0.7rem 0.9rem;
     background: var(--bg-secondary);
     border-bottom: 1px solid var(--border);
     display: flex;
@@ -609,7 +635,7 @@
 }
 
 .compact-table-header h3 {
-    font-size: 1rem;
+    font-size: 0.9rem;
     font-weight: 600;
     color: var(--text-primary);
     margin: 0;
@@ -619,7 +645,7 @@
     display: flex;
     align-items: center;
     gap: 1rem;
-    font-size: 0.75rem;
+    font-size: 0.7rem;
 }
 
 .info-item {
@@ -633,12 +659,12 @@
 }
 
 .sort-select {
-    padding: 0.25rem 0.5rem;
+    padding: 0.2rem 0.45rem;
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
     border-radius: 4px;
     color: var(--text-primary);
-    font-size: 0.75rem;
+    font-size: 0.7rem;
     cursor: pointer;
     transition: all 0.2s ease;
 }
@@ -659,11 +685,11 @@
 .compact-transactions-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.8125rem;
+    font-size: 0.78rem;
 }
 
 .compact-transactions-table th {
-    padding: 0.75rem 0.5rem;
+    padding: 0.6rem 0.45rem;
     text-align: left;
     font-weight: 600;
     color: var(--text-secondary);
@@ -708,7 +734,7 @@
 }
 
 .compact-transactions-table td {
-    padding: 0.75rem 0.5rem;
+    padding: 0.6rem 0.45rem;
     border-bottom: 1px solid var(--border);
     vertical-align: middle;
 }
@@ -1663,6 +1689,32 @@ function updateLastUpdatedTime() {
     document.getElementById('lastUpdated').textContent = timeString;
 }
 
+function updateMempoolAges() {
+    const nowMs = Date.now();
+    document.querySelectorAll('[data-timestamp]').forEach(el => {
+        let raw = Number(el.dataset.timestamp || 0);
+        let tsMs = 0;
+        if (raw) {
+            tsMs = raw > 1e12 ? raw : raw * 1000;
+        } else {
+            const readable = el.dataset.entryTimestamp || el.dataset.timestampReadable || '';
+            if (readable) {
+                const parsed = Date.parse(readable.replace(' ', 'T'));
+                if (!Number.isNaN(parsed)) {
+                    tsMs = parsed;
+                }
+            }
+        }
+        if (!tsMs) return;
+        const ageSec = Math.max(0, Math.floor((nowMs - tsMs) / 1000));
+        if (el.classList.contains('compact-age') || el.classList.contains('status-time')) {
+            el.textContent = `${ageSec}s`;
+        } else {
+            el.textContent = `${ageSec} seconds`;
+        }
+    });
+}
+
 // Auto-refresh Countdown
 let countdown = 30;
 let countdownInterval;
@@ -1699,6 +1751,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Update last updated time
     updateLastUpdatedTime();
+
+    // Update mempool ages immediately
+    updateMempoolAges();
     
     // Setup click handlers for sortable headers
     document.querySelectorAll('.sortable').forEach(th => {
@@ -1713,6 +1768,9 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Update last updated time every minute
     setInterval(updateLastUpdatedTime, 60000);
+
+    // Update mempool ages every second
+    setInterval(updateMempoolAges, 1000);
 });
 
 // Add CSS animations for notifications

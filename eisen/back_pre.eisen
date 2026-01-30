@@ -1,0 +1,20 @@
+size 1600 600
+back_vectorized_background bg_dir=backgrounds margin=60 n_segments=1024 background_prompt="Oekaki Baby Galactic Princess RPG theme in the style of Studio Ghibli Origami"
+
+back_security_background denomination={{denomination}} serial_id={{serial}} margin=60 base_triangle_size=16 hierarchy_levels=2
+
+back_qr_border seed_text={{username}} serial_id={{serial}}
+
+back_corner_decorations denomination={{denomination}} serial_id={{serial}} size=100 padding=75 stroke_width=1
+
+back_holographic_seals serial_id={{serial}} denomination={{denomination}} radius=160
+
+back_center_text title={{title}} phrase={{subtitle}}
+
+back_corner_denoms denomination={{denomination}}
+
+back_circular_qr data=2 cx=800 cy=300 inner_radius=0 outer_radius=220 segments=4 opacity=0.5 colors="#D80027,#0052B4,#009E60"
+
+chinese_microprint cx=800 cy=300 radius=60 text="::{{serial}}::" repetitions=16 font_family=FengGuangMingRui font_size=8
+
+rainbow_microseal cx=800 cy=300 radius=120 symbol="::LKC::" repetitions=32 font_family=Daemon Full Working font_size=8

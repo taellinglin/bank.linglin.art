@@ -1,0 +1,6 @@
+# front_suf.eisen
+# Suffix overlay for banknote front (LunaMint EisenScript)
+# Jinja2 variables can be used if needed
+
+# Center dial stamp
+text_dial cx_mm=80 cy_mm=30 radius_mm=16 inner_radius_mm=0.5 text="linglin.art, llc" rings=2 font=Daemon Full Working font_size_mm=1 spacing_mm=0.0 ring_gap_mm=0.1 rotation_seed="2026-01-26" snap_grid_px=0 clip_radius_mm=16 case=lower

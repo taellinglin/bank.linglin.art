@@ -5,7 +5,7 @@
     <div class="profile-header-card">
         <div class="avatar-section">
             <div class="avatar-wrapper">
-                <div class="avatar-initials">🏦</div>
+                <div class="avatar-initials"><i data-feather="home"></i></div>
                 <div class="avatar-glow"></div>
             </div>
         </div>
@@ -33,20 +33,20 @@
     <!-- Tab Navigation -->
     <div class="tab-navigation">
         <button class="tab-button active" onclick="openTab('overview')">
-            <span class="tab-icon">📊</span>
+            <span class="tab-icon"><i data-feather="bar-chart-2"></i></span>
             <span class="tab-text">Overview</span>
         </button>
         <button class="tab-button" onclick="openTab('stats')">
-            <span class="tab-icon">📈</span>
+            <span class="tab-icon"><i data-feather="trending-up"></i></span>
             <span class="tab-text">Platform Stats</span>
         </button>
         <button class="tab-button" onclick="openTab('actions')">
-            <span class="tab-icon">⚡</span>
+            <span class="tab-icon"><i data-feather="zap"></i></span>
             <span class="tab-text">Quick Actions</span>
         </button>
         {% if current_user and current_user.is_authenticated %}
         <button class="tab-button" onclick="openTab('personal')">
-            <span class="tab-icon">👤</span>
+            <span class="tab-icon"><i data-feather="user"></i></span>
             <span class="tab-text">Your Stats</span>
         </button>
         {% endif %}
@@ -57,7 +57,7 @@
         <!-- Welcome Card -->
         <div class="info-card">
             <div class="card-header">
-                <div class="header-icon">👋</div>
+                <div class="header-icon"><i data-feather="smile"></i></div>
                 <h3 class="header-title">Welcome to Ling Treasury</h3>
             </div>
             
@@ -70,11 +70,11 @@
                     <div class="welcome-actions">
                         <a href="{{ url_for('register') }}" class="action-btn primary">
                             <span>Get Started Free</span>
-                            <div class="btn-icon">🚀</div>
+                            <div class="btn-icon"><i data-feather="rocket"></i></div>
                         </a>
                         <a href="{{ url_for('login') }}" class="action-btn secondary">
                             <span>Login to Account</span>
-                            <div class="btn-icon">🔐</div>
+                            <div class="btn-icon"><i data-feather="lock"></i></div>
                         </a>
                     </div>
                     {% endif %}
@@ -85,14 +85,14 @@
         <!-- Key Stats Grid -->
         <div class="info-card">
             <div class="card-header">
-                <div class="header-icon">📈</div>
+                <div class="header-icon"><i data-feather="trending-up"></i></div>
                 <h3 class="header-title">Key Statistics</h3>
             </div>
             
             <div class="card-content">
                 <div class="stats-grid">
                     <div class="stat-item">
-                        <div class="stat-icon">👥</div>
+                        <div class="stat-icon"><i data-feather="users"></i></div>
                         <div class="stat-info">
                             <div class="stat-value">{{ recent_users }}</div>
                             <div class="stat-label">New Users (7d)</div>
@@ -100,7 +100,7 @@
                     </div>
                     
                     <div class="stat-item">
-                        <div class="stat-icon">🔄</div>
+                        <div class="stat-icon"><i data-feather="refresh-cw"></i></div>
                         <div class="stat-info">
                             <div class="stat-value">{{ recent_transactions }}</div>
                             <div class="stat-label">Transactions (24h)</div>
@@ -114,14 +114,14 @@
         {% if top_collector %}
         <div class="info-card">
             <div class="card-header">
-                <div class="header-icon">👑</div>
+                <div class="header-icon"><i data-feather="award"></i></div>
                 <h3 class="header-title">Top Collector This Week</h3>
             </div>
             
             <div class="card-content">
                 <div class="top-collector-card">
                     <div class="collector-avatar">
-                        <div class="avatar-placeholder">👑</div>
+                        <div class="avatar-placeholder"><i data-feather="award"></i></div>
                     </div>
                     <div class="collector-info">
                         <div class="collector-name">{{ top_collector.username }}</div>
@@ -142,14 +142,14 @@
         <!-- Growth Stats -->
         <div class="info-card">
             <div class="card-header">
-                <div class="header-icon">📊</div>
+                <div class="header-icon"><i data-feather="bar-chart-2"></i></div>
                 <h3 class="header-title">Platform Growth</h3>
             </div>
             
             <div class="card-content">
                 <div class="growth-stats">
                     <div class="growth-item">
-                        <div class="growth-icon">👥</div>
+                        <div class="growth-icon"><i data-feather="users"></i></div>
                         <div class="growth-info">
                             <div class="growth-label">User Growth</div>
                             <div class="growth-value {% if user_growth_rate > 0 %}positive{% else %}negative{% endif %}">
@@ -160,7 +160,7 @@
                     </div>
                     
                     <div class="growth-item">
-                        <div class="growth-icon">💰</div>
+                        <div class="growth-icon"><i data-feather="dollar-sign"></i></div>
                         <div class="growth-info">
                             <div class="growth-label">Banknote Growth</div>
                             <div class="growth-value {% if banknote_growth_rate > 0 %}positive{% else %}negative{% endif %}">
@@ -176,14 +176,14 @@
         <!-- Recent Activity -->
         <div class="info-card">
             <div class="card-header">
-                <div class="header-icon">🔄</div>
+                <div class="header-icon"><i data-feather="refresh-cw"></i></div>
                 <h3 class="header-title">Recent Network Activity</h3>
             </div>
             
             <div class="card-content">
                 <div class="activity-list">
                     <div class="activity-item">
-                        <div class="activity-icon">📈</div>
+                        <div class="activity-icon"><i data-feather="trending-up"></i></div>
                         <div class="activity-info">
                             <div class="activity-title">Network Growth</div>
                             <div class="activity-subtitle">Last 7 Days</div>
@@ -196,7 +196,7 @@
                     
                     {% if recent_trade %}
                     <div class="activity-item">
-                        <div class="activity-icon">💸</div>
+                        <div class="activity-icon"><i data-feather="send"></i></div>
                         <div class="activity-info">
                             <div class="activity-title">Recent Trade</div>
                             <div class="activity-subtitle">Just now</div>
@@ -216,7 +216,7 @@
         <!-- Platform Health -->
         <div class="info-card">
             <div class="card-header">
-                <div class="header-icon">🏥</div>
+                <div class="header-icon"><i data-feather="activity"></i></div>
                 <h3 class="header-title">Platform Health</h3>
             </div>
             
@@ -280,7 +280,7 @@
             <div class="card-content">
                 <div class="actions-list">
                     <a href="{{ url_for('verify_serial') }}" class="action-item">
-                        <div class="action-icon">✅</div>
+                        <div class="action-icon"><i data-feather="check-circle"></i></div>
                         <div class="action-content">
                             <div class="action-title">Verify Banknote</div>
                             <div class="action-meta">Check authenticity · 5 validation layers</div>
@@ -289,7 +289,7 @@
                     </a>
                     
                     <a href="{{ url_for('gallery_index') }}" class="action-item">
-                        <div class="action-icon">🖼️</div>
+                        <div class="action-icon"><i data-feather="image"></i></div>
                         <div class="action-content">
                             <div class="action-title">Explore Gallery</div>
                             <div class="action-meta">Browse verified designs</div>
@@ -298,7 +298,7 @@
                     </a>
                     
                     <a href="{{ url_for('blockchain_viewer') }}" class="action-item">
-                        <div class="action-icon">⛓️</div>
+                        <div class="action-icon"><i data-feather="link"></i></div>
                         <div class="action-content">
                             <div class="action-title">Block Explorer</div>
                             <div class="action-meta">View transactions · Live data</div>
@@ -308,7 +308,7 @@
                     
                     {% if current_user and current_user.is_authenticated %}
                     <a href="{{ url_for('profile', username=current_user.username) }}" class="action-item">
-                        <div class="action-icon">👤</div>
+                        <div class="action-icon"><i data-feather="user"></i></div>
                         <div class="action-content">
                             <div class="action-title">Your Profile</div>
                             <div class="action-meta">Manage banknotes · View stats</div>
@@ -317,7 +317,7 @@
                     </a>
                     {% else %}
                     <a href="{{ url_for('register') }}" class="action-item">
-                        <div class="action-icon">🚀</div>
+                        <div class="action-icon"><i data-feather="rocket"></i></div>
                         <div class="action-content">
                             <div class="action-title">Get Started</div>
                             <div class="action-meta">Create free account</div>
@@ -428,7 +428,7 @@
             <div class="card-content">
                 <div class="actions-list">
                     <a href="{{ url_for('profile', username=current_user.username) }}" class="action-item">
-                        <div class="action-icon">👤</div>
+                        <div class="action-icon"><i data-feather="user"></i></div>
                         <div class="action-content">
                             <div class="action-title">Go to Profile</div>
                             <div class="action-meta">Manage your account · View details</div>
@@ -438,7 +438,7 @@
                     
                     {% if user_stats.can_generate %}
                     <a href="{{ url_for('profile', username=current_user.username) }}" class="action-item">
-                        <div class="action-icon">✨</div>
+                        <div class="action-icon"><i data-feather="star"></i></div>
                         <div class="action-content">
                             <div class="action-title">Generate Money</div>
                             <div class="action-meta">Create new banknote · {{ user_stats.days_until_next }} days left</div>
@@ -448,7 +448,7 @@
                     {% endif %}
                     
                     <a href="{{ url_for('gallery_index') }}" class="action-item">
-                        <div class="action-icon">🖼️</div>
+                        <div class="action-icon"><i data-feather="image"></i></div>
                         <div class="action-content">
                             <div class="action-title">Browse Gallery</div>
                             <div class="action-meta">View community banknotes</div>
@@ -457,7 +457,7 @@
                     </a>
                     
                     <a href="{{ url_for('verify_serial') }}" class="action-item">
-                        <div class="action-icon">✅</div>
+                        <div class="action-icon"><i data-feather="check-circle"></i></div>
                         <div class="action-content">
                             <div class="action-title">Verify Banknote</div>
                             <div class="action-meta">Check serial authenticity</div>
@@ -492,22 +492,23 @@
 }
 
 .profile-container {
-    max-width: 100%;
+    max-width: 1100px;
     margin: 0 auto;
-    padding: 1rem;
+    padding: 0.9rem;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    font-size: 0.92rem;
 }
 
 /* Profile Header Card */
 .profile-header-card {
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 1.5rem;
-    margin-bottom: 1.5rem;
+    border-radius: 8px;
+    padding: 1rem;
+    margin-bottom: 1rem;
     display: flex;
     align-items: center;
-    gap: 1.5rem;
+    gap: 1rem;
     position: relative;
     overflow: hidden;
 }
@@ -518,8 +519,8 @@
     top: 0;
     left: 0;
     width: 100%;
-    height: 4px;
-    background: linear-gradient(90deg, var(--info), var(--purple));
+    height: 1px;
+    background: var(--border-light);
 }
 
 .avatar-section {
@@ -530,14 +531,15 @@
 }
 
 .avatar-wrapper {
-    width: 80px;
-    height: 80px;
+    width: 64px;
+    height: 64px;
     border-radius: 50%;
     overflow: hidden;
-    border: 3px solid var(--info);
-    box-shadow: 0 4px 20px rgba(50, 215, 238, 0.3);
+    border: 3px solid #ff453a;
+    box-shadow: none;
     position: relative;
     z-index: 2;
+    background: transparent;
 }
 
 .avatar-initials {
@@ -546,20 +548,22 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, var(--info), var(--purple));
-    color: white;
-    font-size: 2rem;
+    background: transparent;
+    color: #ff453a;
+    font-size: 1.2rem;
     font-weight: 700;
+    box-shadow: none;
+}
+
+.avatar-initials svg {
+    width: 20px;
+    height: 20px;
+    filter: none;
+    color: #ff453a;
 }
 
 .avatar-glow {
-    position: absolute;
-    width: 100px;
-    height: 100px;
-    border-radius: 50%;
-    background: radial-gradient(circle, var(--info) 0%, transparent 70%);
-    opacity: 0.3;
-    animation: pulse 2s ease-in-out infinite;
+    display: none;
 }
 
 @keyframes pulse {
@@ -573,9 +577,9 @@
 
 .profile-username {
     color: var(--text-primary);
-    font-size: 1.75rem;
+    font-size: 1.4rem;
     font-weight: 700;
-    margin: 0 0 0.5rem 0;
+    margin: 0 0 0.35rem 0;
 }
 
 .chinese-text {
@@ -585,24 +589,24 @@
 
 .profile-subtitle {
     color: var(--text-secondary);
-    font-size: 1rem;
-    margin: 0 0 1rem 0;
-    line-height: 1.5;
+    font-size: 0.9rem;
+    margin: 0 0 0.75rem 0;
+    line-height: 1.45;
 }
 
 .profile-stats {
     display: flex;
-    gap: 1rem;
+    gap: 0.6rem;
     flex-wrap: wrap;
 }
 
 .profile-stat {
     text-align: center;
-    padding: 0.75rem 1rem;
+    padding: 0.55rem 0.75rem;
     background: var(--bg-secondary);
-    border-radius: 12px;
+    border-radius: 8px;
     border: 1px solid var(--border);
-    min-width: 100px;
+    min-width: 90px;
     transition: all 0.3s ease;
 }
 
@@ -614,14 +618,14 @@
 
 .stat-value {
     display: block;
-    font-size: 1.25rem;
+    font-size: 1.05rem;
     font-weight: 700;
     color: var(--text-primary);
     margin-bottom: 0.25rem;
 }
 
 .stat-label {
-    font-size: 0.8rem;
+    font-size: 0.7rem;
     color: var(--text-secondary);
     font-weight: 600;
     text-transform: uppercase;
@@ -632,11 +636,11 @@
 .tab-navigation {
     display: flex;
     gap: 0.5rem;
-    margin-bottom: 1.5rem;
-    padding: 0.5rem;
+    margin-bottom: 1rem;
+    padding: 0.35rem;
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: 8px;
     overflow-x: auto;
 }
 
@@ -644,12 +648,12 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    padding: 0.75rem 1.25rem;
+    padding: 0.55rem 0.9rem;
     background: transparent;
     border: none;
-    border-radius: 8px;
+    border-radius: 6px;
     color: var(--text-secondary);
-    font-size: 0.85rem;
+    font-size: 0.78rem;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -675,7 +679,7 @@
 }
 
 .tab-icon {
-    font-size: 1rem;
+    font-size: 0.95rem;
 }
 
 .tab-text {
@@ -686,9 +690,9 @@
 .tab-badge {
     background: var(--info);
     color: var(--bg-primary);
-    padding: 0.2rem 0.5rem;
+    padding: 0.15rem 0.45rem;
     border-radius: 10px;
-    font-size: 0.7rem;
+    font-size: 0.65rem;
     font-weight: 700;
     min-width: 20px;
 }
@@ -712,9 +716,9 @@
 .info-card {
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 16px;
+    border-radius: 8px;
     padding: 0;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
     overflow: hidden;
 }
 
@@ -726,8 +730,8 @@
     display: flex;
     align-items: center;
     gap: 1rem;
-    padding: 1.25rem 1.5rem;
-    border-bottom: 1px solid var(--border);
+    padding: 0.9rem 1.1rem;
+    border-bottom: 1px solid var(--border-light);
     background: rgba(0, 0, 0, 0.2);
 }
 
@@ -737,21 +741,21 @@
 
 .header-title {
     color: var(--text-primary);
-    font-size: 1.1rem;
+    font-size: 0.98rem;
     font-weight: 700;
     margin: 0;
     flex: 1;
 }
 
 .card-content {
-    padding: 1.5rem;
+    padding: 1rem;
 }
 
 /* Welcome Message */
 .welcome-message p {
     color: var(--text-secondary);
-    line-height: 1.6;
-    margin: 0 0 1.5rem 0;
+    line-height: 1.5;
+    margin: 0 0 1rem 0;
 }
 
 .welcome-actions {
@@ -765,14 +769,14 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.75rem 1.5rem;
-    border-radius: 8px;
+    padding: 0.55rem 1rem;
+    border-radius: 6px;
     text-decoration: none;
     font-weight: 600;
     transition: all 0.3s ease;
     border: none;
     cursor: pointer;
-    font-size: 0.9rem;
+    font-size: 0.82rem;
 }
 
 .action-btn.primary {
@@ -1543,21 +1547,21 @@
 
 @media (max-width: 640px) {
     .profile-container {
-        padding: 0.75rem;
+        padding: 0.7rem;
     }
 
     .profile-header-card {
-        padding: 1.25rem;
+        padding: 0.9rem;
         gap: 1rem;
     }
 
     .profile-subtitle {
-        font-size: 0.95rem;
+        font-size: 0.85rem;
     }
 
     .profile-stats {
         grid-template-columns: repeat(2, minmax(0, 1fr));
-        gap: 0.75rem;
+        gap: 0.6rem;
     }
 
     .stat-item {
@@ -1595,12 +1599,12 @@
     }
 
     .tab-button {
-        padding: 0.6rem 0.75rem;
-        gap: 0.4rem;
+        padding: 0.5rem 0.65rem;
+        gap: 0.35rem;
     }
 
     .card-content {
-        padding: 1rem;
+        padding: 0.85rem;
     }
 
     .collector-stats {

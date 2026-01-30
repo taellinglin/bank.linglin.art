@@ -266,9 +266,11 @@ class GenerationQueue:
                                 specific_denom=denom,
                                 single_denom=True,
                                 max_threads=1,
+                                custom_eisenscript=user.custom_eisenscript if user else None,
                                 progress_callback=progress_callback,
                             )
 
+                            pairs_created = pairs_created or 0
                             results.append({
                                 'denom': denom,
                                 'success': True,
@@ -425,7 +427,7 @@ def execute_generation_task(task_id: int):
     This function is designed to be run in a separate thread.
     """
     from app import app
-    from models import db, GenerationTask, User
+    from models import db, GenerationTask, User, Banknote
     from generate import generate_for_user
     from email_service import (
         send_banknote_generation_started_notification,
@@ -491,8 +493,10 @@ def execute_generation_task(task_id: int):
                         specific_denom=denom,
                         single_denom=True,
                         max_threads=1,
+                        custom_eisenscript=user.custom_eisenscript,
                         progress_callback=progress_callback,
                     )
+                    pairs_created = pairs_created or 0
                     results.append({'denom': denom, 'success': True, 'pairs_created': pairs_created})
                     total_pairs += pairs_created
                     print(f"[WORKER] Task {task_id}: Denomination {denom} created {pairs_created} pairs.")
@@ -505,12 +509,13 @@ def execute_generation_task(task_id: int):
 
             # Finalize task status
             successful = [r for r in results if r['success']]
-            if len(successful) == len(denominations):
+            expected_count = len(denominations)
+            if len(successful) == expected_count:
                 task.status = 'completed'
-                task.message = f"All {len(denominations)} denominations generated! {total_pairs} pairs created."
+                task.message = f"All {expected_count} denominations generated! {total_pairs} pairs created."
             elif successful:
                 task.status = 'partial'
-                task.message = f"Partial success: {len(successful)}/{len(denominations)} denominations generated."
+                task.message = f"Partial success: {len(successful)}/{expected_count} denominations generated."
             else:
                 task.status = 'failed'
                 task.message = "All denominations failed to generate."
@@ -1045,6 +1050,18 @@ def has_banknotes(user_id: int) -> bool:
 
 def validate_serial_id(serial_id: str) -> Dict:
     """Validate serial number format"""
+    if serial_id.startswith("GTX-"):
+        if re.match(r"^GTX-\d+-\d{8}-[A-Za-z0-9]+$", serial_id):
+            parts = serial_id.split("-")
+            return {
+                "valid": True,
+                "type": "gtx",
+                "denomination": parts[1],
+                "date": parts[2],
+                "code": parts[3],
+            }
+        return {"valid": False, "reason": "Invalid GTX format"}
+
     if not serial_id.startswith("SN-"):
         return {"valid": False, "reason": "Missing prefix 'SN-'"}
     

@@ -38,11 +38,11 @@
     <!-- Tab Navigation -->
     <div class="tab-navigation">
         <button class="tab-button active" onclick="openTab('info')">
-            <span class="tab-icon">ℹ️</span>
+            <span class="tab-icon"><i data-feather="info"></i></span>
             <span class="tab-text">Information</span>
         </button>
         <button class="tab-button" onclick="openTab('gallery')">
-            <span class="tab-icon">🖼️</span>
+            <span class="tab-icon"><i data-feather="image"></i></span>
             <span class="tab-text">Gallery</span>
             <span class="tab-badge">{{ banknotes|length }}</span>
         </button>
@@ -53,7 +53,7 @@
         <!-- Bio Section -->
         <div class="info-card">
             <div class="card-header">
-                <div class="header-icon">📝</div>
+                <div class="header-icon"><i data-feather="edit-3"></i></div>
                 <h3 class="header-title">Bio</h3>
             </div>
             
@@ -62,7 +62,7 @@
                     <div class="bio-content">{{ user.bio|safe }}</div>
                 {% else %}
                     <div class="empty-state">
-                        <div class="empty-icon">📄</div>
+                        <div class="empty-icon"><i data-feather="file-text"></i></div>
                         <p>This user hasn't written a bio yet.</p>
                     </div>
                 {% endif %}
@@ -73,18 +73,42 @@
                             class="form-textarea">{{ user.bio|safe }}</textarea>
                     <button type="submit" class="action-btn cyan">
                         <span>Update Bio</span>
-                        <div class="btn-icon">💾</div>
+                        <div class="btn-icon"><i data-feather="save"></i></div>
                     </button>
                 </form>
                 {% endif %}
             </div>
         </div>
 
+        <!-- EisenScript Section (only for own profile) -->
+        {% if current_user.is_authenticated and current_user.id == user.id %}
+        <div class="info-card">
+            <div class="card-header">
+                <div class="header-icon"><i data-feather="code"></i></div>
+                <h3 class="header-title">Custom EisenScript</h3>
+            </div>
+            <div class="card-content">
+                <p class="helper-text">This script is applied on top of your banknotes during generation. Use it for stamps or custom graphics.</p>
+                <a href="{{ url_for('eisenscript_guide') }}" class="action-btn secondary small">
+                    <span>Open EisenScript Guide</span>
+                    <div class="btn-icon"><i data-feather="external-link"></i></div>
+                </a>
+                <form method="POST" class="bio-form">
+                    <textarea name="custom_eisenscript" placeholder="Paste EisenScript here..." class="form-textarea">{{ user.custom_eisenscript }}</textarea>
+                    <button type="submit" class="action-btn purple">
+                        <span>Save EisenScript</span>
+                        <div class="btn-icon"><i data-feather="save"></i></div>
+                    </button>
+                </form>
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Email Management Section (only for own profile) -->
         {% if current_user.is_authenticated and current_user.id == user.id %}
         <div class="info-card">
             <div class="card-header">
-                <div class="header-icon">📧</div>
+                <div class="header-icon"><i data-feather="mail"></i></div>
                 <h3 class="header-title">Email Management</h3>
             </div>
             
@@ -95,9 +119,9 @@
                         <span class="value">
                             <code>{{ user.email }}</code>
                             {% if user.email_verified %}
-                                <span class="badge verified">✓ Verified</span>
+                                <span class="badge verified"><i data-feather="check-circle"></i> Verified</span>
                             {% else %}
-                                <span class="badge unverified">⚠ Unverified</span>
+                                <span class="badge unverified"><i data-feather="alert-triangle"></i> Unverified</span>
                             {% endif %}
                         </span>
                     </div>
@@ -111,20 +135,20 @@
                         </span>
                     </div>
                     <div class="warning-box">
-                        <p>⏳ A verification email has been sent to <strong>{{ user.pending_email }}</strong>. Please check your inbox and click the verification link to complete the email change.</p>
+                        <p><i data-feather="loader"></i> A verification email has been sent to <strong>{{ user.pending_email }}</strong>. Please check your inbox and click the verification link to complete the email change.</p>
                         <button class="action-btn cyan small" onclick="resendVerification()">
                             <span>Resend Verification</span>
-                            <div class="btn-icon">📤</div>
+                            <div class="btn-icon"><i data-feather="upload"></i></div>
                         </button>
                     </div>
                     {% endif %}
                     
                     {% if not user.email_verified and not user.pending_email %}
                     <div class="warning-box">
-                        <p>⚠️ Your email is not verified. Please verify your email to receive notifications.</p>
+                        <p><i data-feather="alert-triangle"></i> Your email is not verified. Please verify your email to receive notifications.</p>
                         <button class="action-btn cyan small" onclick="resendVerification()">
                             <span>Resend Verification</span>
-                            <div class="btn-icon">📤</div>
+                            <div class="btn-icon"><i data-feather="upload"></i></div>
                         </button>
                     </div>
                     {% endif %}
@@ -133,11 +157,11 @@
                 <div class="email-actions">
                     <button class="action-btn purple" onclick="showChangeEmailModal()">
                         <span>Change Email</span>
-                        <div class="btn-icon">✏️</div>
+                        <div class="btn-icon"><i data-feather="edit-2"></i></div>
                     </button>
                     <button class="action-btn secondary" onclick="viewEmailHistory()">
                         <span>View History</span>
-                        <div class="btn-icon">📜</div>
+                        <div class="btn-icon"><i data-feather="list"></i></div>
                     </button>
                 </div>
             </div>
@@ -147,7 +171,7 @@
         {% if current_user.is_authenticated and current_user.id == user.id %}
         <div class="info-card">
             <div class="card-header">
-                <div class="header-icon">🔑</div>
+                <div class="header-icon"><i data-feather="key"></i></div>
                 <h3 class="header-title">Security Keys</h3>
                 {% if security_keys %}
                 <div class="header-badge">{{ security_keys|length }}</div>
@@ -170,14 +194,14 @@
                 </ul>
                 {% else %}
                 <div class="empty-state">
-                    <div class="empty-icon">🔐</div>
+                    <div class="empty-icon"><i data-feather="lock"></i></div>
                     <p>No security keys registered yet.</p>
                 </div>
                 {% endif %}
 
                 <button class="action-btn primary" onclick="startSecurityKeyRegistration()">
                     <span>Register Security Key</span>
-                    <div class="btn-icon">➕</div>
+                    <div class="btn-icon"><i data-feather="plus"></i></div>
                 </button>
             </div>
         </div>
@@ -187,7 +211,7 @@
         {% if current_user.is_authenticated and current_user.id == user.id %}
         <div class="info-card">
             <div class="card-header">
-                <div class="header-icon">💰</div>
+                <div class="header-icon"><i data-feather="dollar-sign"></i></div>
                 <h3 class="header-title">Annual Banknote Generation</h3>
             </div>
             
@@ -205,7 +229,7 @@
                     </div>
                     {% if user.can_generate_money() %}
                     <div class="status-indicator ready">
-                        <div class="status-icon">✅</div>
+                        <div class="status-icon"><i data-feather="check-circle"></i></div>
                         <div class="status-text">
                             <strong>Ready to Generate</strong>
                             <span>You can create new banknotes now!</span>
@@ -214,12 +238,12 @@
                     <form method="POST" action="/generate-money" class="generation-form">
                         <button type="submit" class="action-btn primary">
                             <span>Generate New Banknotes</span>
-                            <div class="btn-icon">✨</div>
+                            <div class="btn-icon"><i data-feather="star"></i></div>
                         </button>
                     </form>
                     {% else %}
                     <div class="status-indicator waiting">
-                        <div class="status-icon">⏳</div>
+                        <div class="status-icon"><i data-feather="loader"></i></div>
                         <div class="status-text">
                             <strong>Generation Cooldown</strong>
                             <span>You can generate new banknotes again in {{ user.days_until_next_generation() }} days</span>
@@ -227,7 +251,7 @@
                     </div>
                     <button class="action-btn secondary" disabled>
                         <span>Generate New Banknotes</span>
-                        <div class="btn-icon">⏳</div>
+                        <div class="btn-icon"><i data-feather="loader"></i></div>
                     </button>
                     {% endif %}
                 </div>
@@ -237,7 +261,7 @@
         <!-- Recent Tasks -->
         <div class="info-card">
             <div class="card-header">
-                <div class="header-icon">📋</div>
+                <div class="header-icon"><i data-feather="clipboard"></i></div>
                 <h3 class="header-title">Recent Generation Tasks</h3>
                 {% if generation_tasks %}<div class="header-badge">{{ generation_tasks|length }}</div>{% endif %}
             </div>
@@ -253,7 +277,7 @@
                         </div>
                         <div class="task-details">
                             <div class="task-date">
-                                <span class="date-icon">📅</span>
+                                <span class="date-icon"><i data-feather="calendar"></i></span>
                                 {{ task.created_at.strftime('%Y-%m-%d %H:%M') }}
                                 {% if task.completed_at %}
                                 <span class="completed-date">
@@ -292,7 +316,7 @@
                     {% if current_user.is_authenticated and current_user.id == user.id %}
                     <button class="action-btn cyan small" onclick="openTab('info')">
                         <span>Generate New</span>
-                        <div class="btn-icon">✨</div>
+                        <div class="btn-icon"><i data-feather="star"></i></div>
                     </button>
                     {% endif %}
                 </div>
@@ -351,7 +375,7 @@
                                             })">
                                     {% else %}
                                     <div class="no-image">
-                                        <div class="no-image-icon">🖼️</div>
+                                        <div class="no-image-icon"><i data-feather="image"></i></div>
                                         <span>No image available</span>
                                     </div>
                                     {% endif %}
@@ -361,7 +385,7 @@
                                     <div class="banknote-serial-container">
                                         <code class="banknote-serial">{{ banknote.serial_number }}</code>
                                         <button class="copy-serial-btn" onclick="copySerial('{{ banknote.serial_number }}')" title="Copy serial number">
-                                            <span class="copy-icon">📋</span>
+                                            <span class="copy-icon"><i data-feather="clipboard"></i></span>
                                         </button>
                                     </div>
                                     <div class="banknote-date">{{ banknote.created_at.strftime('%Y-%m-%d') }}</div>
@@ -373,7 +397,7 @@
                                 <a href="{{ url_for('serve_banknote_image', filename=clean_path) }}" 
                                 download class="action-btn cyan small">
                                     <span>PNG</span>
-                                    <div class="btn-icon">⬇️</div>
+                                    <div class="btn-icon"><i data-feather="download"></i></div>
                                 </a>
                                 {% endif %}
                                 
@@ -382,7 +406,7 @@
                                     <a href="{{ url_for('serve_banknote_image', filename=clean_svg_path) }}" 
                                     download class="action-btn purple small">
                                         <span>SVG</span>
-                                        <div class="btn-icon">⬇️</div>
+                                        <div class="btn-icon"><i data-feather="download"></i></div>
                                     </a>
                                 {% endif %}
                             </div>
@@ -415,7 +439,7 @@
                                             })">
                                     {% else %}
                                     <div class="no-image">
-                                        <div class="no-image-icon">🖼️</div>
+                                        <div class="no-image-icon"><i data-feather="image"></i></div>
                                         <span>No image available</span>
                                     </div>
                                     {% endif %}
@@ -425,7 +449,7 @@
                                     <div class="banknote-serial-container">
                                         <code class="banknote-serial">{{ banknote.serial_number }}</code>
                                         <button class="copy-serial-btn" onclick="copySerial('{{ banknote.serial_number }}')" title="Copy serial number">
-                                            <span class="copy-icon">📋</span>
+                                            <span class="copy-icon"><i data-feather="clipboard"></i></span>
                                         </button>
                                     </div>
                                     <div class="banknote-date">{{ banknote.created_at.strftime('%Y-%m-%d') }}</div>
@@ -437,7 +461,7 @@
                                 <a href="{{ url_for('serve_banknote_image', filename=clean_path) }}" 
                                 download class="action-btn cyan small">
                                     <span>PNG</span>
-                                    <div class="btn-icon">⬇️</div>
+                                    <div class="btn-icon"><i data-feather="download"></i></div>
                                 </a>
                                 {% endif %}
                                 
@@ -446,7 +470,7 @@
                                     <a href="{{ url_for('serve_banknote_image', filename=clean_svg_path) }}" 
                                     download class="action-btn purple small">
                                         <span>SVG</span>
-                                        <div class="btn-icon">⬇️</div>
+                                        <div class="btn-icon"><i data-feather="download"></i></div>
                                     </a>
                                 {% endif %}
                             </div>
@@ -458,7 +482,7 @@
         </div>
         {% else %}
         <div class="empty-state full-width">
-            <div class="empty-icon">💵</div>
+            <div class="empty-icon"><i data-feather="dollar-sign"></i></div>
             <h4>No banknotes yet</h4>
             <p>This user hasn't generated any banknotes yet.</p>
             {% if current_user.is_authenticated and current_user.id == user.id %}
@@ -510,7 +534,7 @@
         <div class="modal-footer">
             <a id="modalDownload" href="" download class="action-btn cyan">
                 <span>Download PNG</span>
-                <div class="btn-icon">⬇️</div>
+                <div class="btn-icon"><i data-feather="download"></i></div>
             </a>
             <button class="action-btn secondary" onclick="closeBanknoteModal()">
                 <span>Close</span>
@@ -551,9 +575,9 @@
 }
 
 .profile-container {
-    max-width: 100%;
+    max-width: 1100px;
     margin: 0 auto;
-    padding: 2rem;
+    padding: 1.25rem;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
 }
 
@@ -561,12 +585,12 @@
 .profile-header-card {
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 2rem;
-    margin-bottom: 2rem;
+    border-radius: 8px;
+    padding: 1.25rem;
+    margin-bottom: 1.25rem;
     display: flex;
     align-items: center;
-    gap: 2rem;
+    gap: 1.25rem;
     position: relative;
     overflow: hidden;
 }
@@ -577,8 +601,8 @@
     top: 0;
     left: 0;
     width: 100%;
-    height: 4px;
-    background: linear-gradient(90deg, var(--primary), var(--info));
+    height: 1px;
+    background: var(--border-light);
 }
 
 .avatar-section {
@@ -589,12 +613,12 @@
 }
 
 .avatar-wrapper {
-    width: 100px;
-    height: 100px;
+    width: 72px;
+    height: 72px;
     border-radius: 50%;
     overflow: hidden;
-    border: 3px solid var(--info);
-    box-shadow: var(--shadow-lg);
+    border: 1px solid var(--border-light);
+    box-shadow: none;
     position: relative;
     z-index: 2;
 }
@@ -611,20 +635,14 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    background: linear-gradient(135deg, var(--primary), var(--info));
-    color: white;
-    font-size: 2rem;
+    background: var(--bg-secondary);
+    color: var(--text-primary);
+    font-size: 1.35rem;
     font-weight: 700;
 }
 
 .avatar-glow {
-    position: absolute;
-    width: 120px;
-    height: 120px;
-    border-radius: 50%;
-    background: radial-gradient(circle, var(--info) 0%, transparent 70%);
-    opacity: 0.3;
-    animation: pulse 2s ease-in-out infinite;
+    display: none;
 }
 
 @keyframes pulse {
@@ -638,43 +656,43 @@
 
 .profile-username {
     color: var(--text-primary);
-    font-size: 2.25rem;
+    font-size: 1.75rem;
     font-weight: 700;
-    margin: 0 0 1rem 0;
+    margin: 0 0 0.5rem 0;
 }
 
 .profile-stats {
     display: flex;
-    gap: 1.5rem;
+    gap: 0.75rem;
     flex-wrap: wrap;
 }
 
 .profile-stat {
     text-align: center;
-    padding: 1rem 1.5rem;
+    padding: 0.6rem 0.9rem;
     background: var(--bg-secondary);
-    border-radius: 12px;
+    border-radius: 8px;
     border: 1px solid var(--border);
-    min-width: 120px;
+    min-width: 110px;
     transition: all 0.3s ease;
 }
 
 .profile-stat:hover {
-    transform: translateY(-2px);
-    box-shadow: var(--shadow);
-    border-color: var(--info);
+    transform: none;
+    box-shadow: none;
+    border-color: var(--border-light);
 }
 
 .stat-value {
     display: block;
-    font-size: 1.5rem;
+    font-size: 1.2rem;
     font-weight: 700;
     color: var(--text-primary);
     margin-bottom: 0.25rem;
 }
 
 .stat-label {
-    font-size: 0.85rem;
+    font-size: 0.75rem;
     color: var(--text-secondary);
     font-weight: 600;
     text-transform: uppercase;
@@ -685,11 +703,11 @@
 .tab-navigation {
     display: flex;
     gap: 0.5rem;
-    margin-bottom: 2rem;
-    padding: 0.5rem;
+    margin-bottom: 1.25rem;
+    padding: 0.35rem;
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: 8px;
     overflow-x: auto;
 }
 
@@ -697,12 +715,12 @@
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    padding: 0.875rem 1.5rem;
+    padding: 0.6rem 1rem;
     background: transparent;
     border: none;
-    border-radius: 8px;
+    border-radius: 6px;
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: 0.8rem;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -723,7 +741,7 @@
 }
 
 .tab-icon {
-    font-size: 1.125rem;
+    font-size: 1rem;
 }
 
 .tab-text {
@@ -760,9 +778,9 @@
 .info-card {
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 16px;
+    border-radius: 8px;
     padding: 0;
-    margin-bottom: 1.5rem;
+    margin-bottom: 1rem;
     overflow: hidden;
 }
 
@@ -774,8 +792,8 @@
     display: flex;
     align-items: center;
     gap: 1rem;
-    padding: 1.5rem 2rem;
-    border-bottom: 1px solid var(--border);
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border-light);
     background: rgba(0, 0, 0, 0.2);
 }
 
@@ -801,19 +819,25 @@
 }
 
 .card-content {
-    padding: 2rem;
+    padding: 1.25rem;
 }
 
 /* Bio Content */
 .bio-content {
     color: var(--text-primary);
-    line-height: 1.6;
-    margin-bottom: 1.5rem;
-    font-size: 0.95rem;
+    line-height: 1.5;
+    margin-bottom: 1rem;
+    font-size: 0.9rem;
 }
 
 .bio-form {
-    margin-top: 1.5rem;
+    margin-top: 1rem;
+}
+
+.helper-text {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    margin-bottom: 0.75rem;
 }
 
 .form-textarea {
@@ -821,13 +845,13 @@
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 1rem;
+    padding: 0.75rem;
     color: var(--text-primary);
     font-family: inherit;
-    font-size: 0.9rem;
+    font-size: 0.85rem;
     resize: vertical;
-    min-height: 120px;
-    margin-bottom: 1rem;
+    min-height: 100px;
+    margin-bottom: 0.75rem;
     transition: all 0.2s ease;
 }
 
@@ -1503,14 +1527,14 @@
 /* Responsive Design */
 @media (max-width: 768px) {
     .profile-container {
-        padding: 1rem;
+        padding: 0.9rem;
     }
     
     .profile-header-card {
         flex-direction: column;
         text-align: center;
-        gap: 1.5rem;
-        padding: 1.5rem;
+        gap: 1rem;
+        padding: 1rem;
     }
     
     .profile-stats {
@@ -1519,11 +1543,11 @@
     
     .profile-stat {
         min-width: 100px;
-        padding: 0.75rem 1rem;
+        padding: 0.6rem 0.9rem;
     }
     
     .profile-username {
-        font-size: 1.75rem;
+        font-size: 1.5rem;
     }
     
     .tab-navigation {
@@ -1535,11 +1559,11 @@
     }
     
     .card-header {
-        padding: 1.25rem 1.5rem;
+        padding: 0.9rem 1.1rem;
     }
     
     .card-content {
-        padding: 1.5rem;
+        padding: 1.1rem;
     }
     
     .modal {
@@ -1551,26 +1575,26 @@
     }
     
     .modal-header {
-        padding: 1.25rem 1.5rem;
+        padding: 1rem 1.1rem;
     }
     
     .modal-body {
-        padding: 1.5rem;
+        padding: 1.1rem;
     }
     
     .modal-footer {
-        padding: 1.25rem 1.5rem;
+        padding: 1rem 1.1rem;
         flex-direction: column;
     }
 }
 
 @media (max-width: 480px) {
     .profile-container {
-        padding: 0.75rem;
+        padding: 0.7rem;
     }
     
     .profile-username {
-        font-size: 1.5rem;
+        font-size: 1.35rem;
     }
     
     .profile-stats {
@@ -1679,7 +1703,10 @@ function copySerial(serial) {
         const copyBtn = event.target.closest('.copy-serial-btn');
         const originalHTML = copyBtn.innerHTML;
         
-        copyBtn.innerHTML = '<span class="copy-icon">✅</span>';
+        copyBtn.innerHTML = '<span class="copy-icon" data-feather="check-circle"></span>';
+        if (window.replaceFeatherIcons) {
+            window.replaceFeatherIcons();
+        }
         copyBtn.style.background = 'var(--success)';
         copyBtn.style.borderColor = 'var(--success)';
         
@@ -1800,7 +1827,7 @@ function showChangeEmailModal() {
                 <div class="form-actions">
                     <button type="submit" class="action-btn cyan">
                         <span>Change Email</span>
-                        <div class="btn-icon">✉️</div>
+                        <div class="btn-icon"><i data-feather="mail"></i></div>
                     </button>
                     <button type="button" class="action-btn secondary" 
                             onclick="this.closest('.modal').remove()">Cancel</button>

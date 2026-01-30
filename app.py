@@ -198,6 +198,66 @@ def _ensure_banknotes_verification_columns():
         logger.warning(f"Banknote verification column check failed: {e}")
 
 
+def _ensure_users_custom_eisenscript_column():
+    try:
+        from sqlalchemy import inspect, text
+
+        engine = db.engine
+        inspector = inspect(engine)
+        if "users" not in inspector.get_table_names():
+            return
+        columns = [col["name"] for col in inspector.get_columns("users")]
+        if "custom_eisenscript" in columns:
+            return
+        with engine.begin() as conn:
+            conn.execute(
+                text("ALTER TABLE users ADD COLUMN custom_eisenscript TEXT DEFAULT ''")
+            )
+    except Exception as e:
+        logger.warning(f"Users custom_eisenscript column check failed: {e}")
+
+
+def _ensure_settings_eisenscript_columns():
+    try:
+        from sqlalchemy import inspect, text
+
+        engine = db.engine
+        inspector = inspect(engine)
+        if "settings" not in inspector.get_table_names():
+            return
+        columns = [col["name"] for col in inspector.get_columns("settings")]
+        if "eisenscript_prefix_front" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE settings ADD COLUMN eisenscript_prefix_front TEXT DEFAULT ''")
+                )
+        if "eisenscript_suffix_front" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE settings ADD COLUMN eisenscript_suffix_front TEXT DEFAULT ''")
+                )
+        if "eisenscript_prefix_back" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE settings ADD COLUMN eisenscript_prefix_back TEXT DEFAULT ''")
+                )
+        if "eisenscript_suffix_back" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE settings ADD COLUMN eisenscript_suffix_back TEXT DEFAULT ''")
+                )
+    except Exception as e:
+        logger.warning(f"Settings eisenscript column check failed: {e}")
+
+
+def sanitize_eisenscript(script_text: str, max_length: int = 20000) -> str:
+    if not script_text:
+        return ""
+    cleaned = script_text.replace("\r\n", "\n").replace("\r", "\n")
+    cleaned = "".join(ch for ch in cleaned if (ch == "\n" or ch == "\t" or 32 <= ord(ch) <= 126))
+    return cleaned[:max_length]
+
+
 # ROYGBIV Color Scheme 🌈 plus more
 class Colors:
     # Basic colors
@@ -432,6 +492,8 @@ def _user_has_strong_auth(user: User) -> bool:
 def run_generation_task(user_id, username):
     """Queue a generation task."""
     try:
+        # Ensure the background processor is running before enqueuing.
+        start_generation_task_processor()
         # Always create a task in 'pending' state.
         # The worker will pick it up.
         task = GenerationTask(user_id=user_id, status="pending")
@@ -765,6 +827,8 @@ def view_block_detail(block_hash):
                 serial_number = str(tx.get("serial_number") or "")
                 front_serial = str(tx.get("front_serial") or "")
                 back_serial = str(tx.get("back_serial") or "")
+                bill_serial = str(tx.get("bill_serial") or "")
+                metadata_hash = str(tx.get("metadata_hash") or "")
 
                 if serial_number and not serial_number.startswith("SN-"):
                     serial_number = ""
@@ -782,7 +846,7 @@ def view_block_detail(block_hash):
                         front_serial = primary_serial
                     if side_value == "back" and not back_serial:
                         back_serial = primary_serial
-                elif primary_serial and not front_serial:
+                elif primary_serial and not front_serial and not back_serial:
                     front_serial = primary_serial
 
                 front_banknote = resolve_banknote_by_serial(front_serial)
@@ -810,6 +874,8 @@ def view_block_detail(block_hash):
                         "serial_number": serial_number or "",
                         "front_serial": front_serial or "",
                         "back_serial": back_serial or "",
+                        "bill_serial": bill_serial or "",
+                        "metadata_hash": metadata_hash or "",
                         "issued_to": str(tx.get("issued_to", "N/A")),
                         "denomination": tx.get("denomination", "N/A"),
                         "front_thumbnail": front_thumbnail,
@@ -826,11 +892,115 @@ def view_block_detail(block_hash):
                     }
                 )
             transaction_details.append(tx_info)
+
+        def _merge_genesis_transactions(items):
+            combined = []
+            merged_index = {}
+
+            def _merge_into(target, source):
+                for field in ("front_serial", "back_serial", "serial_number"):
+                    if not target.get(field) and source.get(field):
+                        target[field] = source.get(field)
+
+                if source.get("front_serial") and not target.get("back_serial"):
+                    if target.get("front_serial") and target.get("front_serial") != source.get("front_serial"):
+                        target["back_serial"] = source.get("front_serial")
+
+                if source.get("back_serial") and not target.get("front_serial"):
+                    if target.get("back_serial") and target.get("back_serial") != source.get("back_serial"):
+                        target["front_serial"] = source.get("back_serial")
+
+                if not target.get("front_thumbnail") and source.get("front_thumbnail"):
+                    target["front_thumbnail"] = source.get("front_thumbnail")
+                if not target.get("back_thumbnail") and source.get("back_thumbnail"):
+                    target["back_thumbnail"] = source.get("back_thumbnail")
+
+                if not target.get("issued_to") and source.get("issued_to"):
+                    target["issued_to"] = source.get("issued_to")
+                if not target.get("denomination") and source.get("denomination"):
+                    target["denomination"] = source.get("denomination")
+
+                try:
+                    target["size"] = int(target.get("size") or 0) + int(source.get("size") or 0)
+                except Exception:
+                    pass
+
+            def _build_key(tx_item):
+                bill_serial = tx_item.get("bill_serial")
+                if isinstance(bill_serial, str) and bill_serial.strip():
+                    return (bill_serial.strip(),)
+                metadata_hash = tx_item.get("metadata_hash")
+                if isinstance(metadata_hash, str) and metadata_hash.strip():
+                    return (metadata_hash.strip(),)
+                serials = [
+                    tx_item.get("front_serial"),
+                    tx_item.get("back_serial"),
+                    tx_item.get("serial_number"),
+                ]
+                serials = [s for s in serials if isinstance(s, str) and s.strip()]
+                if serials:
+                    return tuple(sorted(set(serials)))
+                return (tx_item.get("hash") or f"tx-{tx_item.get('index')}",)
+
+            for item in items:
+                if item.get("type") not in ["genesis", "GTX_Genesis"]:
+                    combined.append(item)
+                    continue
+
+                key = _build_key(item)
+                existing = merged_index.get(key)
+                if not existing:
+                    merged_index[key] = item
+                    combined.append(item)
+                    continue
+
+                _merge_into(existing, item)
+
+            final = []
+            by_front = {}
+            by_back = {}
+            for item in combined:
+                if item.get("type") not in ["genesis", "GTX_Genesis"]:
+                    final.append(item)
+                    continue
+
+                front = item.get("front_serial")
+                back = item.get("back_serial")
+                match = None
+                if front and front in by_front:
+                    match = by_front[front]
+                if not match and back and back in by_back:
+                    match = by_back[back]
+
+                if match and match is not item:
+                    _merge_into(match, item)
+                    continue
+
+                final.append(item)
+                if front:
+                    by_front[front] = item
+                if back:
+                    by_back[back] = item
+
+            return final
+
+        transaction_details = _merge_genesis_transactions(transaction_details)
+        for idx, tx_item in enumerate(transaction_details, start=1):
+            tx_item["index"] = idx
+
+        genesis_count = sum(
+            1
+            for tx in transaction_details
+            if tx.get("type") in ["genesis", "GTX_Genesis"]
+        )
+        transfer_count = sum(1 for tx in transaction_details if tx.get("type") == "transfer")
+        reward_count = sum(1 for tx in transaction_details if tx.get("type") == "reward")
+        other_count = len(transaction_details) - genesis_count - transfer_count - reward_count
         # Prepare block info for template - ensure all values are properly typed
         block_info = {
             "block": found_block,
             "metadata": {
-                "transaction_count": int(len(transactions)),
+                "transaction_count": int(len(transaction_details)),
                 "genesis_count": int(genesis_count),
                 "transfer_count": int(transfer_count),
                 "reward_count": int(reward_count),
@@ -1013,42 +1183,10 @@ def mempool_viewer(page=1):
 
         # Pagination settings
         per_page = 15  # Reduced for compact view
-        total_transactions = len(mempool_data)
-        total_pages = max(1, (total_transactions + per_page - 1) // per_page)
 
-        # If no page param provided, default to latest page
-        if not page_provided:
-            page = total_pages
-
-        # Ensure page is within valid range
-        page = max(1, min(page, total_pages))
-
-        # Calculate slice for current page
-        start_idx = (page - 1) * per_page
-        end_idx = start_idx + per_page
-        current_transactions = mempool_data[start_idx:end_idx]
-
-        print(
-            f"🔍 Mempool Pagination: page {page}, showing transactions {start_idx}-{end_idx} of {total_transactions}"
-        )
-
-        # Calculate statistics
-        active_transactions = total_transactions
-        mined_transactions = blockchain_status["total_transactions"]
-
-        # Count by transaction type
-        type_counts = {
-            "bills": len(
-                [tx for tx in mempool_data if tx.get("type") in ["genesis", "GTX_Genesis"]]
-            ),
-            "transfers": len(
-                [tx for tx in mempool_data if tx.get("type") == "transfer"]
-            ),
-        }
-
-        # Get transaction details for current page
+        # Build transaction details for all mempool entries
         transactions = []
-        for tx in current_transactions:
+        for tx in mempool_data:
             tx_info = {
                 "hash": tx.get("hash", "N/A"),
                 "type": tx.get("type", "unknown"),
@@ -1070,14 +1208,145 @@ def mempool_viewer(page=1):
                 tx_info["amount"] = tx.get("amount", "N/A")
 
             elif tx.get("type") in ["genesis", "GTX_Genesis"]:
-                tx_info["serial_number"] = tx.get("serial_number", "N/A")
+                serial_number = tx.get("serial_number") or ""
+                front_serial = tx.get("front_serial") or ""
+                back_serial = tx.get("back_serial") or ""
+                tx_info["serial_number"] = serial_number or front_serial or back_serial or "N/A"
+                tx_info["front_serial"] = front_serial
+                tx_info["back_serial"] = back_serial
+                tx_info["bill_serial"] = tx.get("bill_serial", "")
+                tx_info["metadata_hash"] = tx.get("metadata_hash", "")
                 tx_info["issued_to"] = tx.get("issued_to", "N/A")
                 tx_info["denomination"] = tx.get("denomination", "N/A")
+                tx_info["amount"] = tx.get("amount", tx_info["denomination"])
 
             transactions.append(tx_info)
 
+        def _merge_genesis_transactions(items):
+            combined = []
+            merged_index = {}
+
+            def _merge_into(target, source):
+                for field in ("front_serial", "back_serial", "serial_number"):
+                    if not target.get(field) and source.get(field):
+                        target[field] = source.get(field)
+
+                if source.get("front_serial") and not target.get("back_serial"):
+                    if target.get("front_serial") and target.get("front_serial") != source.get("front_serial"):
+                        target["back_serial"] = source.get("front_serial")
+
+                if source.get("back_serial") and not target.get("front_serial"):
+                    if target.get("back_serial") and target.get("back_serial") != source.get("back_serial"):
+                        target["front_serial"] = source.get("back_serial")
+
+                if not target.get("issued_to") and source.get("issued_to"):
+                    target["issued_to"] = source.get("issued_to")
+                if not target.get("denomination") and source.get("denomination"):
+                    target["denomination"] = source.get("denomination")
+                if not target.get("amount") and source.get("amount"):
+                    target["amount"] = source.get("amount")
+
+                try:
+                    target["size"] = int(target.get("size") or 0) + int(source.get("size") or 0)
+                except Exception:
+                    pass
+
+            def _build_key(tx_item):
+                bill_serial = tx_item.get("bill_serial")
+                if isinstance(bill_serial, str) and bill_serial.strip():
+                    return (bill_serial.strip(),)
+                metadata_hash = tx_item.get("metadata_hash")
+                if isinstance(metadata_hash, str) and metadata_hash.strip():
+                    return (metadata_hash.strip(),)
+                serials = [
+                    tx_item.get("front_serial"),
+                    tx_item.get("back_serial"),
+                    tx_item.get("serial_number"),
+                ]
+                serials = [s for s in serials if isinstance(s, str) and s.strip()]
+                if serials:
+                    return tuple(sorted(set(serials)))
+                return (tx_item.get("hash") or "unknown",)
+
+            for item in items:
+                if item.get("type") not in ["genesis", "GTX_Genesis"]:
+                    combined.append(item)
+                    continue
+
+                key = _build_key(item)
+                existing = merged_index.get(key)
+                if not existing:
+                    merged_index[key] = item
+                    combined.append(item)
+                    continue
+
+                _merge_into(existing, item)
+
+            final = []
+            by_front = {}
+            by_back = {}
+            for item in combined:
+                if item.get("type") not in ["genesis", "GTX_Genesis"]:
+                    final.append(item)
+                    continue
+
+                front = item.get("front_serial")
+                back = item.get("back_serial")
+                match = None
+                if front and front in by_front:
+                    match = by_front[front]
+                if not match and back and back in by_back:
+                    match = by_back[back]
+
+                if match and match is not item:
+                    _merge_into(match, item)
+                    continue
+
+                final.append(item)
+                if front:
+                    by_front[front] = item
+                if back:
+                    by_back[back] = item
+
+            return final
+
+        transactions = _merge_genesis_transactions(transactions)
+
         # Sort transactions by timestamp (newest first)
         transactions.sort(key=lambda x: x.get("timestamp", 0), reverse=True)
+
+        total_transactions = len(transactions)
+        total_pages = max(1, (total_transactions + per_page - 1) // per_page)
+
+        # If no page param provided, default to latest page
+        if not page_provided:
+            page = total_pages
+
+        # Ensure page is within valid range
+        page = max(1, min(page, total_pages))
+
+        # Calculate slice for current page
+        start_idx = (page - 1) * per_page
+        end_idx = start_idx + per_page
+        current_transactions = transactions[start_idx:end_idx]
+
+        print(
+            f"🔍 Mempool Pagination: page {page}, showing transactions {start_idx}-{end_idx} of {total_transactions}"
+        )
+
+        # Calculate statistics
+        active_transactions = total_transactions
+        mined_transactions = blockchain_status["total_transactions"]
+
+        # Count by transaction type
+        type_counts = {
+            "bills": len(
+                [tx for tx in transactions if tx.get("type") in ["genesis", "GTX_Genesis"]]
+            ),
+            "transfers": len(
+                [tx for tx in transactions if tx.get("type") == "transfer"]
+            ),
+        }
 
         # Get blockchain info for context
         blockchain_info = {
@@ -1089,7 +1358,7 @@ def mempool_viewer(page=1):
 
         return render_template(
             "mempool_viewer.html",
-            transactions=transactions,
+            transactions=current_transactions,
             total_transactions=total_transactions,
             active_transactions=active_transactions,
             mined_transactions=mined_transactions,
@@ -1618,7 +1887,7 @@ def blockchain_viewer(page=1):
                 current_page=page,
                 datetime=datetime,  # Add this line
                 total_pages=1,
-                per_page=10,
+                per_page=25,
                 error_message="Blockchain daemon not initialized",
                 max=max,
                 min=min,
@@ -1878,7 +2147,7 @@ def blockchain_viewer(page=1):
         print(f"   Reward transactions: {reward_count}")
 
         # Pagination settings
-        per_page = 10  # Number of blocks per page
+        per_page = 25  # Number of blocks per page
 
         # If we have accurate blockchain status, use that for total blocks
         total_blocks = len(filtered_blocks)
@@ -1931,6 +2200,41 @@ def blockchain_viewer(page=1):
             block_transfer = block_info.get("transfer_count", 0)
             block_reward = block_info.get("reward_count", 0)
 
+            raw_mining_method = (
+                block.get("mining_method")
+                or block.get("mined_with")
+                or block.get("miner_type")
+                or block.get("device")
+                or ""
+            )
+            raw_mining_method_str = str(raw_mining_method).strip().lower()
+            if "gpu" in raw_mining_method_str or raw_mining_method_str in ["cuda", "opencl"]:
+                mining_method = "gpu"
+            elif "cpu" in raw_mining_method_str:
+                mining_method = "cpu"
+            elif raw_mining_method_str:
+                mining_method = raw_mining_method_str
+            else:
+                mining_method = "unknown"
+
+            cpu_index = block.get("cpu_index") or block.get("cpu_worker")
+            cpu_total = block.get("cpu_total") or block.get("cpu_workers")
+            gpu_index = block.get("gpu_index") or block.get("gpu_worker")
+            gpu_total = block.get("gpu_total") or block.get("gpu_workers")
+            mining_label = None
+            if mining_method == "cpu" and cpu_index is not None and cpu_total:
+                mining_label = f"CPU[{cpu_index}/{cpu_total}]"
+            elif mining_method == "gpu" and gpu_index is not None and gpu_total:
+                mining_label = f"GPU[{gpu_index}/{gpu_total}]"
+            elif mining_method == "cpu":
+                mining_label = "CPU"
+            elif mining_method == "gpu":
+                mining_label = "GPU"
+            elif mining_method == "unknown":
+                mining_label = "Unknown"
+            else:
+                mining_label = str(mining_method).upper()
+
             # Process timestamp for display
             timestamp = block.get("timestamp", 0)
             readable_time = "Unknown"
@@ -1967,6 +2271,8 @@ def blockchain_viewer(page=1):
                 "nonce": block.get("nonce", 0),
                 "difficulty": block.get("difficulty", "N/A"),
                 "miner": block.get("miner", "Unknown"),
+                "mining_method": mining_method,
+                "mining_label": mining_label,
                 "transaction_count": len(transactions),
                 "genesis_count": block_genesis,
                 "transfer_count": block_transfer,
@@ -2050,7 +2356,7 @@ def blockchain_viewer(page=1):
             current_page=1,
             datetime=datetime,
             total_pages=1,
-            per_page=10,
+            per_page=25,
             error_info=error_info,
             max=max,
             min=min,
@@ -4550,6 +4856,21 @@ def transaction_explorer(transaction_hash):
         transaction["timestamp_formatted"] = dt.strftime("%Y-%m-%d %H:%M:%S")
         transaction["timestamp_readable"] = dt.strftime("%B %d, %Y at %H:%M:%S")
 
+        confirmations = int(transaction.get("confirmations") or 0)
+        transaction["confirmations"] = confirmations
+
+        # Determine status from confirmations (confirmed after 6)
+        current_status = (transaction.get("status") or "").lower()
+        if current_status in {"failed", "error"}:
+            transaction["status"] = current_status
+        else:
+            if confirmations >= 6:
+                transaction["status"] = "confirmed"
+            elif confirmations > 0 or transaction.get("block_height") is not None:
+                transaction["status"] = "pending"
+            else:
+                transaction["status"] = "pending"
+
         # Determine status icon and color
         status_info = {
             "pending": {"icon": "⏳", "color": "warning", "label": "Pending"},
@@ -4573,13 +4894,6 @@ def transaction_explorer(transaction_hash):
         transaction["status_label"] = status_info.get(
             status_key, status_info["unknown"]
         )["label"]
-
-        # Set default status if not set
-        if "status" not in transaction or not transaction["status"]:
-            if transaction["block_height"]:
-                transaction["status"] = "confirmed"
-            else:
-                transaction["status"] = "pending"
 
         # Calculate confirmation percentage based on mined status
         confirmation_percentage = 100 if blockchain_daemon_instance.is_transaction_mined(tx_data) else 0
@@ -4983,6 +5297,8 @@ def verify_serial(serial_id=None):
             if not serial_value:
                 return []
             candidates = [serial_value]
+            if serial_value.upper().startswith("GTX-"):
+                return candidates
             serial_upper = serial_value.upper()
             if serial_upper.endswith("_FRONT") or serial_upper.endswith("_BACK"):
                 base_serial = serial_value.rsplit("_", 1)[0]
@@ -5110,6 +5426,68 @@ def verify_serial(serial_id=None):
 
         if tx_data:
             try:
+                def _try_lunalib_sm2_verify(payload: dict):
+                    try:
+                        from lunalib.gtx.digital_bill import DigitalBill as LunalibDigitalBill
+                    except Exception:
+                        try:
+                            from lunalib.digital_bill import DigitalBill as LunalibDigitalBill
+                        except Exception:
+                            return None, "lunalib DigitalBill unavailable"
+
+                    bill_instance = None
+                    init_errors = []
+
+                    # Try known constructor signatures
+                    try:
+                        bill_instance = LunalibDigitalBill(
+                            bill_type=payload.get("type", "banknote"),
+                            front_serial=payload.get("front_serial", ""),
+                            back_serial=payload.get("back_serial", ""),
+                            metadata_hash=payload.get("metadata_hash", ""),
+                            timestamp=payload.get("timestamp", 0),
+                            issued_to=payload.get("issued_to", ""),
+                            denomination=payload.get("denomination", ""),
+                            public_key=payload.get("public_key"),
+                            signature=payload.get("signature"),
+                        )
+                    except Exception as e:
+                        init_errors.append(str(e))
+
+                    if bill_instance is None:
+                        try:
+                            bill_instance = LunalibDigitalBill(**payload)
+                        except Exception as e:
+                            init_errors.append(str(e))
+
+                    if bill_instance is None:
+                        return None, f"lunalib DigitalBill init failed: {init_errors}"
+
+                    for method_name in (
+                        "verify",
+                        "verify_signature",
+                        "verify_sm2",
+                        "verify_signature_sm2",
+                        "verify_signature_sm2_only",
+                    ):
+                        method = getattr(bill_instance, method_name, None)
+                        if callable(method):
+                            try:
+                                return bool(method()), None
+                            except Exception as e:
+                                return None, f"lunalib {method_name} error: {e}"
+
+                    # Try classmethod/staticmethod patterns
+                    for class_method_name in ("verify", "verify_signature"):
+                        class_method = getattr(LunalibDigitalBill, class_method_name, None)
+                        if callable(class_method):
+                            try:
+                                return bool(class_method(payload)), None
+                            except Exception as e:
+                                return None, f"lunalib class {class_method_name} error: {e}"
+
+                    return None, "lunalib DigitalBill verify method not found"
+
                 if True:
                     # Get signature components
                     public_key = tx_data.get("public_key")
@@ -5455,64 +5833,82 @@ def verify_serial(serial_id=None):
                         and signature
                     ):
                         try:
-                            # Create DigitalBill object
-                            digital_bill = DigitalBill(
-                                bill_type=tx_data.get("type", "banknote"),
-                                front_serial=front_serial,
-                                back_serial=tx_data.get("back_serial", ""),
-                                metadata_hash=metadata_hash,
-                                timestamp=timestamp,
-                                issued_to=issued_to,
-                                denomination=denomination,
-                                public_key=public_key,
-                                signature=signature,
-                            )
-
-                            print(
-                                f"[VERIFY] Created DigitalBill for signature verification"
-                            )
-
-                            # FIRST: Check if it's valid SM2 format
-                            is_valid_sm2_format = (
-                                len(signature) == 128
-                                and len(public_key) >= 130
-                                and public_key.startswith("04")
-                                and all(
-                                    c in "0123456789abcdefABCDEF" for c in signature
-                                )
-                            )
-
-                            if is_valid_sm2_format:
-                                print(f"[VERIFY] ✓ Valid SM2 format detected")
-
-                                # Try actual SM2 verification
-                                print(
-                                    f"[VERIFY] Attempting SM2 cryptographic verification..."
-                                )
-                                is_valid = digital_bill.verify()
-
-                                if is_valid:
-                                    signature_valid = True
-                                    verification_method = "sm2_signature"
-                                    verification_attempts.append(("sm2_crypto", True))
-                                    print(
-                                        f"[VERIFY] ✓ SM2 cryptographic verification passed"
-                                    )
-                                else:
-                                    # Format is valid but verification failed - accept as valid format
-                                    signature_valid = True
-                                    verification_method = "sm2_format_valid"
-                                    verification_attempts.append(("sm2_format", True))
-                                    print(
-                                        f"[VERIFY] ⚠️ SM2 crypto verification failed but format is valid"
-                                    )
-                            else:
+                            lunalib_handled = False
+                            lunalib_result, lunalib_error = _try_lunalib_sm2_verify(tx_data)
+                            if lunalib_result is True:
+                                signature_valid = True
+                                verification_method = "lunalib_sm2_signature"
+                                verification_attempts.append(("lunalib_sm2", True))
+                                print(f"[VERIFY] ✓ Lunalib SM2 verification passed")
+                                lunalib_handled = True
+                            elif lunalib_result is False:
                                 signature_valid = False
-                                verification_method = "invalid_sm2_format"
-                                verification_attempts.append(
-                                    ("sm2_format_check", False)
+                                verification_method = "lunalib_sm2_invalid"
+                                verification_attempts.append(("lunalib_sm2", False))
+                                print(f"[VERIFY] ✗ Lunalib SM2 verification failed")
+                                lunalib_handled = True
+                            elif lunalib_error:
+                                print(f"[VERIFY] ⚠️ Lunalib SM2 verification unavailable: {lunalib_error}")
+
+                            if not lunalib_handled:
+                                # Create DigitalBill object
+                                digital_bill = DigitalBill(
+                                    bill_type=tx_data.get("type", "banknote"),
+                                    front_serial=front_serial,
+                                    back_serial=tx_data.get("back_serial", ""),
+                                    metadata_hash=metadata_hash,
+                                    timestamp=timestamp,
+                                    issued_to=issued_to,
+                                    denomination=denomination,
+                                    public_key=public_key,
+                                    signature=signature,
                                 )
-                                print(f"[VERIFY] ✗ Invalid SM2 format")
+
+                                print(
+                                    f"[VERIFY] Created DigitalBill for signature verification"
+                                )
+
+                                # FIRST: Check if it's valid SM2 format
+                                is_valid_sm2_format = (
+                                    len(signature) == 128
+                                    and len(public_key) >= 130
+                                    and public_key.startswith("04")
+                                    and all(
+                                        c in "0123456789abcdefABCDEF" for c in signature
+                                    )
+                                )
+
+                                if is_valid_sm2_format:
+                                    print(f"[VERIFY] ✓ Valid SM2 format detected")
+
+                                    # Try actual SM2 verification
+                                    print(
+                                        f"[VERIFY] Attempting SM2 cryptographic verification..."
+                                    )
+                                    is_valid = digital_bill.verify()
+
+                                    if is_valid:
+                                        signature_valid = True
+                                        verification_method = "sm2_signature"
+                                        verification_attempts.append(("sm2_crypto", True))
+                                        print(
+                                            f"[VERIFY] ✓ SM2 cryptographic verification passed"
+                                        )
+                                    else:
+                                        # Format is valid but verification failed - accept as valid format
+                                        signature_valid = True
+                                        verification_method = "sm2_format_valid"
+                                        verification_attempts.append(("sm2_format", True))
+                                        print(
+                                            f"[VERIFY] ⚠️ SM2 crypto verification failed but format is valid"
+                                        )
+                                else:
+                                    signature_valid = False
+                                    verification_method = "invalid_sm2_format"
+                                    verification_attempts.append(
+                                        ("sm2_format_check", False)
+                                    )
+                                    print(f"[VERIFY] ✗ Invalid SM2 format")
 
                         except Exception as e:
                             print(f"[VERIFY ERROR] DigitalBill verification error: {e}")
@@ -6832,6 +7228,10 @@ def admin_settings():
             settings.bill_dpi = _get_float("bill_dpi", settings.bill_dpi or 300.0)
             settings.font_dir = _get_text("font_dir", settings.font_dir or "./fonts")
             settings.bg_dir = _get_text("bg_dir", settings.bg_dir or "./backgrounds")
+            settings.eisenscript_prefix_front = sanitize_eisenscript(request.form.get("eisenscript_prefix_front", ""))
+            settings.eisenscript_suffix_front = sanitize_eisenscript(request.form.get("eisenscript_suffix_front", ""))
+            settings.eisenscript_prefix_back = sanitize_eisenscript(request.form.get("eisenscript_prefix_back", ""))
+            settings.eisenscript_suffix_back = sanitize_eisenscript(request.form.get("eisenscript_suffix_back", ""))
 
             # Retry commit if SQLite is temporarily locked
             max_attempts = 3
@@ -7164,6 +7564,149 @@ def admin_reset_banknotes():
         flash(f"Error resetting banknotes: {str(e)}", "danger")
 
     return redirect(url_for("admin_panel"))
+
+
+@app.route("/admin/backup-reset-all", methods=["POST"])
+@admin_required
+def admin_backup_reset_all():
+    """Backup blockchain/mempool + banknote assets/DB, then reset all core data."""
+    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    backup_root = os.path.abspath(
+        os.path.join(os.path.dirname(__file__), "backups", f"admin_reset_{timestamp}")
+    )
+    os.makedirs(backup_root, exist_ok=True)
+
+    results = {
+        "backup_root": backup_root,
+        "backups": {},
+        "warnings": [],
+        "errors": [],
+    }
+
+    def _backup_file(src: str, rel_dest: str):
+        if not src:
+            return
+        if os.path.exists(src):
+            dest = os.path.join(backup_root, rel_dest)
+            os.makedirs(os.path.dirname(dest), exist_ok=True)
+            shutil.copy2(src, dest)
+            results["backups"][rel_dest] = dest
+        else:
+            results["warnings"].append(f"Missing file: {src}")
+
+    def _backup_dir(src: str, rel_dest: str):
+        if not src:
+            return
+        if os.path.isdir(src):
+            dest = os.path.join(backup_root, rel_dest)
+            shutil.copytree(src, dest, dirs_exist_ok=True)
+            results["backups"][rel_dest] = dest
+        elif os.path.exists(src):
+            _backup_file(src, rel_dest)
+        else:
+            results["warnings"].append(f"Missing dir: {src}")
+
+    # Backup blockchain/mempool files
+    try:
+        daemon = blockchain_daemon_instance
+        if daemon:
+            _backup_file(
+                os.path.abspath(daemon.blockchain_file),
+                os.path.join("blockchain", os.path.basename(daemon.blockchain_file)),
+            )
+            _backup_file(
+                os.path.abspath(daemon.mempool_file),
+                os.path.join("mempool", os.path.basename(daemon.mempool_file)),
+            )
+    except Exception as e:
+        results["errors"].append(f"Blockchain/mempool backup failed: {e}")
+
+    # Backup legacy mempool.json if present
+    try:
+        legacy_mempool = os.path.abspath("mempool.json")
+        if os.path.exists(legacy_mempool):
+            _backup_file(legacy_mempool, os.path.join("mempool", "mempool.json"))
+    except Exception as e:
+        results["errors"].append(f"Legacy mempool backup failed: {e}")
+
+    # Backup DB
+    try:
+        db_uri = app.config.get("SQLALCHEMY_DATABASE_URI", "")
+        if db_uri.startswith("sqlite:///"):
+            db_path = os.path.abspath(db_uri.replace("sqlite:///", ""))
+            _backup_file(db_path, os.path.join("db", os.path.basename(db_path)))
+    except Exception as e:
+        results["errors"].append(f"DB backup failed: {e}")
+
+    # Backup banknote assets
+    try:
+        images_root_abs = os.path.abspath(IMAGES_ROOT)
+        _backup_dir(images_root_abs, os.path.join("banknotes", "images"))
+
+        settings = Settings.query.first()
+        bg_dir = settings.bg_dir if settings and settings.bg_dir else "./backgrounds"
+        _backup_dir(os.path.abspath(bg_dir), os.path.join("banknotes", "backgrounds"))
+    except Exception as e:
+        results["errors"].append(f"Banknote assets backup failed: {e}")
+
+    # Reset chain + mempool (to empty)
+    try:
+        if blockchain_daemon_instance:
+            blockchain_daemon_instance.blockchain = []
+            blockchain_daemon_instance.mempool = []
+            blockchain_daemon_instance.mined_serials = set()
+            blockchain_daemon_instance.save_blockchain()
+            blockchain_daemon_instance.save_mempool()
+    except Exception as e:
+        results["errors"].append(f"Blockchain/mempool reset failed: {e}")
+
+    # Clear legacy mempool.json
+    try:
+        legacy_mempool = os.path.abspath("mempool.json")
+        if os.path.exists(legacy_mempool):
+            with open(legacy_mempool, "w", encoding="utf-8") as f:
+                f.write("[]")
+    except Exception as e:
+        results["errors"].append(f"Legacy mempool clear failed: {e}")
+
+    # Reset banknotes/serials/tasks + balances
+    banknotes_deleted = serials_deleted = tasks_deleted = 0
+    try:
+        banknotes_deleted = Banknote.query.delete()
+        serials_deleted = SerialNumber.query.delete()
+        tasks_deleted = GenerationTask.query.delete()
+        User.query.update({User.balance: 0})
+        db.session.commit()
+    except Exception as e:
+        db.session.rollback()
+        results["errors"].append(f"DB reset failed: {e}")
+
+    # Clear banknote asset folders after backup
+    try:
+        images_root_abs = os.path.abspath(IMAGES_ROOT)
+        if os.path.isdir(images_root_abs):
+            shutil.rmtree(images_root_abs)
+        os.makedirs(images_root_abs, exist_ok=True)
+
+        settings = Settings.query.first()
+        bg_dir = settings.bg_dir if settings and settings.bg_dir else "./backgrounds"
+        bg_dir_abs = os.path.abspath(bg_dir)
+        if os.path.isdir(bg_dir_abs):
+            shutil.rmtree(bg_dir_abs)
+        os.makedirs(bg_dir_abs, exist_ok=True)
+    except Exception as e:
+        results["errors"].append(f"Asset reset failed: {e}")
+
+    message = (
+        f"Backup created at {backup_root}. Reset complete: "
+        f"{banknotes_deleted} banknotes, {serials_deleted} serials, {tasks_deleted} tasks cleared."
+    )
+    success = len(results["errors"]) == 0
+
+    return (
+        jsonify({"success": success, "message": message, "details": results}),
+        200 if success else 500,
+    )
 
 
 @app.route("/admin/delete-banknote/<int:banknote_id>", methods=["POST"])
@@ -7933,6 +8476,10 @@ def _webauthn_imports():
         from webauthn.helpers.structs import AttestationConveyancePreference
     except Exception:
         AttestationConveyancePreference = None
+    try:
+        from webauthn.helpers.structs import AuthenticatorAssertionResponse
+    except Exception:
+        AuthenticatorAssertionResponse = None
     return (
         generate_registration_options,
         verify_registration_response,
@@ -7948,7 +8495,79 @@ def _webauthn_imports():
         UserVerificationRequirement,
         AuthenticatorAttestationResponse,
         AttestationConveyancePreference,
+        AuthenticatorAssertionResponse,
     )
+
+
+def _webauthn_options_to_dict(options_to_json, options, bytes_to_base64url=None):
+    options_json = None
+    try:
+        options_json = options_to_json(options)
+    except Exception:
+        options_json = None
+
+    data = None
+    if isinstance(options_json, str):
+        data = json.loads(options_json)
+    elif isinstance(options_json, (bytes, bytearray)):
+        data = json.loads(options_json.decode("utf-8"))
+    elif isinstance(options_json, dict):
+        data = options_json
+    elif options_json is not None:
+        data = json.loads(str(options_json))
+
+    if data is None:
+        if hasattr(options, "dict"):
+            data = options.dict()
+        elif isinstance(options, dict):
+            data = dict(options)
+        elif hasattr(options, "__dict__"):
+            data = {k: v for k, v in vars(options).items() if not k.startswith("_")}
+        else:
+            data = {}
+
+    def normalize_key(key):
+        return {
+            "rp_id": "rpId",
+            "allow_credentials": "allowCredentials",
+            "exclude_credentials": "excludeCredentials",
+            "user_verification": "userVerification",
+        }.get(key, key)
+
+    normalized = {}
+    for key, value in data.items():
+        normalized[normalize_key(key)] = value
+
+    if bytes_to_base64url:
+        def convert_bytes(value):
+            try:
+                import dataclasses
+            except Exception:
+                dataclasses = None
+
+            if isinstance(value, (bytes, bytearray)):
+                return bytes_to_base64url(value)
+            if hasattr(value, "model_dump"):
+                return convert_bytes(value.model_dump())
+            if hasattr(value, "dict") and callable(getattr(value, "dict")):
+                return convert_bytes(value.dict())
+            if dataclasses and dataclasses.is_dataclass(value):
+                return convert_bytes(dataclasses.asdict(value))
+            if isinstance(value, dict):
+                return {k: convert_bytes(v) for k, v in value.items()}
+            if isinstance(value, list):
+                return [convert_bytes(v) for v in value]
+            if isinstance(value, tuple):
+                return [convert_bytes(v) for v in value]
+            if hasattr(value, "__dict__"):
+                return convert_bytes(
+                    {k: v for k, v in vars(value).items() if not k.startswith("_")}
+                )
+            return value
+
+        normalized = convert_bytes(normalized)
+
+    return normalized
 
 
 def _normalize_webauthn_credential(credential, base64url_to_bytes):
@@ -8089,7 +8708,9 @@ def webauthn_register_options():
             options.challenge
         )
 
-        return jsonify(json.loads(options_to_json(options)))
+        return jsonify(
+            _webauthn_options_to_dict(options_to_json, options, bytes_to_base64url)
+        )
     except Exception as e:
         print(f"❌ WebAuthn registration options error: {e}")
         return (
@@ -8268,6 +8889,7 @@ def webauthn_register_verify():
 def webauthn_login_options():
     try:
         data = request.get_json(silent=True) or {}
+        print(f"🔐 WebAuthn login options payload: {data}")
         username = (data.get("username") or "").strip()
         if not username:
             return jsonify({"error": "Username required"}), 400
@@ -8275,6 +8897,7 @@ def webauthn_login_options():
         user = User.query.filter_by(username=username).first()
         if not user:
             return jsonify({"error": "User not found"}), 404
+        print(f"🔐 WebAuthn login options user_id={user.id} username={user.username}")
 
         (
             _generate_registration_options,
@@ -8291,22 +8914,47 @@ def webauthn_login_options():
             _UserVerificationRequirement,
             _AuthenticatorAttestationResponse,
             _AttestationConveyancePreference,
+            _AuthenticatorAssertionResponse,
         ) = _webauthn_imports()
 
-        allow_credentials = [
-            PublicKeyCredentialDescriptor(
-                id=base64url_to_bytes(cred.credential_id),
-                type="public-key",
-            )
-            for cred in user.webauthn_credentials
-        ]
+        allow_credentials = []
+        for cred in user.webauthn_credentials or []:
+            credential_id = getattr(cred, "credential_id", None)
+            if not credential_id:
+                continue
+            try:
+                if isinstance(credential_id, (bytes, bytearray)):
+                    credential_bytes = bytes(credential_id)
+                else:
+                    credential_bytes = base64url_to_bytes(credential_id)
+                allow_credentials.append(
+                    PublicKeyCredentialDescriptor(
+                        id=credential_bytes,
+                        type="public-key",
+                    )
+                )
+            except Exception as decode_error:
+                print(
+                    f"⚠️ Skipping invalid WebAuthn credential id for user {user.id}: {decode_error}"
+                )
+
+        print(f"🔐 WebAuthn allow_credentials count: {len(allow_credentials)}")
 
         if not allow_credentials:
             return jsonify({"error": "No security keys registered"}), 400
 
-        options = generate_authentication_options(
-            rp_id=_get_webauthn_rp_id(),
-            allow_credentials=allow_credentials,
+        try:
+            options = generate_authentication_options(
+                rp_id=_get_webauthn_rp_id(),
+                allow_credentials=allow_credentials,
+            )
+        except TypeError:
+            options = generate_authentication_options(
+                allow_credentials=allow_credentials,
+            )
+
+        print(
+            f"🔐 WebAuthn options generated rp_id={_get_webauthn_rp_id()} origin={_get_webauthn_origin()}"
         )
 
         session["webauthn_authentication_challenge"] = bytes_to_base64url(
@@ -8314,9 +8962,13 @@ def webauthn_login_options():
         )
         session["webauthn_login_user_id"] = user.id
 
-        return jsonify(json.loads(options_to_json(options)))
+        return jsonify(
+            _webauthn_options_to_dict(options_to_json, options, bytes_to_base64url)
+        )
     except Exception as e:
-        print(f"❌ WebAuthn login options error: {e}")
+        print(f"❌ WebAuthn login options error: {type(e).__name__}: {e}")
+        import traceback
+        print(traceback.format_exc())
         return (
             jsonify(
                 {"error": "WebAuthn login options failed", "detail": str(e)}
@@ -8333,33 +8985,6 @@ def webauthn_login_verify():
         if not credential:
             return jsonify({"error": "Missing credential"}), 400
 
-        raw_id_str = credential.get("rawId") or credential.get("id")
-        raw_id = credential.get("rawId") or credential.get("raw_id")
-        credential = {
-            key: value
-            for key, value in credential.items()
-            if key not in {
-                "authenticatorAttachment",
-                "clientExtensionResults",
-                "rawId",
-            }
-        }
-        if raw_id and "raw_id" not in credential:
-            credential["raw_id"] = raw_id
-
-        credential = _normalize_webauthn_credential(
-            credential, base64url_to_bytes
-        )
-
-        user_id = session.get("webauthn_login_user_id")
-        challenge = session.get("webauthn_authentication_challenge")
-        if not user_id or not challenge:
-            return jsonify({"error": "Missing authentication challenge"}), 400
-
-        user = User.query.get(user_id)
-        if not user:
-            return jsonify({"error": "User not found"}), 404
-
         (
             _generate_registration_options,
             _verify_registration_response,
@@ -8375,7 +9000,39 @@ def webauthn_login_verify():
             _UserVerificationRequirement,
             _AuthenticatorAttestationResponse,
             _AttestationConveyancePreference,
+            AuthenticatorAssertionResponse,
         ) = _webauthn_imports()
+
+        raw_id_str = credential.get("rawId") or credential.get("id")
+        raw_id = credential.get("rawId") or credential.get("raw_id")
+        credential = {
+            key: value
+            for key, value in credential.items()
+            if key not in {
+                "authenticatorAttachment",
+                "clientExtensionResults",
+                "rawId",
+            }
+        }
+        if raw_id_str and "id" not in credential:
+            credential["id"] = raw_id_str
+        if raw_id and "raw_id" not in credential:
+            credential["raw_id"] = raw_id
+
+        credential = _normalize_webauthn_credential(
+            credential, base64url_to_bytes
+        )
+        if credential.get("raw_id") is not None:
+            credential["id"] = bytes_to_base64url(credential.get("raw_id"))
+
+        user_id = session.get("webauthn_login_user_id")
+        challenge = session.get("webauthn_authentication_challenge")
+        if not user_id or not challenge:
+            return jsonify({"error": "Missing authentication challenge"}), 400
+
+        user = User.query.get(user_id)
+        if not user:
+            return jsonify({"error": "User not found"}), 404
 
         if not raw_id_str:
             return jsonify({"error": "Invalid credential"}), 400
@@ -8386,9 +9043,30 @@ def webauthn_login_verify():
         if not stored:
             return jsonify({"error": "Security key not found"}), 400
 
-        parsed_auth = _parse_webauthn_credential(
-            AuthenticationCredential, credential
-        )
+        if AuthenticatorAssertionResponse is not None:
+            parsed_auth = AuthenticationCredential(
+                id=credential.get("id"),
+                raw_id=credential.get("raw_id"),
+                response=AuthenticatorAssertionResponse(
+                    authenticator_data=credential.get("response", {}).get(
+                        "authenticatorData"
+                    ),
+                    client_data_json=credential.get("response", {}).get(
+                        "clientDataJSON"
+                    ),
+                    signature=credential.get("response", {}).get(
+                        "signature"
+                    ),
+                    user_handle=credential.get("response", {}).get(
+                        "userHandle"
+                    ),
+                ),
+                type=credential.get("type", "public-key"),
+            )
+        else:
+            parsed_auth = _parse_webauthn_credential(
+                AuthenticationCredential, credential
+            )
 
         verification = verify_authentication_response(
             credential=parsed_auth,
@@ -9070,12 +9748,19 @@ def transaction_viewer(tx_hash):
         
         # Mining rewards are always valid if in blockchain
         if is_reward_tx and is_in_blockchain:
-            validation_score = max_score
+            confirmations = int(transaction.get("confirmations") or 0)
+            confirmation_ratio = min(1.0, confirmations / 6) if confirmations else 0.0
+            confirmation_points = round(confirmation_ratio, 2)
+            validation_score = min(max_score, 4 + confirmation_points)
             validation_layers = [
                 {"name": "Block Mined", "points": 2, "valid": True},
                 {"name": "Valid Reward Transaction", "points": 1, "valid": True},
                 {"name": "Correct Reward Structure", "points": 1, "valid": True},
-                {"name": "Confirmed in Blockchain", "points": 1, "valid": True}
+                {
+                    "name": "Confirmations (x/6)",
+                    "points": confirmation_points,
+                    "valid": confirmations >= 6,
+                },
             ]
         elif is_reward_tx:
             # Pending reward transactions
@@ -9170,6 +9855,21 @@ def transaction_viewer(tx_hash):
                 "confirmations": chain_depth,
             }
 
+        confirmations = int(transaction.get("confirmations") or 0)
+        transaction["confirmations"] = confirmations
+
+        # Determine status from confirmations (confirmed after 6)
+        current_status = (transaction.get("status") or "").lower()
+        if current_status in {"failed", "error"}:
+            transaction["status"] = current_status
+        else:
+            if confirmations >= 6:
+                transaction["status"] = "confirmed"
+            elif confirmations > 0 or transaction.get("block_height") is not None:
+                transaction["status"] = "pending"
+            else:
+                transaction["status"] = "pending"
+
         # Determine status icon and color
         status_info = {
             "pending": {"icon": "⏳", "color": "warning", "label": "Pending"},
@@ -9193,13 +9893,6 @@ def transaction_viewer(tx_hash):
         transaction["status_label"] = status_info.get(
             status_key, status_info["unknown"]
         )["label"]
-
-        # Set default status if not set
-        if "status" not in transaction or not transaction["status"]:
-            if transaction["block_height"]:
-                transaction["status"] = "confirmed"
-            else:
-                transaction["status"] = "pending"
 
         # Prepare template context
         # Calculate transaction age
@@ -9528,6 +10221,69 @@ def banknote_viewer(serial_id):
     back_note = banknote if (banknote.side or "").lower() == "back" else None
 
     match_note = find_matching_banknote(banknote, tx_data)
+    if not match_note:
+        try:
+            opposite_side = "back" if (banknote.side or "").lower() == "front" else "front"
+            time_center = banknote.created_at or datetime.utcnow()
+            window_start = time_center - timedelta(seconds=60)
+            window_end = time_center + timedelta(seconds=60)
+
+            match_note = (
+                Banknote.query.filter(
+                    Banknote.user_id == banknote.user_id,
+                    Banknote.denomination == banknote.denomination,
+                    Banknote.side == opposite_side,
+                    Banknote.created_at >= window_start,
+                    Banknote.created_at <= window_end,
+                )
+                .order_by(Banknote.created_at.desc())
+                .first()
+            )
+
+            if not match_note:
+                match_note = (
+                    Banknote.query.filter(
+                        Banknote.denomination == banknote.denomination,
+                        Banknote.side == opposite_side,
+                        Banknote.created_at >= window_start,
+                        Banknote.created_at <= window_end,
+                    )
+                    .order_by(Banknote.created_at.desc())
+                    .first()
+                )
+
+            if not match_note and isinstance(banknote.serial_number, str):
+                serial_parts = banknote.serial_number.split("-")
+                serial_ts = serial_parts[-1] if serial_parts else ""
+                if serial_ts.isdigit():
+                    ts_ms = int(serial_ts)
+                    ts_center = datetime.utcfromtimestamp(ts_ms / 1000.0)
+                    ts_start = ts_center - timedelta(seconds=60)
+                    ts_end = ts_center + timedelta(seconds=60)
+                    match_note = (
+                        Banknote.query.filter(
+                            Banknote.user_id == banknote.user_id,
+                            Banknote.side == opposite_side,
+                            Banknote.created_at >= ts_start,
+                            Banknote.created_at <= ts_end,
+                        )
+                        .order_by(Banknote.created_at.desc())
+                        .first()
+                    )
+
+                if not match_note and serial_ts:
+                    like_suffix = f"%-{serial_ts}"
+                    match_note = (
+                        Banknote.query.filter(
+                            Banknote.user_id == banknote.user_id,
+                            Banknote.side == opposite_side,
+                            Banknote.serial_number.like(like_suffix),
+                        )
+                        .order_by(Banknote.created_at.desc())
+                        .first()
+                    )
+        except Exception:
+            match_note = None
     if match_note:
         match_side = (match_note.side or "").lower()
         if match_side == "front" and not front_note:
@@ -9883,7 +10639,7 @@ def debug_user(username):
     return response
 
 
-@app.route("/<username>", methods=["GET", "POST"])
+@app.route("/member/<username>", methods=["GET", "POST"])
 def profile(username):
     user = User.query.filter_by(username=username).first()
     if not user:
@@ -9896,11 +10652,18 @@ def profile(username):
 
     if request.method == "POST":
         if current_user_obj and current_user_obj.id == user.id:
-            raw_bio = request.form.get("bio", "")
-            # Sanitize the bio before saving
-            user.bio = sanitize_bio(raw_bio)
-            db.session.commit()
-            flash("Bio updated successfully", "success")
+            updated = False
+            if "bio" in request.form:
+                raw_bio = request.form.get("bio", "")
+                user.bio = sanitize_bio(raw_bio)
+                updated = True
+            if "custom_eisenscript" in request.form:
+                raw_script = request.form.get("custom_eisenscript", "")
+                user.custom_eisenscript = sanitize_eisenscript(raw_script)
+                updated = True
+            if updated:
+                db.session.commit()
+                flash("Profile updated successfully", "success")
             return redirect(url_for("profile", username=username))
 
     generation_tasks = (
@@ -9976,6 +10739,22 @@ def profile(username):
         title=f"Profile - {username}",
         current_user=current_user_obj,
     )
+
+
+@app.route("/eisenscript-guide")
+def eisenscript_guide():
+    return render_template(
+        "eisenscript_guide.html",
+        title="EisenScript Guide",
+        current_user=get_current_user(),
+    )
+
+
+@app.route("/<username>", methods=["GET", "POST"])
+def profile_legacy(username):
+    if request.method == "POST":
+        return redirect(url_for("profile", username=username), code=307)
+    return redirect(url_for("profile", username=username), code=301)
 
 
 @app.route("/debug/validate-block-format", methods=["POST"])
@@ -10162,6 +10941,8 @@ with app.app_context():
     db.create_all()
     _ensure_serial_numbers_is_mined_column()
     _ensure_banknotes_verification_columns()
+    _ensure_users_custom_eisenscript_column()
+    _ensure_settings_eisenscript_columns()
     # Initialize blockchain manager
     start_generation_task_processor()
 

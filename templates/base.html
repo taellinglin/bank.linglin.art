@@ -6,6 +6,7 @@
     <title>{{ title if title else "灵国国库 [Ling Country Treasury]" }}</title>
     <link rel="shortcut icon" href="{{ url_for('static', filename='images/favicon.ico') }}">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <script src="https://unpkg.com/feather-icons"></script>
     <style>
         .navbar {
             display: flex;
@@ -14,12 +15,25 @@
             gap: 1rem;
             width: 100%;
             flex-wrap: wrap;
-            padding: 0.5rem 1rem;
+            padding: 16px;
             box-sizing: border-box;
         }
 
         .nav-brand {
             flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            line-height: 1.1;
+        }
+
+        .nav-brand .Chinese-text {
+            font-size: 24px;
+            font-weight: 600;
+        }
+
+        .nav-brand .daemon-text {
+            font-size: 12px;
+            color: var(--text-tertiary, #888888);
         }
 
 
@@ -188,6 +202,69 @@
                 padding: 0.75rem !important;
             }
         }
+
+        .icon,
+        .header-icon,
+        .btn-icon,
+        .tab-icon,
+        .note-icon,
+        .status-icon,
+        .status-icon-large,
+        .error-icon,
+        .step-icon,
+        .action-icon,
+        .stat-icon,
+        .avatar-initials,
+        .summary-icon,
+        .nav-icon,
+        .metadata-icon,
+        .address-icon,
+        .empty-icon,
+        .search-icon,
+        .copy-icon,
+        .detail-icon,
+        .view-icon,
+        .activity-icon,
+        .badge-icon,
+        .success-icon,
+        .no-image-icon,
+        .filter-btn-icon {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+        }
+
+        .icon svg,
+        .header-icon svg,
+        .btn-icon svg,
+        .tab-icon svg,
+        .note-icon svg,
+        .status-icon svg,
+        .status-icon-large svg,
+        .error-icon svg,
+        .step-icon svg,
+        .action-icon svg,
+        .stat-icon svg,
+        .avatar-initials svg,
+        .summary-icon svg,
+        .nav-icon svg,
+        .metadata-icon svg,
+        .address-icon svg,
+        .empty-icon svg,
+        .search-icon svg,
+        .copy-icon svg,
+        .detail-icon svg,
+        .view-icon svg,
+        .activity-icon svg,
+        .badge-icon svg,
+        .success-icon svg,
+        .no-image-icon svg,
+        .filter-btn-icon svg {
+            width: 1em;
+            height: 1em;
+            stroke-width: 2;
+        }
     </style>
 </head>
 <body>
@@ -204,6 +281,7 @@
                 <a href="{{ url_for('verify_serial') }}">Verify</a>
                 <a href="{{ url_for('mempool_viewer')}}">Mempool</a>
                 <a href="{{ url_for('blockchain_viewer')}}">Blockchain</a>
+                <a href="{{ url_for('my_wallet') }}">Wallet</a>
                 <a href="{{ url_for('gallery_index') }}">Members</a>
                 <a href="{{ url_for('profile', username=current_user.username) }}">Profile</a>
                 <a href="{{ url_for('account_settings') }}">Settings</a>
@@ -243,6 +321,13 @@
                         preloader.style.display = 'none';
                     }, 300);
                 });
+            }
+        })();
+
+        (function () {
+            if (window.feather) {
+                window.feather.replace();
+                window.replaceFeatherIcons = () => window.feather.replace();
             }
         })();
     </script>

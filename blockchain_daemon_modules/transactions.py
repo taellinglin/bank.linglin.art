@@ -27,6 +27,11 @@ def _is_valid_luna_address(address: str) -> bool:
 
 
 def _normalize_gtx_genesis_fields(tx: Dict) -> None:
+    try:
+        normalized_denom = float(tx.get("denomination", 0) or 0)
+    except Exception:
+        normalized_denom = 0.0
+
     issued_to = tx.get("issued_to") or ""
     if not _is_valid_luna_address(issued_to):
         fallback = f"LUN_{hashlib.sha256(str(tx.get('serial_number', '')).encode()).hexdigest()[:32]}"
@@ -38,7 +43,8 @@ def _normalize_gtx_genesis_fields(tx: Dict) -> None:
     tx.setdefault("nonce", 0)
     tx.setdefault("from", "genesis")
     tx.setdefault("to", tx.get("issued_to"))
-    tx.setdefault("amount", tx.get("denomination", 0))
+    tx["denomination"] = normalized_denom
+    tx["amount"] = normalized_denom
     tx.setdefault("fee", 0)
     tx.setdefault("version", "1.0")
     tx.setdefault("description", "GTX Genesis bill issuance")

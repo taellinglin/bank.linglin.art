@@ -82,7 +82,7 @@
                                 {% elif transaction.status == 'failed' %}
                                     Transaction failed to execute
                                 {% else %}
-                                    Status unknown
+                                    {{ transaction.confirmations }} block confirmations
                                 {% endif %}
                             </div>
                         </div>
@@ -140,6 +140,12 @@
                     <a href="{{ url_for('blockchain_viewer') }}" class="action-btn cyan small">
                         <span>View Blockchain</span>
                         <div class="btn-icon">🔗</div>
+                    </a>
+                    {% endif %}
+                    {% if is_reward_tx %}
+                    <a href="{{ url_for('transaction_viewer', tx_hash=transaction.hash) }}" class="action-btn purple small">
+                        <span>Open Reward Viewer</span>
+                        <div class="btn-icon">⛏️</div>
                     </a>
                     {% endif %}
                     <button class="action-btn secondary small" onclick="openTab('raw')">
@@ -432,10 +438,6 @@
                                 <span class="copy-icon">📋</span>
                                 Copy
                             </button>
-                            <a href="https://www.blockchain.com/explorer/addresses/lkc/{{ transaction.from_address }}" target="_blank" class="action-btn secondary small">
-                                <span>View Address</span>
-                                <div class="btn-icon">🔍</div>
-                            </a>
                         </div>
                     </div>
                     {% endif %}
@@ -452,10 +454,6 @@
                                 <span class="copy-icon">📋</span>
                                 Copy
                             </button>
-                            <a href="https://www.blockchain.com/explorer/addresses/btc/{{ transaction.to_address }}" target="_blank" class="action-btn secondary small">
-                                <span>View Address</span>
-                                <div class="btn-icon">🔍</div>
-                            </a>
                         </div>
                     </div>
                     {% endif %}

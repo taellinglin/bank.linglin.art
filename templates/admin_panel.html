@@ -431,6 +431,10 @@
                         <i class="fas fa-broom"></i>
                         Cleanup
                     </button>
+                    <button class="btn btn-sm btn-danger ml-2" onclick="backupAllAndReset()">
+                        <i class="fas fa-exclamation-triangle"></i>
+                        Backup All & Reset
+                    </button>
                 </div>
             </div>
 
@@ -697,12 +701,12 @@
                             <div class="form-row">
                                 <div class="col-md-6 mb-2">
                                     <label class="small">Portrait Prompt</label>
-                                    <textarea class="form-control form-control-sm" name="portrait_prompt" rows="2" 
+                                    <textarea class="form-control form-control-sm" name="portrait_prompt" rows="6" 
                                               placeholder="Describe the portrait generation prompt">{{ portrait_prompt_display if portrait_prompt_display else (settings.portrait_prompt if settings.portrait_prompt else 'A professional portrait of a person, high quality, detailed face, neutral background') }}</textarea>
                                 </div>
                                 <div class="col-md-6 mb-2">
                                     <label class="small">Background Prompt</label>
-                                    <textarea class="form-control form-control-sm" name="background_prompt" rows="2" 
+                                    <textarea class="form-control form-control-sm" name="background_prompt" rows="6" 
                                               placeholder="Describe the background generation prompt">{{ background_prompt_display if background_prompt_display else (settings.background_prompt if settings.background_prompt else 'A beautiful fantasy landscape with mountains and rivers, mystical atmosphere') }}</textarea>
                                 </div>
                             </div>
@@ -754,7 +758,41 @@
                                     <input type="text" class="form-control form-control-sm" name="bg_dir" 
                                            value="{{ settings.bg_dir if settings.bg_dir else './backgrounds' }}">
                                 </div>
+                                <br />
+                            <hr />
+                            <div class="form-row">
+                                <div class="col-md-6 mb-2">
+                                    <label class="small">EisenScript Prefix (Front)</label>
+                                    <textarea class="form-control form-control-sm" name="eisenscript_prefix_front" rows="8" placeholder="Front prefix EisenScript (backgrounds, base elements)">{{ settings.eisenscript_prefix_front or '' }}</textarea>
+                                    <div class="form-helper-text" style="font-size:0.98em; color:var(--text-secondary,#bfc9d9); margin-bottom:0.5em;">
+                                        <b>Available variables:</b> <code>$username</code>, <code>$user_id</code>, <code>$datetime</code>, <code>$date</code>, <code>$time</code>, <code>$serial</code>, <code>$denomination</code>, <code>$title</code>, <code>$subtitle</code>
+                                    </div>
+                                </div>
+                                <div class="col-md-6 mb-2">
+                                    <label class="small">EisenScript Suffix (Front)</label>
+                                    <textarea class="form-control form-control-sm" name="eisenscript_suffix_front" rows="8" placeholder="Front suffix EisenScript (QR/overlays on top)">{{ settings.eisenscript_suffix_front or '' }}</textarea>
+                                    <div class="form-helper-text" style="font-size:0.98em; color:var(--text-secondary,#bfc9d9); margin-bottom:0.5em;">
+                                        <b>Available variables:</b> <code>$username</code>, <code>$user_id</code>, <code>$datetime</code>, <code>$date</code>, <code>$time</code>, <code>$serial</code>, <code>$denomination</code>, <code>$title</code>, <code>$subtitle</code>
+                                    </div>
+                                </div>
                             </div>
+                            <div class="form-row">
+                                <div class="col-md-6 mb-2">
+                                    <label class="small">EisenScript Prefix (Back)</label>
+                                    <textarea class="form-control form-control-sm" name="eisenscript_prefix_back" rows="8" placeholder="Back prefix EisenScript (backgrounds, base elements)">{{ settings.eisenscript_prefix_back or '' }}</textarea>
+                                    <div class="form-helper-text" style="font-size:0.98em; color:var(--text-secondary,#bfc9d9); margin-bottom:0.5em;">
+                                        <b>Available variables:</b> <code>$username</code>, <code>$user_id</code>, <code>$datetime</code>, <code>$date</code>, <code>$time</code>, <code>$serial</code>, <code>$denomination</code>, <code>$title</code>, <code>$subtitle</code>
+                                    </div>
+                                </div>
+                                <div class="col-md-6 mb-2">
+                                    <label class="small">EisenScript Suffix (Back)</label>
+                                    <textarea class="form-control form-control-sm" name="eisenscript_suffix_back" rows="8" placeholder="Back suffix EisenScript (QR/overlays on top)">{{ settings.eisenscript_suffix_back or '' }}</textarea>
+                                    <div class="form-helper-text" style="font-size:0.98em; color:var(--text-secondary,#bfc9d9); margin-bottom:0.5em;">
+                                        <b>Available variables:</b> <code>$username</code>, <code>$user_id</code>, <code>$datetime</code>, <code>$date</code>, <code>$time</code>, <code>$serial</code>, <code>$denomination</code>, <code>$title</code>, <code>$subtitle</code>
+                                    </div>
+                                </div>
+                            </div>
+                            <hr />
                         </div>
                     </div>
                 </form>
@@ -1886,6 +1924,29 @@ function forceCleanup() {
         })
         .catch(error => {
             showNotification('Error during cleanup: ' + error.message, 'error');
+        });
+    }
+}
+
+function backupAllAndReset() {
+    const warning = 'This will back up and then reset ALL core data: blockchain, mempool, banknotes (images/backgrounds), serials, user balances, and tasks. Continue?';
+    if (confirm(warning)) {
+        showNotification('Backing up and resetting... This may take a moment.', 'warning');
+        fetch('/admin/backup-reset-all', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            }
+        })
+        .then(response => response.json())
+        .then(data => {
+            showNotification(data.message || 'Backup and reset completed', data.success ? 'success' : 'error');
+            if (data.success) {
+                setTimeout(() => location.reload(), 2000);
+            }
+        })
+        .catch(error => {
+            showNotification('Error during backup/reset: ' + error.message, 'error');
         });
     }
 }

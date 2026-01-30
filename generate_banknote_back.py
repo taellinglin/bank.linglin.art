@@ -1,3 +1,58 @@
+COLORS = ["#FF0000", "#FF7F00", "#FFFF00", "#00FF00", "#0000FF", "#4B0082", "#8B00FF"]
+
+def denomination_to_color(denom_exponent: int) -> str:
+    """
+    Return a visually distinct color for each denomination exponent (0-based).
+    Uses a fixed color palette. If denom_exponent is out of range, clamps to valid range.
+    Args:
+        denom_exponent (int): The exponent/index of the denomination (e.g. 0 for 1, 1 for 10, ...)
+    Returns:
+        str: Hex color string (e.g. '#FF0000')
+    """
+    idx = max(0, min(denom_exponent, len(COLORS) - 1))
+    return COLORS[idx]
+
+import string
+import os
+from datetime import datetime
+# EisenScript template variable replacement utility
+def replace_eisenscript_variables(script: str, context: dict) -> str:
+    """
+    Replace variables like $denomination in EisenScript templates.
+    Context must include 'denomination'.
+    """
+    if not script:
+        return script
+    # Jinja2でテンプレート展開
+    try:
+        from jinja2 import Template
+        print("[DEBUG] Jinja2 context before render:", context)
+        template = Template(script)
+        rendered = template.render(**context)
+        # rendered内に未展開の{{denomination}}が残っていれば警告
+        if "{{denomination}}" in rendered:
+            print("[ERROR] Jinja2 failed to substitute {{denomination}}! Context:", context)
+        return rendered
+    except Exception as e:
+        print(f"[ERROR] Jinja2 template render failed: {e}")
+        return script
+
+# --- EisenScript overlay loader for back side ---
+def load_eisen_overlay(path: str, context: dict) -> str:
+    if not os.path.exists(path):
+        return ""
+    with open(path, "r", encoding="utf-8") as f:
+        script = f.read()
+    return replace_eisenscript_variables(script, context)
+
+import string
+import os
+import os
+import sys
+# --- Patch: Prefer .venv site-packages ---
+venv_site = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.venv', 'Lib', 'site-packages')
+if os.path.exists(venv_site):
+    sys.path.insert(0, venv_site)
 #!/usr/bin/env python3
 """
 banknote_backside_batch_color.py
@@ -19,7 +74,6 @@ import numpy as np
 import random
 import hashlib
 import secrets
-from datetime import datetime
 import time
 import re
 import io
@@ -48,42 +102,7 @@ MM_TO_PX = 300.0 / 25.4
 def mm_to_px(mm: float, dpi: float = 300.0) -> int:
     return int(round(mm * dpi / 25.4))
 
-# ----------------------
-# Spirograph / hypotrochoid
-# ----------------------
-def spiro_points(R: float, r: float, d: float, steps: int = 2000) -> List[Tuple[float, float]]:
-    pts = []
-    g = math.gcd(int(round(R)), int(round(r))) if (R>0 and r>0) else 1
-    lcm_period = r // g if g != 0 else 1
-    total_t = 2 * math.pi * lcm_period
-    for i in range(steps):
-        t = total_t * i / steps
-        x = (R - r) * math.cos(t) + d * math.cos(((R - r) / r) * t)
-        y = (R - r) * math.sin(t) - d * math.sin(((R - r) / r) * t)
-        pts.append((x, y))
-    return pts
 
-def pts_to_path(pts: List[Tuple[float, float]], translate=(0,0), scale=1.0, smooth=True) -> str:
-    if not pts:
-        return ""
-    tx, ty = translate
-    def p(i):
-        x, y = pts[i]
-        return (x*scale + tx, y*scale + ty)
-    d = f"M{p(0)[0]:.3f},{p(0)[1]:.3f}"
-    if smooth and len(pts) > 2:
-        for i in range(1, len(pts)-1):
-            xm, ym = p(i)
-            xn, yn = p(i+1)
-            midx, midy = (xm + xn)/2, (ym + yn)/2
-            d += f" Q{xm:.3f},{ym:.3f} {midx:.3f},{midy:.3f}"
-        xl, yl = p(len(pts)-1)
-        d += f" T{xl:.3f},{yl:.3f}"
-    else:
-        for i in range(1, len(pts)):
-            x, y = p(i)
-            d += f" L{x:.3f},{y:.3f}"
-    return d
 
 # ----------------------
 # Fonts
@@ -103,486 +122,6 @@ def embed_font(dwg, font_path: str, font_name: str):
     """
     dwg.defs.add(dwg.style(style))
 
-# ----------------------
-# Artwork elements
-# ----------------------
-def add_corner_denoms(dwg, W: int, H: int, denom_str: str):
-    """
-    Draws denomination numbers in all four corners with white outline 0.05cm behind
-    fill and fill opacity 0.9. Bottom ones remain aligned as before.
-    """
-
-    # Format denomination with commas
-    try:
-        denom_formatted = f"{int(denom_str):,}"
-    except ValueError:
-        denom_formatted = denom_str
-
-    first_digit = denom_formatted[0]
-    rest_digits = denom_formatted[1:]
-
-    # Sizes
-    BIG_FONT = 128
-    SMALL_FONT = 72
-
-    # Padding
-    PADDING = int(0.5 * 30 * 3.78)
-
-    # Stroke thickness in pixels (0.05 cm at 300 DPI)
-    STROKE_WIDTH = 0.05 * 300 / 2.54
-
-    # Colors for corners
-    COLORS = ["red", "green", "blue", "black"]
-
-    # Helper to add text with stroke behind
-    def add_text_with_outline(x, y, text, font_size, color, anchor, baseline):
-        # Stroke first
-        dwg.add(dwg.text(
-            text,
-            insert=(x, y),
-            font_size=font_size,
-            font_family="Daemon Full Working",
-            fill="none",
-            stroke="#FFF",
-            stroke_width=STROKE_WIDTH,
-            text_anchor=anchor,
-            alignment_baseline=baseline,
-            opacity=0.9
-        ))
-        # Fill on top
-        dwg.add(dwg.text(
-            text,
-            insert=(x, y),
-            font_size=font_size,
-            font_family="Daemon Full Working",
-            fill=color,
-            stroke="none",
-            text_anchor=anchor,
-            alignment_baseline=baseline,
-            opacity=0.9
-        ))
-
-    # --- Top-left ---
-    add_text_with_outline(PADDING, PADDING, first_digit, BIG_FONT, COLORS[0], "start", "hanging")
-    offset_x = PADDING + BIG_FONT * 0.6
-    add_text_with_outline(offset_x, PADDING, rest_digits, SMALL_FONT, COLORS[0], "start", "hanging")
-
-    # --- Top-right ---
-    add_text_with_outline(W - PADDING, PADDING, rest_digits, SMALL_FONT, COLORS[1], "end", "hanging")
-    offset_x = W - PADDING - SMALL_FONT * len(rest_digits) * 0.55
-    add_text_with_outline(offset_x, PADDING, first_digit, BIG_FONT, COLORS[1], "end", "hanging")
-
-    # --- Bottom-left ---
-    add_text_with_outline(PADDING, H - PADDING, first_digit, BIG_FONT, COLORS[2], "start", "baseline")
-    offset_x = PADDING + BIG_FONT * 0.6
-    add_text_with_outline(offset_x, H - PADDING, rest_digits, SMALL_FONT, COLORS[2], "start", "baseline")
-
-    # --- Bottom-right ---
-    add_text_with_outline(W - PADDING, H - PADDING, rest_digits, SMALL_FONT, COLORS[3], "end", "baseline")
-    offset_x = W - PADDING - SMALL_FONT * len(rest_digits) * 0.55
-    add_text_with_outline(offset_x, H - PADDING, first_digit, BIG_FONT, COLORS[3], "end", "baseline")
-
-def hexagon(cx, cy, radius):
-    """Return points of a hexagon centered at (cx, cy)"""
-    return [(cx + radius * math.cos(math.radians(angle)),
-             cy + radius * math.sin(math.radians(angle)))
-            for angle in range(0, 360, 60)]
-
-def tesselated_hex(dwg, x, y, size, rows=16, cols=16, stroke_color="#000000"):
-    hex_r = float(size) / (cols * 2)   # size is numeric
-    dx = 1.5 * hex_r
-    dy = (3 ** 0.5) * hex_r / 2
-
-    def hexagon(cx, cy, r):
-        return [(cx + r * math.cos(math.pi/3 * i),
-                 cy + r * math.sin(math.pi/3 * i)) for i in range(6)]
-
-    for row in range(rows):
-        for col in range(cols):
-            cx = x + col * dx * 2 + (row % 2) * dx
-            cy = y + row * dy * 2
-            dwg.add(dwg.polygon(points=hexagon(cx, cy, hex_r),
-                                fill="none", stroke=stroke_color, stroke_width=1))
-
-def tesselated_triangles(dwg, x, y, size, rows=8, cols=8, stroke_color="#000000"):
-    """Draw a tessellation of equilateral triangles starting from (x,y)."""
-    tri_h = (math.sqrt(3) / 2) * size  # height of an equilateral triangle
-
-    for row in range(rows):
-        for col in range(cols):
-            # Alternate upright vs inverted triangles
-            if (row + col) % 2 == 0:
-                points = [
-                    (x + col*size/2, y + row*tri_h),
-                    (x + col*size/2 + size/2, y + row*tri_h + tri_h),
-                    (x + col*size/2 - size/2, y + row*tri_h + tri_h),
-                ]
-            else:
-                points = [
-                    (x + col*size/2, y + row*tri_h + tri_h),
-                    (x + col*size/2 + size/2, y + row*tri_h),
-                    (x + col*size/2 - size/2, y + row*tri_h),
-                ]
-            dwg.add(dwg.polygon(points=points,
-                                fill="none",
-                                stroke=stroke_color,
-                                stroke_width=1))
-
-def add_functional_corner_decorations(dwg, W, H, denom, timestamp, serial_id,
-                                      size=100, padding=75, stroke_width=1):
-    # Main + highlight colors per corner
-    COLORS = [
-        ("#D80027", "#FF5555", "#FF69B4"),  # top-left (red + pink)
-        ("#009E60", "#55FFAA", "#FFD700"),  # top-right (green + yellow)
-        ("#0052B4", "#55AAFF", "#FF69B4"),  # bottom-left (blue + pink)
-        ("#222222", "#AAAAAA", "#FFD700"),  # bottom-right (black/gray + yellow)
-    ]
-
-    def micro_text_pattern(x, y, text, rows=12, cols=12, spacing=10,
-                           c_main="#000", c_highlight="#FF69B4"):
-        """Repeating microtext grid with alternating highlight color."""
-        for row in range(rows):
-            for col in range(cols):
-                color = c_main if (row+col) % 3 else c_highlight
-                dwg.add(dwg.text(text,
-                                 insert=(x + col*spacing, y + row*spacing),
-                                 font_size=6, font_family="Daemon Full Working",
-                                 fill=color, opacity=0.25))
-
-    def tesselated_triangles(dwg, x, y, s, rows=8, cols=8,
-                             c_main="#000", c_highlight="#FFD700"):
-        """Draw tessellated upright + inverted triangles with mixed colors."""
-        h = s * (3 ** 0.5) / 2
-        for row in range(rows):
-            for col in range(cols):
-                x0 = x + col * s
-                y0 = y + row * h
-                if (row + col) % 2 == 0:
-                    pts = [(x0, y0 + h), (x0 + s/2, y0), (x0 + s, y0 + h)]
-                else:
-                    pts = [(x0, y0), (x0 + s, y0), (x0 + s/2, y0 + h)]
-                stroke_color = c_main if (row+col) % 4 else c_highlight
-                dwg.add(dwg.polygon(points=pts, fill="none",
-                                    stroke=stroke_color,
-                                    stroke_width=0.6, opacity=0.7))
-
-    def top_left(x, y, denom):
-        main, secondary, highlight = COLORS[0]
-        for i in range(3):
-            offset = i*size*0.18
-            stroke_c = main if i % 2 == 0 else highlight
-            dwg.add(dwg.rect(insert=(x+offset, y+offset),
-                             size=(size-2*offset, size-2*offset),
-                             rx=8, ry=8, fill="none",
-                             stroke=stroke_c, stroke_width=stroke_width))
-        dwg.add(dwg.text(denom, insert=(x+size/2, y+size/2),
-                         font_size=22, text_anchor="middle",
-                         alignment_baseline="middle",
-                         font_family="Daemon Full Working", fill=secondary))
-        micro_text_pattern(x+12, y+12, denom, c_main=secondary, c_highlight=highlight)
-
-    def top_right(x, y, denom):
-        main, secondary, highlight = COLORS[1]
-        tesselated_triangles(dwg, x - size, y, size/6, rows=12, cols=12,
-                             c_main=main, c_highlight=highlight)
-        dwg.add(dwg.text(denom, insert=(x - size/2, y + size/2),
-                         font_size=20, text_anchor="middle",
-                         alignment_baseline="middle",
-                         font_family="Daemon Full Working", fill=random.choice([secondary, highlight])))
-
-    def bottom_left(x, y, denom):
-        main, secondary, highlight = COLORS[2]
-        tesselated_triangles(dwg, x, y - size, size/6, rows=12, cols=12,
-                             c_main=main, c_highlight=highlight)
-        dwg.add(dwg.text(denom, insert=(x + size/2, y - size/2),
-                         font_size=20, text_anchor="middle",
-                         alignment_baseline="middle",
-                         font_family="Daemon Full Working", fill=random.choice([secondary, highlight])))
-
-    def bottom_right(x, y, denom, timestamp):
-        main, secondary, highlight = COLORS[3]
-        for i in range(4):
-            offset = i*size*0.18
-            stroke_c = main if i % 2 else highlight
-            dwg.add(dwg.rect(insert=(x - size + offset, y - size + offset),
-                             size=(size - 2*offset, size - 2*offset),
-                             rx=10, ry=10, fill="none",
-                             stroke=stroke_c, stroke_width=stroke_width))
-        dwg.add(dwg.text(denom, insert=(x - size/2, y - size/2),
-                         font_size=22, text_anchor="middle",
-                         alignment_baseline="middle",
-                         font_family="Daemon Full Working", fill=random.choice([secondary, highlight])))
-        micro_text_pattern(x - size + 5, y - size + 5, f"{denom} {timestamp}",
-                           c_main=secondary, c_highlight=highlight)
-
-    # Apply all four corners
-    top_left(padding, padding, denom)
-    top_right(W - padding, padding, denom)
-    bottom_left(padding, H - padding, denom)
-    bottom_right(W - padding, H - padding, denom, timestamp)
-
-import math
-def add_decorative_border(dwg, W:int, H:int, border_info:dict, denom_value: int, timestamp_ms:int):
-    """
-    Adds multi-band border around diamond area.
-    Each band encodes parts of the timestamp (year, month, etc.)
-    and the pattern is influenced by denom_value.
-    
-    Shapes used:
-        0 → filled diamond
-        1 → empty diamond
-        2 → filled square
-        3 → empty square
-        4 → X / stitch
-    """
-
-    import datetime
-    if isinstance(timestamp_ms, dict):
-        timestamp_ms = timestamp_ms.get("timestamp_ms", 0)
-
-    # Convert timestamp_ms to datetime
-    ts = datetime.datetime.fromtimestamp(timestamp_ms / 1000.0)
-    bands = [
-        ("year", ts.year % 100, 0.25 + 0.025),           # ¼ cm (largest)
-        ("month", ts.month, 0.1875 + 0.025),             # 3/16 cm
-        ("day", ts.day, 0.125 + 0.025),                  # ⅛ cm
-        ("hour", ts.hour, 0.1875 + 0.025),               # 3/16 cm (repeats at hour level)
-        ("minute", ts.minute, 0.09375 + 0.025),          # 3/32 cm (half of hour)
-        ("second", ts.second, 0.046875 + 0.025),         # 3/64 cm (half of minute)
-        ("microsecond", ts.microsecond // 1000, 0.0234375 + 0.025)  # 3/128 cm (half of second)
-    ]
-
-    # Get diamond area from border_info
-    start_x = float(border_info.get("diamond_start_x", 0))
-    start_y = float(border_info.get("diamond_start_y", 0))
-    width   = float(border_info.get("diamond_width", W))
-    height  = float(border_info.get("diamond_height", H))
-
-    # Convert cm to pixels (assuming 96 dpi)
-    cm_to_px = lambda cm: float(cm * 96.0 / 2.54)
-
-    pad_base = cm_to_px(0.25)  # ¼ cm padding
-    inset = -0.75
-    denom_value = denom_value or 0  # default if None
-    # Add opacity to both fill and stroke
-    fill_opacity = 1
-    stroke_opacity = 1
-    # --- shape drawing helpers
-    def draw_shape(g, x, y, size, kind, band_index):
-        half = size / 2.0
-    
-        # Alternate by band - even bands: dark fill/light stroke, odd bands: light fill/dark stroke
-        fill_black = band_index % 2 == 0
-        
-        if fill_black:
-            fill_color = "#000"  # Dark gray
-            stroke_color = "#FFFFFF"  # Light gray
-            stroke_opacity = 1/(band_index+0.01)
-            fill_opacity = 1
-        else:
-            fill_color = "#FFF"  # Light gray
-            stroke_color = "#000000"  # Dark gray
-            fill_opacity = band_index/1
-            stroke_opacity = 1
-        
-        # 50% transparency
-        stroke_width = max(0.5, size * 0.025)
-        
-        if kind == 0:  # filled diamond
-            pts = [(x+half, y), (x+size, y+half), (x+half, y+size), (x, y+half)]
-            g.add(dwg.polygon(points=pts, fill=fill_color, fill_opacity=fill_opacity, 
-                            stroke=stroke_color, stroke_opacity=stroke_opacity, stroke_width=stroke_width))
-        elif kind == 1:  # empty diamond
-            pts = [(x+half, y), (x+size, y+half), (x+half, y+size), (x, y+half)]
-            g.add(dwg.polygon(points=pts, fill="none", 
-                            stroke=stroke_color, stroke_opacity=stroke_opacity, stroke_width=stroke_width))
-        elif kind == 2:  # filled square
-            g.add(dwg.rect(insert=(x, y), size=(size, size), 
-                        fill=fill_color, fill_opacity=fill_opacity,
-                        stroke=stroke_color, stroke_opacity=stroke_opacity, stroke_width=stroke_width))
-        elif kind == 3:  # empty square
-            g.add(dwg.rect(insert=(x, y), size=(size, size), fill="none",
-                        stroke=stroke_color, stroke_opacity=stroke_opacity, stroke_width=stroke_width))
-        elif kind == 4:  # X / stitch
-            g.add(dwg.line(start=(x, y), end=(x+size, y+size), 
-                        stroke=stroke_color, stroke_opacity=stroke_opacity, stroke_width=stroke_width))
-            g.add(dwg.line(start=(x+size, y), end=(x, y+size), 
-                        stroke=stroke_color, stroke_opacity=stroke_opacity, stroke_width=stroke_width))
-
-    for band_index, (band_name, value, band_cm) in enumerate(bands):
-        band_size = cm_to_px(band_cm)
-        g = dwg.g()
-
-        # number of tiles along edges
-        num_cols = int((width - 2*pad_base - 2*inset) // band_size)
-        num_rows = int((height - 2*pad_base - 2*inset) // band_size)
-
-        offset = value + (denom_to_int(denom_value) % 97)
-
-        # --- top border
-        y = start_y + pad_base + inset
-        for c in range(num_cols):
-            x = start_x + pad_base + inset + c * band_size
-            kind = (c + offset) % 5
-            draw_shape(g, x, y, band_size, kind, band_index)  # Added band_index
-
-        # --- bottom border
-        y = start_y + height - pad_base - inset - band_size
-        for c in range(num_cols):
-            x = start_x + pad_base + inset + c * band_size
-            kind = (c + offset + 1) % 5
-            draw_shape(g, x, y, band_size, kind, band_index)  # Added band_index
-
-        # --- left border
-        x = start_x + pad_base + inset
-        for r in range(num_rows):
-            y = start_y + pad_base + inset + r * band_size
-            kind = (r + offset + 2) % 5
-            draw_shape(g, x, y, band_size, kind, band_index)  # Added band_index
-
-        # --- right border
-        x = start_x + width - pad_base - inset - band_size
-        for r in range(num_rows):
-            y = start_y + pad_base + inset + r * band_size
-            kind = (r + offset + 3) % 5
-            draw_shape(g, x, y, band_size, kind, band_index)  # Added band_index
-
-        dwg.add(g)
-        inset += band_size
-
-import math
-import random
-import svgwrite
-
-def add_hightech_hologram_seals(dwg, W:int, H:int, radius:int=64, stroke_w:float=1.4):
-    """
-    Adds high-tech Ghost-in-the-Shell style holographic seals
-    instead of floral spirograph motifs.
-    """
-    def add_hologram_circle(group, cx, cy, base_r, layers=5):
-        """Draw concentric circuit-like arcs and ticks"""
-        for i in range(layers):
-            r = base_r * (0.5 + i*0.15)
-            # alternating colors
-            color = ["#00FFE0", "#FF0080", "#00FF88", "#D80027", "#0052B4"][i % 5]
-            opacity = 0.55 if i % 2 == 0 else 0.8
-
-            # broken circular arc
-            arc_path = []
-            steps = 36
-            for k in range(steps):
-                ang1 = (k * 360/steps) * math.pi/180
-                ang2 = ((k+0.6) * 360/steps) * math.pi/180
-                x1, y1 = cx + r*math.cos(ang1), cy + r*math.sin(ang1)
-                x2, y2 = cx + r*math.cos(ang2), cy + r*math.sin(ang2)
-                arc_path.append(f"M{x1:.2f},{y1:.2f} L{x2:.2f},{y2:.2f}")
-
-            group.add(dwg.path(d=" ".join(arc_path),
-                               stroke=color, fill="none",
-                               stroke_width=stroke_w*0.8, opacity=opacity))
-
-            # radial ticks (like a microchip encoder ring)
-            for j in range(0, 360, 15):
-                a = math.radians(j)
-                x1, y1 = cx + (r-3)*math.cos(a), cy + (r-3)*math.sin(a)
-                x2, y2 = cx + (r+3)*math.cos(a), cy + (r+3)*math.sin(a)
-                group.add(dwg.line((x1,y1),(x2,y2),
-                                   stroke=color, stroke_width=0.7, opacity=0.6))
-
-    # left hologram seal
-    lx, ly = int(W*0.18), int(H*0.5)
-    g_left = dwg.g(opacity=0.95)
-    add_hologram_circle(g_left, lx, ly, radius, layers=6)
-    g_left.add(dwg.text("天圆", insert=(lx, ly+4),
-                        font_size=int(radius*0.22), text_anchor="middle",
-                        font_family="FengGuangMingRui",
-                        fill="#00FFE0", opacity=1))
-    dwg.add(g_left)
-
-    # mirrored hologram seal
-    cx = W/2
-    mirrored_rx = cx + (cx - lx)
-    g_mirror = dwg.g(transform=f"translate({cx},0) scale(-1,1) translate({-cx},0)")
-    add_hologram_circle(g_mirror, lx, ly, radius, layers=6)
-    dwg.add(g_mirror)
-
-    # mirrored text, rotated upside down
-    g_mirror_text = dwg.g(transform=f"rotate(180 {mirrored_rx} {ly})")
-    g_mirror_text.add(dwg.text("地方", insert=(mirrored_rx, ly+4),
-                               font_size=int(radius*0.22), text_anchor="middle",
-                               font_family="FengGuangMingRui",
-                               fill="#FF0080", opacity=1))
-    dwg.add(g_mirror_text)
-
-
-def add_central_spiro_and_background(dwg, W:int, H:int, denom_exponent:int):
-    cx, cy = W/2, H/2
-    base_R = min(W,H) * (0.35 + 0.02 * denom_exponent)
-    base_r = max(4, int(base_R * (0.08 + 0.02 * (denom_exponent % 5))))
-    base_d = int(base_r * (0.7 + 0.25 * ((denom_exponent+1) % 4)))
-
-    g_bg = dwg.g(opacity=0.8)
-    step = int(min(W,H) * (0.015 + 0.002 * denom_exponent))
-    diamond_size = max(2, step//2)
-    offset = (denom_exponent * 7) % step
-
-    for x in range(0, W//2, step):
-        for y in range(0, H//2, step):
-            px = x + offset
-            py = y + offset
-            pts = [
-                (px + diamond_size/2, py),
-                (px + diamond_size, py + diamond_size/2),
-                (px + diamond_size/2, py + diamond_size),
-                (px, py + diamond_size/2),
-            ]
-            g_bg.add(dwg.polygon(points=pts, fill="#0052B4"))
-
-    dwg.add(g_bg)
-    dwg.add(dwg.g(transform=f"translate({cx},0) scale(-1,1) translate({-cx},0)").add(g_bg))
-    dwg.add(dwg.g(transform=f"translate(0,{cy}) scale(1,-1) translate(0,{-cy})").add(g_bg))
-    dwg.add(dwg.g(transform=f"translate({cx},{cy}) scale(-1,-1) translate({-cx},{-cy})").add(g_bg))
-
-    bands = [
-        {"R_mult": 1.0, "r_mult": 1.0, "d_mult": 1.0},
-        {"R_mult": 0.7, "r_mult": 0.8, "d_mult": 0.9},
-        {"R_mult": 0.45, "r_mult": 0.6, "d_mult": 0.7},
-    ]
-
-    palette_options = [
-        ["#D80027", "#FF7F50", "#FFA500"],
-        ["#0052B4", "#00BFFF", "#87CEFA"],
-        ["#009E60", "#00FF7F", "#32CD32"],
-        ["#800080", "#DA70D6", "#FF00FF"],
-        ["#FF0000", "#00FF00", "#0000FF"],
-    ]
-    colors = palette_options[denom_exponent % len(palette_options)]
-
-    for band_index, band in enumerate(bands):
-        R = base_R * band["R_mult"]
-        r = max(3, int(base_r * band["r_mult"]))
-        d = int(base_d * band["d_mult"])
-        steps = 1500 + band_index*300
-        theta_offset = math.radians(denom_exponent * 12 + band_index * 7)
-
-        pts = []
-        total_t = 2*math.pi
-        for i in range(steps):
-            t = total_t * i / steps
-            x = (R - r) * math.cos(t + theta_offset) + d * math.cos(((R - r)/r) * t)
-            y = (R - r) * math.sin(t + theta_offset) - d * math.sin(((R - r)/r) * t)
-            pts.append((x, y))
-
-        pd = pts_to_path(pts, translate=(cx,cy), scale=1.0, smooth=True)
-        color = colors[band_index % len(colors)]
-        dwg.add(dwg.path(d=pd, stroke=color, stroke_width=0.6, fill="none", opacity=0.55))
-
-        mirror_x = dwg.g(transform=f"translate({cx},0) scale(-1,1) translate({-cx},0)")
-        mirror_x.add(dwg.path(d=pd, stroke=color, stroke_width=0.5, fill="none", opacity=0.5))
-        dwg.add(mirror_x)
-        mirror_y = dwg.g(transform=f"translate(0,{cy}) scale(1,-1) translate(0,{-cy})")
-        mirror_y.add(dwg.path(d=pd, stroke=color, stroke_width=0.5, fill="none", opacity=0.5))
-        dwg.add(mirror_y)
 
 def hsl_to_rgb_string(h, s, l):
     h = h / 360.0
@@ -1106,6 +645,16 @@ def add_security_background(
     base_triangle_size: int = 16,
     hierarchy_levels: int = 2
 ):
+
+    # denominationがstrやテンプレート変数の場合は必ずint化、失敗時は1
+    import re
+    if isinstance(denomination, str):
+        m = re.search(r'(\d+)', denomination)
+        if m:
+            denomination = int(m.group(1))
+        else:
+            denomination = 1
+
     seed_hash = hashlib.sha3_512(serial_id.encode("utf-8")).digest() if serial_id else seed
     seed_len = len(seed_hash)
     seed_i = 0
@@ -1515,7 +1064,7 @@ def add_rainbow_microseal(
 
     # Default symbol = datetime stamp
     if symbol is None:
-        symbol = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
+        symbol = datetime.now().strftime("%Y%m%d%H%M%S")
 
     # ROYGBIV palette
     colors = ["#FF0000", "#FF7F00", "#FFFF00", "#00FF00", "#0000FF", "#4B0082", "#8B00FF"]
@@ -1906,121 +1455,157 @@ def add_chinese_microprint(dwg: svgwrite.Drawing, cx:int, cy:int, radius:int, te
                         text_anchor="middle",
                         alignment_baseline="middle",
                         transform=f"rotate({rotation},{x},{y})"))
-def generate_backside_svg(outfile: str, denomination: int, title_text: str, phrase_text: str, size_px: Tuple[int,int], 
-                         serial_id: str = None, timestamp_ms: str = None, seed_text: str = "",
-                         progress_callback=None):
+def generate_backside_svg(
+    outfile: str,
+    denomination: int,
+    title_text: str,
+    phrase_text: str,
+    size_px: Tuple[int, int],
+    serial_id: str = None,
+    timestamp_ms: str = None,
+    seed_text: str = "",
+    progress_callback=None
+):
+    # --- Add serials and banknote to DB ---
+    # DB・mempool登録処理はgenerate.py等で一元管理するため、ここでは何もしない
+    import re
     W, H = size_px
-    denom_exp = int(math.log10(denom_to_int(denomination))) if denom_to_int(denomination) > 0 else 0
+    # Windows用ファイル名サニタイズ
+    if outfile:
+        outdir, outbase = os.path.split(outfile)
+        safe_base = re.sub(r'[<>:"/\\|?*]', '_', outbase)
+        outfile = os.path.join(outdir, safe_base)
+    # denominationがテンプレート変数の場合は必ず1にフォールバック
+    import re
+    denom_val = denomination
+    if isinstance(denomination, str):
+        m = re.search(r'(\d+)', denomination)
+        if m:
+            denom_val = int(m.group(1))
+        else:
+            denom_val = 1  # テンプレート変数や空文字列の場合は1
+    try:
+        denom_exp = int(math.log10(denom_val)) if denom_val > 0 else 0
+        denom_exponent = int(round(math.log10(denom_val))) if denom_val > 0 else 0
+    except Exception:
+        denom_exp = 0
+        denom_exponent = 0
     timestamp = timestamp_ms or generate_timestamp_ms_precise()
     serial_id = serial_id or generate_serial_id_combined()
-    denom_exponent = int(round(math.log10(denom_to_int(denomination)))) if denom_to_int(denomination) > 0 else 0
-    denom_value = denomination  # Already an int
-    
-    # Encode all metadata into a seed for consistent theming
-    encoded_seed = encode_banknote_metadata(
-        title_text=title_text,
-        phrase_text=phrase_text,
-        serial_id=serial_id,
-        timestamp_ms=timestamp,
-        denomination=denom_value
-    )
-    
-    print(f"[+] Backside metadata seed: {encoded_seed[:30]}...")
-    
-    dwg = svgwrite.Drawing(outfile, size=(W,H), viewBox=f"0 0 {W} {H}")
-    embed_font(dwg, CHINESE_FONT, "FengGuangMingRui")
-    embed_font(dwg, NUMBER_FONT, "Daemon Full Working")
-    dwg.add(dwg.rect(insert=(0,0), size=(W,H), fill=denomination_color(denom=denom_value)))
+    denom_value = denom_val
+    # contextのdenominationは必ずint値をstr化したものを渡す（テンプレート変数が残らないように）
+    # denominationは必ず数値文字列化し、テンプレート変数が残っていれば即例外
+    context = {
+        "denomination": str(int(denom_value)),
+        "denomination_label": f"{denom_val} 卢纳币",
+        "serial": serial_id,
+        "title": title_text,
+        "subtitle": phrase_text,
+        "username": seed_text,
+        "user_id": "",
+        # Add more fields as needed
+    }
+    if "{{" in context["denomination"] or "}}" in context["denomination"]:
+        raise ValueError(f"[FATAL] Context['denomination']にテンプレート変数が残っています: {context['denomination']}")
+    print("[DEBUG] EisenScript context for back side:", context)
+    # Load overlays (prefix, user, suffix)
+    # EisenScriptはDB Settingsからのみ取得
+    from generate_banknote import get_eisenscript_from_db
+    merged_eisen = get_eisenscript_from_db('back', context)
+
+    # --- SVG generation and DB registration only after SVG is written ---
+    def on_save_complete(svg_overlay_path):
+        """
+        SVGファイルの保存が完了したタイミングで呼ばれるコールバック。
+        ここでDB登録や後処理、SVGロード処理を行う。
+        """
+        # バックSVG専用のロード処理をここで呼ぶ（例: load_back_svg）
+        if 'load_back_svg' in globals():
+            load_back_svg(svg_overlay_path)
+        try:
+            from app import app
+            from models import db, Banknote, SerialNumber, User
+            import datetime
+            with app.app_context():
+                user = User.query.first()
+                if not user:
+                    print('[!] No user found for banknote registration')
+                    return
+                existing = Banknote.query.filter_by(serial_number=serial_id).first()
+                if existing:
+                    print(f'[!] Banknote already exists for serial: {serial_id}')
+                    return
+                banknote = Banknote(
+                    user_id=user.id,
+                    serial_number=serial_id,
+                    seed_text=seed_text,
+                    denomination=str(denomination),
+                    side='back',
+                    svg_path=outfile,
+                    is_public=True,
+                    is_verified=False,
+                    verification_status='pending',
+                    created_at=datetime.datetime.utcnow()
+                )
+                db.session.add(banknote)
+                db.session.commit()
+                serial = SerialNumber(
+                    serial=serial_id,
+                    user_id=user.id,
+                    banknote_id=banknote.id,
+                    is_active=True,
+                    is_mined=False,
+                    created_at=datetime.datetime.utcnow()
+                )
+                db.session.add(serial)
+                db.session.commit()
+                print(f'[+] Registered Banknote/Serial: {serial_id}')
+        except Exception as e:
+            print(f'[!] DB/mempool registration error (in callback): {e}')
+
+    # --- LunaMint EisenScript to SVG overlay ---
+    svg_saved = False
+    if merged_eisen.strip():
+        try:
+            from lunamint.scripting import render_script_to_svg_html
+            import tempfile
+            from pathlib import Path
+            import shutil
+            out_path = Path(outfile)
+            outdir = out_path.parent
+            if not outdir.exists():
+                outdir.mkdir(parents=True, exist_ok=True)
+            render_script_to_svg_html(merged_eisen, out_path)
+            svg_saved = True
+            if out_path.exists():
+                print(f"[+] Saved BACK SVG: {outfile}")
+                on_save_complete(str(out_path))
+            else:
+                print(f"[!] BACK SVG was not saved as expected: {outfile}")
+        except Exception as e:
+            print(f"[!] Failed to apply LunaMint EisenScript overlay or copy SVG: {e}")
+
+    # If not handled above, try to save with svgwrite.Drawing if available
+    if not svg_saved:
+        try:
+            outdir = os.path.dirname(outfile)
+            if outdir and not os.path.exists(outdir):
+                os.makedirs(outdir, exist_ok=True)
+            if 'dwg' in locals() and hasattr(dwg, 'saveas'):
+                dwg.saveas(outfile)
+                if os.path.exists(outfile):
+                    print(f"[+] Saved BACK SVG: {outfile}")
+                    on_save_complete(outfile)
+                else:
+                    print(f"[!] BACK SVG was not saved as expected: {outfile}")
+            else:
+                print(f"[!] No SVG object found to save for BACK: {outfile}")
+        except Exception as e:
+            print(f"[!] Exception during BACK SVG save/log: {e}")
 
 
-    if progress_callback:
-        progress_callback("Vectorizing background")
-    # Replace the entire block with this single function call:
-    add_vectorized_background(
-        dwg,
-        W=W,
-        H=H,
-        seed_text=seed_text,
-        bg_dir="./backgrounds",
-        n_segments=1024,
-        denomination=denomination
-    )
-    cx, cy = W//2, H//2
-    
-    # Add functional elements
-    if progress_callback:
-        progress_callback("Adding borders and seals")
-    add_functional_corner_decorations(dwg, W, H, denomination, timestamp, serial_id)
-    
-    # Create circular QR with metadata-consistent colors
-    qr_colors = generate_theme_colors_from_seed(encoded_seed)
-    add_circular_qr_continuous(
-        dwg,
-        cx, cy,
-        text=str(denom_exp),  # Use denomination exponent as QR data
-        inner_radius=int(min(W,H)*0.0),
-        outer_radius=int(min(W,H)*0.360),
-        segments=4,
-        colors=qr_colors,
-        opacity=0.5
-    )
 
-    # Add border with metadata
-    border_info = add_qr_like_border(dwg, str(denomination), W, H, serial_id=serial_id, timestamp_ms=timestamp)
-    denom_color=denomination_to_color(denom_exponent)
-    # Add design elements
-    add_holographic_seals(
-        dwg,
-        W, H,
-        serial_id=serial_id,
-        denomination=denom_exponent,
-        radius=int(min(W,H)*0.25)
-    )
-    #add_hightech_hologram_seals(dwg, W, H, radius=int(min(W,H)*0.12), stroke_w=1)
-    add_subtle_frame_and_microgrid(dwg, W, H, border_info, denom_to_int(denomination), timestamp, to_bytes(serial_id))
-    add_decorative_border(dwg, W, H, border_info, denom_value, timestamp)
-    add_center_text(dwg, W, H, title_text, phrase_text, denom_color)
-    add_corner_denoms(dwg, W, H, str(denomination))
-    
-    qr_url=f"https://bank.linglin.art/verify/{serial_id}"
-    if progress_callback:
-        progress_callback("Adding QR and aztec elements")
-    # Add ROYGBIV QR style with metadata-based theming
-    add_roygbiv_qr_style(dwg, W=W, H=H, url=qr_url, stamp_width=60, stamp_height=60, rows=6)
-    matrix = segno.make(qr_url).matrix  # matrix is a list of lists of booleans
-
-    add_colored_aztec_to_canvas(
-        dwg,
-        cx=cx-360,
-        cy=cy-0,
-        matrix=matrix,
-        scale=3,  # distance left/right from center
-        denom_exponent=denom_exponent,
-        rotation=0,
-        border_opacity=0.5
-    )
-    add_colored_aztec_to_canvas(
-        dwg,
-        cx=cx+360,
-        cy=cy-0,
-        matrix=matrix,
-        scale=3,  # distance left/right from center
-        denom_exponent=denom_exponent,
-        rotation=180,
-        border_opacity=0.5
-    )
-
-    
-    
-    # Add verification text
-    add_verification_text(dwg, W, H, serial_id, timestamp)
-    # After successfully generating a bill and saving to DB:
-
-
-    if progress_callback:
-        progress_callback("Saving vector output")
-    dwg.save()
-    print(f"[+] Saved {outfile}")
+from typing import Tuple
 import qrcode
 from PIL import Image, ImageDraw
 import math
@@ -2045,736 +1630,17 @@ def denomination_to_color(denom_exponent: int) -> str:
     idx = max(0, min(denom_exponent, len(spectrum)-1))
     return spectrum[idx]
 
-def add_colored_aztec_to_canvas(
-    dwg, cx, cy, matrix, denom_exponent,
-    scale=12, border=12, rotation=0, border_opacity=0.5
-):
-    """
-    Draw an Aztec QR code centered at (cx, cy) with:
-    - denomination-colored semi-transparent border,
-    - white background,
-    - black modules,
-    - optional rotation (degrees).
-    """
-    nrows = len(matrix)
-    ncols = len(matrix[0])
 
-    qr_size = ncols * scale  # actual QR size in px (square)
-    border_color = denomination_to_color(denom_exponent)
-
-    # Group everything together so it rotates around the QR's center
-    qr_group = dwg.g(transform=f"rotate({rotation},{cx},{cy})")
-
-    # 1. Colored border (semi-transparent)
-    qr_group.add(dwg.rect(
-        insert=(cx - (qr_size/2 + border), cy - (qr_size/2 + border)),
-        size=(qr_size + 2*border, qr_size + 2*border),
-        fill=border_color,
-        opacity=border_opacity
-    ))
-
-    # 2. White background
-    qr_group.add(dwg.rect(
-        insert=(cx - qr_size/2, cy - qr_size/2),
-        size=(qr_size, qr_size),
-        fill="white",
-        opacity=border_opacity
-    ))
-
-    # 3. Black modules
-    for r in range(nrows):
-        for c in range(ncols):
-            if matrix[r][c]:  # filled module
-                x = cx - qr_size/2 + c * scale
-                y = cy - qr_size/2 + r * scale
-                qr_group.add(dwg.rect(insert=(x, y), size=(scale, scale), fill="black"))
-
-    dwg.add(qr_group)
-    return dwg
-
-
-
-def add_colored_aztecs(
-    dwg: svgwrite.Drawing,
-    W: int,
-    H: int,
-    cx: int,
-    cy: int,
-    qr_url: str,
-    scale: int = 12,
-    margin: int = 6,
-    style: str = "radial",
-    offset: int = 300,
-    size: int = 150
-) -> svgwrite.Drawing:
-    # Build matrix and temporary SVG for Aztec
-    matrix = aztec_matrix_from_segno(qr_url)
-    with tempfile.NamedTemporaryFile(suffix=".svg", delete=False) as tmp_file:
-        tmp_svg_path = tmp_file.name
-
-    build_colored_aztec_svg(matrix, scale=scale, margin_modules=margin,
-                            style=style, out_path=tmp_svg_path)
-
-    # Load Aztec SVG and encode to base64
-    with open(tmp_svg_path, "rb") as f:
-        svg_bytes = f.read()
-    svg_data_url = "data:image/svg+xml;base64," + base64.b64encode(svg_bytes).decode("ascii")
-
-    # Left Aztec
-    dwg.add(dwg.image(
-        href=svg_data_url,
-        insert=(cx - offset - size/2, cy - size/2),
-        size=(size, size)
-    ))
-
-    # Right Aztec
-    dwg.add(dwg.image(
-        href=svg_data_url,
-        insert=(cx + offset - size/2, cy - size/2),
-        size=(size, size)
-    ))
-
-    return dwg
-
-def to_bytes(data, encoding='utf-8'):
-    """
-    Convert different types of data to bytes.
-
-    Parameters:
-        data: str, int, float, or bytes
-        encoding: str, encoding to use if data is a string
-
-    Returns:
-        bytes representation of the input
-    """
-    if isinstance(data, bytes):
-        return data
-    elif isinstance(data, str):
-        return data.encode(encoding)
-    elif isinstance(data, int):
-        # Convert int to bytes (big-endian, minimum number of bytes)
-        length = (data.bit_length() + 7) // 8 or 1
-        return data.to_bytes(length, byteorder='big', signed=True)
-    elif isinstance(data, float):
-        import struct
-        return struct.pack('>d', data)  # 8-byte double, big-endian
-    else:
-        raise TypeError(f"Cannot convert type {type(data)} to bytes")
-def add_roygbiv_qr_style_aztec(dwg, W, H, url, stamp_width=60, stamp_height=60, rows=6):
-    """
-    Create an Aztec-style QR code with ROYGBIV colors and add it to the SVG drawing.
-    
-    Args:
-        dwg: The svgwrite Drawing object
-        W: Width of the canvas
-        H: Height of the canvas
-        url: The URL to encode in the QR code
-        stamp_width: Width of the QR code
-        stamp_height: Height of the QR code
-        rows: Number of rows in the Aztec pattern
-    """
-    if not QR_AVAILABLE:
-        print("QR code generation not available. Skipping QR code addition.")
-        return
-    
-    # Create QR code
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=2,
-        border=1,
-    )
-    qr.add_data(url)
-    qr.make(fit=True)
-    
-    # Create QR code image (black on white)
-    qr_img = qr.make_image(fill_color="black", back_color="white")
-    qr_img = qr_img.resize((stamp_width, stamp_height), Image.NEAREST)
-    
-    # Convert QR code to SVG elements
-    qr_array = np.array(qr_img.convert('L'))
-    qr_array = (qr_array < 128).astype(np.uint8)  # Binary mask
-    
-    # ROYGBIV colors
-    roygbiv_colors = [
-        "#FF0000",      # Red
-        "#FFA500",      # Orange
-        "#FFFF00",      # Yellow
-        "#00FF00",      # Green
-        "#0000FF",      # Blue
-        "#4B0082",      # Indigo
-        "#EE82EE"       # Violet
-    ]
-    
-    # Calculate positions (120px from center on both sides)
-    center_x = W // 2
-    center_y = H // 2
-    
-    # Left position
-    left_x = center_x - 120 - stamp_width
-    left_y = center_y - stamp_height // 2
-    
-    # Right position
-    right_x = center_x + 120
-    right_y = center_y - stamp_height // 2
-    
-    # Draw QR codes at both positions
-    for pos_x, pos_y in [(left_x, left_y), (right_x, right_y)]:
-        # Draw black background
-        dwg.add(dwg.rect(
-            insert=(pos_x, pos_y),
-            size=(stamp_width, stamp_height),
-            fill="#000000"
-        ))
-        
-        # Calculate cell size
-        cell_height = stamp_height // rows
-        cells_per_row = stamp_width // cell_height
-        
-        # Draw Aztec-style pattern
-        for y in range(rows):
-            color_idx = y % len(roygbiv_colors)
-            color = roygbiv_colors[color_idx]
-            
-            for x in range(cells_per_row):
-                # Calculate position in QR code
-                qr_x = int(x * qr_array.shape[1] / cells_per_row)
-                qr_y = int(y * qr_array.shape[0] / rows)
-                
-                # If this part of the QR code is black, draw the pattern element
-                if qr_array[qr_y, qr_x] == 1:
-                    # Draw a square with a circular cutout (Aztec style)
-                    center_x_px = pos_x + x * cell_height + cell_height // 2
-                    center_y_px = pos_y + y * cell_height + cell_height // 2
-                    radius = cell_height // 2 - 2
-                    
-                    # Draw the colored square
-                    dwg.add(dwg.rect(
-                        insert=(pos_x + x * cell_height, pos_y + y * cell_height),
-                        size=(cell_height, cell_height),
-                        fill=color
-                    ))
-                    
-                    # Draw a circular cutout in the center
-                    dwg.add(dwg.circle(
-                        center=(center_x_px, center_y_px),
-                        r=radius // 2,
-                        fill="#000000"
-                    ))
-def create_aztec_style_qr(qr_img, width, height, rows=6):
-    """
-    Convert a standard QR code to an Aztec-style pattern with ROYGBIV colors.
-    
-    Args:
-        qr_img: PIL Image of the QR code
-        width: Output width
-        height: Output height
-        rows: Number of rows in the pattern
-    
-    Returns:
-        PIL Image with Aztec-style QR code
-    """
-    # Convert to numpy array for processing
-    qr_array = np.array(qr_img.convert('L'))
-    qr_array = (qr_array < 128).astype(np.uint8)  # Binary mask
-    
-    # Create output image with black background
-    output = Image.new('RGB', (width, height), color='black')
-    draw = ImageDraw.Draw(output)
-    
-    # ROYGBIV colors
-    roygbiv_colors = [
-        (255, 0, 0),      # Red
-        (255, 165, 0),    # Orange
-        (255, 255, 0),    # Yellow
-        (0, 255, 0),      # Green
-        (0, 0, 255),      # Blue
-        (75, 0, 130),     # Indigo
-        (238, 130, 238)   # Violet
-    ]
-    
-    # Calculate cell size based on rows
-    cell_height = height // rows
-    cells_per_row = width // cell_height
-    
-    # Draw Aztec-style pattern
-    for y in range(rows):
-        color_idx = y % len(roygbiv_colors)
-        color = roygbiv_colors[color_idx]
-        
-        for x in range(cells_per_row):
-            # Calculate position in QR code
-            qr_x = int(x * qr_array.shape[1] / cells_per_row)
-            qr_y = int(y * qr_array.shape[0] / rows)
-            
-            # If this part of the QR code is black, draw the pattern element
-            if qr_array[qr_y, qr_x] == 1:
-                # Draw a square with a circular cutout (Aztec style)
-                center_x = x * cell_height + cell_height // 2
-                center_y = y * cell_height + cell_height // 2
-                radius = cell_height // 2 - 2
-                
-                # Draw the colored square
-                draw.rectangle(
-                    [x * cell_height, y * cell_height, 
-                     (x + 1) * cell_height, (y + 1) * cell_height],
-                    fill=color
-                )
-                
-                # Draw a circular cutout in the center
-                draw.ellipse(
-                    [center_x - radius // 2, center_y - radius // 2,
-                     center_x + radius // 2, center_y + radius // 2],
-                    fill='black'
-                )
-    
-    return output
-# Helper function to generate theme colors from seed
-def generate_theme_colors_from_seed(encoded_seed):
-    """
-    Generate consistent colors based on the metadata seed
-    """
-    metadata = decode_banknote_metadata(encoded_seed)
-    if not metadata:
-        return [
-            "#FF0000", "#FF7F00", "#FFFF00", "#00FF00", 
-            "#0000FF", "#4B0082", "#8B00FF"
-        ]
-    
-    # Generate colors based on denomination and theme
-    denom = str(metadata['denomination'])
-    theme = metadata['theme']
-    
-    color_schemes = {
-        "1": ["#E8E8E8", "#D0D0D0", "#B8B8B8", "#A0A0A0"],  # Monochrome
-        "10": ["#FFEBCD", "#DEB887", "#CD853F", "#A0522D"],  # Earth tones
-        "100": ["#87CEEB", "#4682B4", "#1E90FF", "#0000CD"],  # Blues
-        "1000": ["#98FB98", "#32CD32", "#228B22", "#006400"],  # Greens
-        "10000": ["#DAA520", "#B8860B", "#CD853F", "#8B4513"],  # Gold/brown
-        "100000": ["#FFD700", "#DAA520", "#B8860B", "#8B4513"],  # Gold
-        "1000000": ["#9370DB", "#8A2BE2", "#4B0082", "#483D8B"],  # Purples
-        "10000000": ["#FF69B4", "#FF1493", "#C71585", "#8B008B"],  # Pinks
-        "100000000": ["#DC143C", "#B22222", "#8B0000", "#800000"]   # Reds
-    }
-    
-    # Default to high denomination colors
-    base_colors = color_schemes.get(denom, color_schemes[denom])
-    
-    # Add accent colors based on theme keywords
-    if "spiritual" in theme:
-        base_colors.extend(["#FFFFFF", "#E6E6FA"])  # White, lavender
-    if "regal" in theme:
-        base_colors.extend(["#000080", "#191970"])  # Navy blues
-    if "financial" in theme:
-        base_colors.extend(["#008000", "#006400"])  # Dark greens
-    
-    return base_colors[:7]  # Return up to 7 colors
-
-def add_verification_text(dwg, W, H, serial_id, timestamp):
-    """Add verification text to the backside with serial above and issued date/time below"""
-    # Handle different timestamp formats
-    if isinstance(timestamp, int):
-        # Check if timestamp is in milliseconds (typical for JavaScript/other systems)
-        if timestamp > 1000000000000:  # If timestamp is > year 2001 in milliseconds
-            timestamp = timestamp / 1000  # Convert milliseconds to seconds
-        try:
-            from datetime import datetime
-            formatted_timestamp = f"发行: {datetime.fromtimestamp(timestamp).strftime('%m/%d/%Y %H:%M:%S')}"
-        except (OSError, ValueError):
-            # If timestamp conversion fails, use a fallback format
-            formatted_timestamp = f"发行: {timestamp}"
-    elif hasattr(timestamp, 'strftime'):
-        # It's a datetime object
-        formatted_timestamp = f"发行: {timestamp.strftime('%m/%d/%Y %H:%M:%S')}"
-    else:
-        # Fallback - just convert to string
-        formatted_timestamp = f"发行: {str(timestamp)}"
-    
-    # Calculate center position
-    center_x = W / 2
-    verification_serial =  "序列号: " + str(serial_id)
-    # Add serial number (top line) with Daemon Full Working font
-    dwg.add(dwg.text(
-        verification_serial,
-        insert=(center_x-500, H - 120),  # Position for top line
-        font_size=16,
-        fill="#00FF5E",
-        font_family="FengGuangMingRui",
-        text_anchor="middle",
-        opacity=1
-    ))
-    
-    # Add issued timestamp (bottom line) with FengGuangMingRui font
-    dwg.add(dwg.text(
-        formatted_timestamp,
-        insert=(center_x+500, H - 120),  # Position for bottom line
-        font_size=16,
-        fill="#FF0000",
-        font_family="FengGuangMingRui",
-        text_anchor="middle",
-        opacity=1
-    ))
 import glob
-def add_vectorized_background(dwg, W, H, seed_text="", bg_dir="./backgrounds", margin=60, n_segments=1024, background_prompt="", denomination=None):
-    """
-    Enhanced version that generates background using prompt from background_prompt.txt
-    """
-    import os
-    import glob
-    import hashlib
-    import random
-    import numpy as np
-    from PIL import Image
-    from skimage import color, segmentation, measure
-    import svgwrite
-    
-    background_path = None
-    
-    # Read background prompt from file
-    prompt_file = "./background_prompt.txt"
-    if os.path.exists(prompt_file):
-        with open(prompt_file, 'r') as f:
-            background_prompt = f.read().strip()
-        print(f"[+] Using prompt from file: {background_prompt}")
-    else:
-        background_prompt = "kawaii oekaki Chinese DMT Studio Ghibli style banknote background"
-        print(f"[!] Prompt file not found, using default: {background_prompt}")
-    
-    # Generate background using the prompt
-    background_path = generate_sd_background(
-        prompt=background_prompt,
-        width=W - 2*margin,
-        height=H - 2*margin,
-        save_path=bg_dir,
-        seed_text=seed_text,
-        denomination=denomination
-    )
-    
-    # Fallback to random background if generation failed
-    if not background_path or not os.path.exists(background_path):
-        files = [f for f in os.listdir(bg_dir) if f.lower().endswith((".png", ".jpg", ".jpeg"))]
-        if files:
-            background_path = os.path.join(bg_dir, random.choice(files))
-            print(f"[+] Using random background: {background_path}")
-        else:
-            print("[!] No background files found.")
-            return
-    
-    # Continue with the original vectorization logic
-    img = Image.open(background_path).convert("RGB")
-    img = img.resize((W - 2*margin, H - 2*margin), Image.LANCZOS)
-    
-    # convert to np array
-    arr = np.array(img)
-    arr_lab = color.rgb2lab(arr)
+# def add_vectorized_background(...) is disabled. All background drawing is now handled by EisenScript only.
 
-    # segment into superpixels
-    segments = segmentation.slic(arr_lab, n_segments=n_segments, compactness=20, start_label=1)
+# def generate_sd_background(...) is disabled. All background drawing is now handled by EisenScript only.
 
-    # extract contours of each segment
-    group = dwg.g(opacity=0.7)  # Group for all background elements
-    
-    for seg_val in np.unique(segments):
-        mask = (segments == seg_val).astype(float)
-        contours = measure.find_contours(mask, 0.5)
+# def generate_sd_background_from_metadata(...) is disabled. All background drawing is now handled by EisenScript only.
+# def add_security_pattern_overlay(...) is disabled. All security pattern overlays are now handled by EisenScript only.
 
-        for contour in contours:
-            # rescale contour to SVG coords (add margin)
-            contour = contour[:, ::-1]  # (y, x) → (x, y)
-            contour[:, 0] += margin
-            contour[:, 1] += margin
-
-            # build path string
-            path_data = "M " + " L ".join(f"{x:.2f},{y:.2f}" for x, y in contour) + " Z"
-
-            # get average color for this region
-            avg_col = np.mean(arr[segments == seg_val], axis=0).astype(int)
-            fill = svgwrite.rgb(int(avg_col[0]), int(avg_col[1]), int(avg_col[2]))
-
-            group.add(dwg.path(d=path_data, fill=fill, stroke="none"))
-
-    dwg.add(group)
-    print(f"[+] Vectorized background with {len(np.unique(segments))} segments")
-    return group
-
-def generate_sd_background(prompt, width=512, height=512, save_path="./backgrounds", seed_text="", denomination=None):
-    """
-    Generate background using Stable Diffusion API with the given prompt
-    """
-    import os
-    import requests
-    import base64
-    import hashlib
-    import time
-    from io import BytesIO
-    from PIL import Image
-    import random
-    
-    os.makedirs(save_path, exist_ok=True)
-    
-    # Read negative prompt from file or use default
-    negative_prompt_file = "negative_prompt.txt"
-    if os.path.exists(negative_prompt_file):
-        with open(negative_prompt_file, 'r') as f:
-            negative_prompt = f.read().strip()
-    else:
-        negative_prompt = "text, words, blurry, low quality, watermark, signature"
-    
-    print(f"[+] Generating background with prompt: {prompt}")
-    print(f"[+] Negative prompt: {negative_prompt}")
-    
-    payload = {
-        "prompt": prompt,
-        "negative_prompt": negative_prompt,
-        "width": width,
-        "height": height,
-        "seed": random.randint(0, 2**32 - 1),
-        "steps": 20,
-        "cfg_scale": 7.5,
-        "sampler_name": "Euler a",
-        "batch_size": 1,
-        "n_iter": 1,
-        "restore_faces": False,
-        "tiling": True,
-        "enable_hr": False,
-    }
-    
-    try:
-        response = requests.post("http://127.0.0.1:7777/sdapi/v1/txt2img", json=payload, timeout=120)
-        response.raise_for_status()
-        
-        result = response.json()
-        images = result.get('images', [])
-        
-        if images:
-            image_data = base64.b64decode(images[0])
-            image = Image.open(BytesIO(image_data))
-            
-            # Generate UNIQUE filename with denomination and prompt hash
-            prompt_hash = hashlib.md5(prompt.encode()).hexdigest()[:6]
-            denom_str = f"d{denomination}" if denomination else "node"
-            filename = f"bg_{denom_str}_{prompt_hash}_{int(time.time())}.png"
-            filepath = os.path.join(save_path, filename)
-            
-            image.save(filepath)
-            print(f"[+] Generated background: {filepath}")
-            return filepath
-        
-    except Exception as e:
-        print(f"[!] Error generating background: {e}")
-        return None
-
-def generate_sd_background_from_metadata(encoded_seed, name="", width: int = 512, height: int = 512, 
-                                       save_path: str = "./backgrounds", denom: int = None):
-    """
-    Generate background using metadata-encoded prompt
-    """
-    os.makedirs(save_path, exist_ok=True)
-    
-    # Create prompt from metadata
-    prompt = generate_kawaii_mural_from_background(denomination=denom_to_int(denom))
-    negative_prompt = read_prompt_file("negative_prompt.txt", "text, words, blurry, low quality")
-    
-    # Print the prompts being used
-    print(f"[+] Generating background with prompt: {prompt}")
-    print(f"[+] Negative prompt: {negative_prompt}")
-    
-    payload = {
-        "prompt": prompt,
-        "negative_prompt": negative_prompt,
-        "width": width,
-        "height": height,
-        "seed": random.randint(0, 2**32 - 1),
-        "steps": 20,
-        "cfg_scale": 7.5,
-        "sampler_name": "Euler a",
-        "batch_size": 1,
-        "n_iter": 1,
-        "restore_faces": False,
-        "tiling": True,
-        "enable_hr": False,
-    }
-    
-    try:
-        response = requests.post("http://127.0.0.1:7777/sdapi/v1/txt2img", json=payload, timeout=120)
-        response.raise_for_status()
-        
-        result = response.json()
-        images = result.get('images', [])
-        
-        if images:
-            image_data = base64.b64decode(images[0])
-            image = Image.open(BytesIO(image_data))
-            
-            # Generate UNIQUE filename with denomination and metadata hash
-            metadata_hash = hashlib.md5(encoded_seed.encode()).hexdigest()[:6]
-            denom_str = f"d{denom}" if denom else "node"
-            filename = f"bg_{denom_str}_meta_{metadata_hash}_{int(time.time())}.png"
-            filepath = os.path.join(save_path, filename)
-            
-            image.save(filepath)
-            print(f"[+] Generated metadata-based background: {filepath}")
-            return filepath
-        
-    except Exception as e:
-        print(f"[!] Error generating background: {e}")
-        return None
-def add_security_pattern_overlay(dwg, pattern_path, W, H, margin):
-    """
-    Add security pattern as an overlay to the SVG
-    """
-    try:
-        # Load the security pattern image
-        pattern_img = Image.open(pattern_path).convert("RGBA")
-        pattern_img = pattern_img.resize((W - 2*margin, H - 2*margin), Image.LANCZOS)
-        
-        # Convert to numpy array for processing
-        pattern_arr = np.array(pattern_img)
-        
-        # Create a group for security pattern elements
-        pattern_group = dwg.g(opacity=0.3)  # Semi-transparent overlay
-        
-        # Simple approach: convert pattern to SVG paths
-        # For complex patterns, you might want to use a different approach
-        alpha_threshold = 128  # Only include pixels with sufficient opacity
-        
-        # Sample points from the pattern (simplified approach)
-        height, width = pattern_arr.shape[:2]
-        step = max(1, width // 50)  # Adjust sampling density
-        
-        for y in range(0, height, step):
-            for x in range(0, width, step):
-                if pattern_arr[y, x, 3] > alpha_threshold:  # Check alpha channel
-                    # Add a small shape at this position
-                    color = pattern_arr[y, x, :3]
-                    fill = svgwrite.rgb(int(color[0]), int(color[1]), int(color[2]))
-                    
-                    # Add a small circle or other shape
-                    cx = x + margin
-                    cy = y + margin
-                    pattern_group.add(dwg.circle(
-                        center=(cx, cy),
-                        r=2,  # Small radius
-                        fill=fill,
-                        stroke="none"
-                    ))
-        
-        dwg.add(pattern_group)
-        
-    except Exception as e:
-        print(f"[!] Error adding security pattern overlay: {e}")
-        # Fallback: add a simple pattern
-        add_fallback_security_pattern(dwg, W, H, margin)
-
-def add_fallback_security_pattern(dwg, W, H, margin):
-    """
-    Fallback security pattern if the main pattern fails
-    """
-    pattern_group = dwg.g(opacity=0.15, fill="none", stroke="#ff0000", stroke_width=0.5)
-    
-    # Add some simple geometric patterns
-    spacing = 20
-    for x in range(margin, W - margin, spacing):
-        pattern_group.add(dwg.line(
-            start=(x, margin),
-            end=(x, H - margin),
-            stroke_dasharray="2,4"
-        ))
-    
-    for y in range(margin, H - margin, spacing):
-        pattern_group.add(dwg.line(
-            start=(margin, y),
-            end=(W - margin, y),
-            stroke_dasharray="4,2"
-        ))
-    
-    dwg.add(pattern_group)
-def fractal_stamp(
-    dwg: svgwrite.Drawing,
-    width: int,
-    height: int,
-    denom: str = "100",
-    timestamp: str = None,
-    font_family: str = "Daemon Full Working",
-    base_font_size: int = 20,
-    depth: int = 3
-):
-    """
-    Create a fractal-like denomination microprint background + rainbow timestamp stripe.
-    - denom: fractal mosaic background
-    - timestamp: rainbow encoded stripe
-    """
-
-    if timestamp is None:
-        timestamp = datetime.datetime.now().strftime("%Y%m%d%H%M%S")
-    else:
-        timestamp = str(timestamp)  # <--- fix here
-
-    # Colors for ROYGBIV rainbow stripe
-    rainbow = ["#FF0000", "#FF7F00", "#FFFF00", "#00FF00", "#0000FF", "#4B0082", "#8B00FF"]
-
-    # --- Step 1: Draw fractal <denom> background ---
-    def recursive_denom(x, y, size, level):
-        if level <= 0:
-            return
-        dwg.add(dwg.text(
-            denom,
-            insert=(x, y),
-            font_size=size,
-            font_family=font_family,
-            fill="#000000",
-            opacity=0.05 * level,  # fading layers
-            text_anchor="middle",
-            alignment_baseline="middle"
-        ))
-        # Recursively branch smaller denom around
-        for dx, dy in [(-1,0),(1,0),(0,-1),(0,1)]:
-            recursive_denom(x + dx * size, y + dy * size, size * 0.5, level - 1)
-
-    # Scatter recursive fractal denominations
-    step = base_font_size * 3
-    for i in range(0, width, step):
-        for j in range(0, height, step):
-            if random.random() < 0.2:  # sparse fractal seeds
-                recursive_denom(i, j, base_font_size, depth)
-
-    # --- Step 2: Rainbow timestamp stripe ---
-    stripe_height = base_font_size * 2
-    for idx, char in enumerate(timestamp):
-        color = rainbow[idx % len(rainbow)]
-        opacity = 0.3 + 0.7 * (idx % len(rainbow)) / (len(rainbow)-1)
-        x = (width / len(timestamp)) * idx + (width/len(timestamp))/2
-        y = height / 2
-
-        dwg.add(dwg.text(
-            char,
-            insert=(x, y),
-            font_size=base_font_size * 1.5,
-            font_family=font_family,
-            fill=color,
-            opacity=opacity,
-            text_anchor="middle",
-            alignment_baseline="middle"
-        ))
-
-    # Optional second rainbow stripe diagonally
-    for idx, char in enumerate(timestamp):
-        color = rainbow[idx % len(rainbow)]
-        opacity = 0.2 + 0.8 * (math.sin(idx) * 0.5 + 0.5)
-        x = (width / len(timestamp)) * idx
-        y = height * 0.75 + math.sin(idx*0.5) * 20
-
-        dwg.add(dwg.text(
-            char,
-            insert=(x, y),
-            font_size=base_font_size,
-            font_family=font_family,
-            fill=color,
-            opacity=opacity,
-            text_anchor="middle",
-            alignment_baseline="middle",
-            transform=f"rotate(-15,{x},{y})"
-        ))
+# def add_fallback_security_pattern(...) is disabled. All fallback security patterns are now handled by EisenScript only.
+# def fractal_stamp(...) is disabled. All fractal and microprint backgrounds are now handled by EisenScript only.
 
 def run_single_denomination(outdir: str = ".", base_name: str = "banknote", denomination: int = 1, 
                            width_mm: float = 160.0, height_mm: float = 60.0,
@@ -2795,7 +1661,16 @@ def run_single_denomination(outdir: str = ".", base_name: str = "banknote", deno
     
     fname = f"{base_name}.svg"
     path = os.path.join(outdir, fname)
-    generate_backside_svg(path, denomination, title_text, phrase_text, (W,H), serial_id, timestamp, seed_text, progress_callback=progress_callback)
+    # denominationがテンプレート変数や空文字列の場合は必ず1に変換
+    denom_int = 1
+    if isinstance(denomination, (int, float)):
+        denom_int = int(denomination)
+    elif isinstance(denomination, str):
+        import re
+        m = re.search(r'(\d+)', denomination)
+        if m:
+            denom_int = int(m.group(1))
+    generate_backside_svg(path, denom_int, title_text, phrase_text, (W,H), serial_id, timestamp, seed_text, progress_callback=progress_callback)
     
     if png:
         if not CAIROSVG_AVAILABLE:
@@ -2825,10 +1700,11 @@ def run_batch(outdir: str = ".", base_name: str = "banknote", width_mm: float = 
     H = mm_to_px(height_mm)
     os.makedirs(outdir, exist_ok=True)
     for d in denoms:
+        denom_int = int(d)
         # Include denomination in the filename to avoid overwriting
-        fname = f"{base_name}_{d}.svg"  # Add denomination to filename
+        fname = f"{base_name}_{denom_int}.svg"  # Add denomination to filename
         path = os.path.join(outdir, fname)
-        generate_backside_svg(path, d, title_text, phrase_text, (W,H), serial_id, timestamp, seed_text)
+        generate_backside_svg(path, denom_int, title_text, phrase_text, (W,H), serial_id, timestamp, seed_text)
         
         if png:
             if not CAIROSVG_AVAILABLE:

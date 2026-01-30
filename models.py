@@ -23,6 +23,7 @@ class User(UserMixin, db.Model):
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     last_login = db.Column(db.DateTime)
     last_generation = db.Column(db.DateTime)
+    custom_eisenscript = db.Column(db.Text, default="")
     
     # Email verification
     email_verified = db.Column(db.Boolean, default=False)
@@ -258,6 +259,10 @@ class Settings(db.Model):
     bill_dpi = db.Column(db.Float, default=300.0)
     font_dir = db.Column(db.String(255), default="./fonts")
     bg_dir = db.Column(db.String(255), default="./backgrounds")
+    eisenscript_prefix_front = db.Column(db.Text, default="")
+    eisenscript_suffix_front = db.Column(db.Text, default="")
+    eisenscript_prefix_back = db.Column(db.Text, default="")
+    eisenscript_suffix_back = db.Column(db.Text, default="")
     
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     

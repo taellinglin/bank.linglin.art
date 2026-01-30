@@ -1,1143 +1,622 @@
+# --- Proxy for app.py/utils.py compatibility ---
+def generate_for_user(*args, **kwargs):
+    """
+    Proxy for legacy code: generates a banknote pair for a user.
+    Accepts flexible positional/keyword arguments for compatibility.
+    """
+    # Positional fallback
+    name = args[0] if len(args) > 0 else None
+    denomination = args[1] if len(args) > 1 else None
+
+    # Keyword aliases
+    name = kwargs.get("name", name)
+    name = kwargs.get("username", name)
+    denomination = kwargs.get("denomination", denomination)
+    denomination = kwargs.get("denom", denomination)
+    denomination = kwargs.get("specific_denom", denomination)
+
+    output_dir = kwargs.get("output_dir") or kwargs.get("outdir")
+    width_mm = kwargs.get("width_mm", 160.0)
+    height_mm = kwargs.get("height_mm", 60.0)
+    extra_context = kwargs.get("extra_context")
+    progress_callback = kwargs.get("progress_callback")
+
+    if name is None or denomination is None:
+        raise TypeError("generate_for_user requires name and denomination")
+
+    denomination = normalize_denomination(denomination)
+
+    # Merge any unknown kwargs into extra_context
+    ctx = dict(extra_context) if extra_context else {}
+    ctx.update(kwargs)
+
+    return generate_banknote_pair(
+        name,
+        denomination,
+        output_dir,
+        width_mm,
+        height_mm,
+        ctx,
+        progress_callback=progress_callback
+    )
 #!/usr/bin/env python3
 """
-generate.py - Unified banknote generation script
-Can be used as standalone: python generate.py --name NAME --user_id ID
-Or imported: from generate import generate_for_user
+generate.py - Minimal, robust banknote generator
+- Jinja2 context substitution for EisenScript (front/back)
+- EisenScript rendering (LunaMint)
+- Parallel generation: front (GPU0), back (GPU1)
+- PNG generation, mempool, Banknote DB, SerialNumber DB registration
 """
-
 import os
-import random
-import subprocess
+import sys
 import time
-import glob
-import re
-import shutil
-import requests
-import base64
+import math
 import json
-import argparse
 import threading
+import shutil
+from pathlib import Path
 from io import BytesIO
+from datetime import datetime
+from jinja2 import Environment, DebugUndefined, meta
+from lunamint.scripting import render_script_to_svg_html
+from models import Banknote, SerialNumber, db, User, Settings
 from PIL import Image
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import datetime
-import secrets
-import hashlib
-import xml.etree.ElementTree as ET
 import cairosvg
-import sys
-# Add the current directory to Python path to import local modules
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-# =============================================================================
-# IMPORTS WITH BETTER ERROR HANDLING
-# =============================================================================
+# --- Utility ---
+def mm_to_px(mm, dpi=300.0):
+    return float(mm) * dpi / 25.4
 
-import os
-import sys
-import traceback
-
-# Add current directory to Python path FIRST
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-print(f"[DEBUG] Current directory: {os.getcwd()}")
-print(f"[DEBUG] Script directory: {os.path.dirname(os.path.abspath(__file__))}")
-
-# Try to import signatures with multiple fallbacks
-HAS_SIGNATURES = False
-HAS_FLASK_CONTEXT = False
-
-try:
-    # First try to import signatures directly
-    import signatures
-    print("[+] Successfully imported signatures module")
-    
-    # Try to get the required functions/classes
-    if hasattr(signatures, 'DigitalSignatureManager'):
-        DigitalSignatureManager = signatures.DigitalSignatureManager
-        HAS_SIGNATURES = True
-        print("[+] Got DigitalSignatureManager from signatures")
-    
-    if hasattr(signatures, 'generate_key_pair'):
-        generate_key_pair = signatures.generate_key_pair
-        print("[+] Got generate_key_pair from signatures")
-    else:
-        # Provide a fallback
-        def generate_key_pair():
-            import hashlib
-            import secrets
-            priv = secrets.token_hex(32)
-            pub = f"04{hashlib.sha256(priv.encode()).hexdigest()[:64]}"
-            return priv, pub
-        print("[!] Using fallback generate_key_pair")
-    
-except ImportError as e:
-    print(f"[!] Failed to import signatures: {e}")
-    # Create fallback implementations
-    class DigitalSignatureManager:
-        def __init__(self):
-            pass
-        def create_signed_bill(self, bill_data, private_key):
-            import hashlib
-            import json
-            return type('obj', (object,), {
-                'signature': hashlib.sha256(json.dumps(bill_data).encode()).hexdigest(),
-                'public_key': 'fallback_key'
-            })
-        def verify_bill_signature(self, bill_data):
-            return True
-    
-    def generate_key_pair():
-        import hashlib
-        import secrets
-        priv = secrets.token_hex(32)
-        pub = f"04{hashlib.sha256(priv.encode()).hexdigest()[:64]}"
-        return priv, pub
-    
-    print("[!] Using fallback signatures")
-    HAS_SIGNATURES = True  # Still mark as available for fallback
-
-# Try to import Flask models
-try:
-    from models import Banknote, SerialNumber, User, Settings, db
-    HAS_FLASK_CONTEXT = True
-    print("[+] Successfully imported database models")
-except ImportError as e:
-    print(f"[!] Failed to import Flask models: {e}")
-    HAS_FLASK_CONTEXT = False
-    # Create dummy classes for fallback
-    class Banknote:
-        pass
-    class SerialNumber:
-        pass
-    class User:
-        pass
-    class db:
-        class session:
-            @staticmethod
-            def add(obj): pass
-            @staticmethod
-            def commit(): pass
-            @staticmethod
-            def rollback(): pass
-            @staticmethod
-            def flush(): pass
-            @staticmethod
-            def query(cls): 
-                class Query:
-                    def get(self, id): return None
-                    def filter_by(self, **kwargs): return self
-                    def first(self): return None
-                return Query()
-    
-    print("[!] Using fallback database classes")
-
-# Import functions from banknote generators
-HAS_FRONT_GENERATOR = False
-HAS_BACK_GENERATOR = False
-generate_front = None
-generate_back = None
-
-# Try multiple import approaches for front generator
-try:
-    from generate_banknote_front import generate_single_banknote as generate_front
-    HAS_FRONT_GENERATOR = True
-    print("[+] Successfully imported generate_single_banknote from generate_banknote_front.py")
-except ImportError as e:
-    print(f"[!] First import attempt failed: {e}")
+def denomination_color(denom: int) -> str:
+    """Match front denomination color palette (ROYGBIV, light tint)."""
     try:
-        # Try adding current directory to path
-        import sys
-        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-        from generate_banknote_front import generate_single_banknote as generate_front
-        HAS_FRONT_GENERATOR = True
-        print("[+] Successfully imported generate_single_banknote (second attempt)")
-    except ImportError as e2:
-        print(f"[!] Second import attempt failed: {e2}")
-        generate_front = None
-        HAS_FRONT_GENERATOR = False
+        denom = max(1, min(100_000_000, int(denom)))
+    except Exception:
+        denom = 1
+    exp = math.log10(denom) / math.log10(100_000_000)
+    roygbiv = [
+        (255, 0, 0),
+        (255, 165, 0),
+        (255, 255, 0),
+        (0, 128, 0),
+        (0, 0, 255),
+        (75, 0, 130),
+        (143, 0, 255),
+    ]
+    idx = int(exp * (len(roygbiv) - 1))
+    frac = exp * (len(roygbiv) - 1) - idx
+    c1 = roygbiv[idx]
+    c2 = roygbiv[min(idx + 1, len(roygbiv) - 1)]
+    r = int(c1[0] + (c2[0] - c1[0]) * frac)
+    g = int(c1[1] + (c2[1] - c1[1]) * frac)
+    b = int(c1[2] + (c2[2] - c1[2]) * frac)
+    r = int(0.7 * 255 + 0.3 * r)
+    g = int(0.7 * 255 + 0.3 * g)
+    b = int(0.7 * 255 + 0.3 * b)
+    return f"#{r:02X}{g:02X}{b:02X}"
 
-# Try multiple import approaches for back generator
-try:
-    from generate_banknote_back import run_single_denomination as generate_back
-    HAS_BACK_GENERATOR = True
-    print("[+] Successfully imported run_single_denomination from generate_banknote_back.py")
-except ImportError as e:
-    print(f"[!] First import attempt failed: {e}")
+def normalize_denomination(value, default="1"):
+    """Normalize denomination to a numeric string for EisenScript."""
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return default
+    text = str(value).strip()
+    if not text:
+        return default
+    # Extract numeric part
+    digits = "".join(ch for ch in text if ch.isdigit())
+    return digits if digits else default
+
+def denomination_to_words(value) -> str:
+    """Convert a denomination to English words (e.g., 1000 -> One Thousand)."""
     try:
-        from generate_banknote_back import run_single_denomination as generate_back
-        HAS_BACK_GENERATOR = True
-        print("[+] Successfully imported run_single_denomination (second attempt)")
-    except ImportError as e2:
-        print(f"[!] Second import attempt failed: {e2}")
-        generate_back = None
-        HAS_BACK_GENERATOR = False
+        num = int(str(value).strip())
+    except Exception:
+        return "Unknown"
 
-# Debug info
-print(f"[DEBUG] HAS_FRONT_GENERATOR: {HAS_FRONT_GENERATOR}")
-print(f"[DEBUG] HAS_BACK_GENERATOR: {HAS_BACK_GENERATOR}")
-print(f"[DEBUG] Current directory: {os.getcwd()}")
-print(f"[DEBUG] Script directory: {os.path.dirname(os.path.abspath(__file__))}")
-print(f"[DEBUG] Python path: {sys.path}")
+    if num == 0:
+        return "Zero"
 
-# Configuration
-# -----------------------
-FRONT_SCRIPT = "generate_banknote_front.py"
-BACK_SCRIPT = "generate_banknote_back.py"
-NAMES_FILE = "master.txt"
-OUTPUT_ROOT = "./images"  # single folder per name
-PORTRAITS_DIR = "./portraits"
-IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".bmp")
-# SD API URLs with GPU selection support
-SD_API_URL = "http://localhost:7777/sdapi/v1/txt2img"
-SD_API_URL_GPU0 = os.getenv("SD_API_URL_GPU0", "http://localhost:7777/sdapi/v1/txt2img")
-SD_API_URL_GPU1 = os.getenv("SD_API_URL_GPU1", "http://localhost:7777/sdapi/v1/txt2img")
+    units = [
+        "", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine",
+        "Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen",
+        "Seventeen", "Eighteen", "Nineteen",
+    ]
+    tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
+    scales = [(10**9, "Billion"), (10**6, "Million"), (10**3, "Thousand"), (10**2, "Hundred")]
 
-# Check if multi-GPU is available
-MULTI_GPU_ENABLED = os.getenv("MULTI_GPU_ENABLED", "false").lower() == "true"
-MAX_THREADS = 8  # Increased for 3090!
+    def two_digit(n):
+        if n < 20:
+            return units[n]
+        return tens[n // 10] + (" " + units[n % 10] if n % 10 else "")
 
-# Standard denominations
-STANDARD_DENOMINATIONS = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000]
+    words = []
+    remainder = num
 
-# -----------------------
-# Serial generation functions
-# -----------------------
-def generate_serial_id_with_checksum(timestamp_ms=None):
-    """Generate serial ID with built-in checksum for validation (for front)"""
-    ts = timestamp_ms or int(datetime.datetime.now().timestamp() * 1000000)
-    salt = secrets.token_bytes(3)
-    raw = f"{ts}-".encode() + salt
-    h = hashlib.sha3_256(raw).digest()
-    
-    # Take first 10 bytes for serial
-    serial_bytes = h[:10]
-    serial_b64 = base64.urlsafe_b64encode(serial_bytes).decode('ascii').replace('=', '')[:14]
-    
-    # Add checksum (last 2 bytes of hash)
-    checksum_bytes = h[-2:]
-    checksum_b64 = base64.urlsafe_b64encode(checksum_bytes).decode('ascii').replace('=', '')[:3]
-    
-    return f"SN-{serial_b64}-{checksum_b64}"
+    for scale_value, scale_name in scales:
+        if remainder >= scale_value:
+            chunk = remainder // scale_value
+            remainder = remainder % scale_value
+            if scale_value == 100:
+                words.append(units[chunk] + " " + scale_name)
+            else:
+                words.append(two_digit(chunk) + " " + scale_name)
 
-def generate_serial_id_combined(timestamp_ms=None):
-    """Generate a unique, compact serial ID (for back)"""
-    ts = timestamp_ms or int(datetime.datetime.now().timestamp() * 1000000)
-    salt = secrets.token_bytes(4)
-    raw = f"{ts}-".encode() + salt
-    h = hashlib.sha3_256(raw).digest()
-    
-    # Use base64 URL-safe encoding
-    serial_b64 = base64.urlsafe_b64encode(h[:12]).decode('ascii')
-    serial_clean = serial_b64.replace('=', '')[:12]
-    
-    # Format with prefix and groups for readability
-    return f"SN-{serial_clean[:4]}-{serial_clean[4:8]}-{serial_clean[8:12]}"
+    if remainder:
+        words.append(two_digit(remainder))
 
-def generate_timestamp_ms_precise():
-    """Generate timestamp with microsecond precision."""
-    now = datetime.datetime.now()
-    return int(now.timestamp() * 1000) + now.microsecond // 1000
+    return " ".join(w for w in words if w).strip()
 
-# -----------------------
-# Digital Signature Functions
-# -----------------------
-def create_digital_banknote_signature(name, denomination, serial_number, timestamp_ms):
-    """Create a digital signature for a banknote"""
-    if not HAS_SIGNATURES:
-        safe_print("[!] Digital signatures not available, using mock signature")
-        return {
-            'signature': 'mock_signature_' + hashlib.md5(f"{name}{denomination}{serial_number}".encode()).hexdigest(),
-            'public_key': 'mock_public_key',
-            'metadata_hash': hashlib.sha256(f"{name}{denomination}{timestamp_ms}".encode()).hexdigest(),
-            'is_verified': False
-        }
-    
+def denomination_to_compact_lkc(value) -> str:
+    """Convert a denomination to compact LKC format (1kLKC, 1mLKC, 1gLKC)."""
     try:
-        signature_manager = DigitalSignatureManager()
-        
-        # Generate key pair for this banknote
-        private_key, public_key = generate_key_pair()
-        
-        # Create bill data
-        bill_data = {
-            'type': 'banknote',
-            'front_serial': f"{serial_number}_FRONT",
-            'back_serial': f"{serial_number}_BACK",
-            'metadata_hash': hashlib.sha256(f"{name}{denomination}{timestamp_ms}".encode()).hexdigest(),
-            'timestamp': timestamp_ms,
-            'issued_to': name,
-            'denomination': str(denomination)
-        }
-        
-        # Create signed bill
-        signed_bill = signature_manager.create_signed_bill(bill_data, private_key)
-        
-        return {
-            'signature': signed_bill.signature,
-            'public_key': signed_bill.public_key,
-            'private_key': private_key,  # Store for future transactions
-            'metadata_hash': bill_data['metadata_hash'],
-            'is_verified': True
-        }
-        
-    except Exception as e:
-        safe_print(f"[!] Error creating digital signature: {e}")
-        # Fallback to simple hash-based signature
-        return {
-            'signature': hashlib.sha256(f"{name}{denomination}{serial_number}{timestamp_ms}".encode()).hexdigest(),
-            'public_key': 'fallback_public_key',
-            'metadata_hash': hashlib.sha256(f"{name}{denomination}{timestamp_ms}".encode()).hexdigest(),
-            'is_verified': False
-        }
+        num = int(str(value).strip())
+    except Exception:
+        return "Unknown"
 
-def verify_banknote_signature(banknote_data):
-    """Verify a banknote's digital signature"""
-    if not HAS_SIGNATURES:
-        safe_print("[!] Digital signature verification not available")
-        return True  # Return True for fallback mode
-    
-    try:
-        signature_manager = DigitalSignatureManager()
-        return signature_manager.verify_bill_signature(banknote_data)
-    except Exception as e:
-        safe_print(f"[!] Error verifying signature: {e}")
-        return False
+    if num >= 1_000_000_000:
+        return f"{num // 1_000_000_000}gLKC"
+    if num >= 1_000_000:
+        return f"{num // 1_000_000}mLKC"
+    if num >= 1_000:
+        return f"{num // 1_000}kLKC"
+    return f"{num}LKC"
 
-# -----------------------
-# Helper functions
-# -----------------------
-def read_prompt_file(filename, default_prompt=""):
-    """Read prompt from file, return default if file doesn't exist"""
+def denomination_to_chinese(value) -> str:
+    """Convert a denomination to Chinese numerals (up to 100,000,000)."""
     try:
-        if os.path.exists(filename):
-            with open(filename, 'r', encoding='utf-8') as f:
-                return f.read().strip()
+        num = int(str(value).strip())
+    except Exception:
+        return "未知"
+
+    if num == 0:
+        return "零"
+
+    digits = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"]
+    units = ["", "十", "百", "千"]
+    big_units = ["", "万", "亿"]
+
+    def four_to_chinese(n: int) -> str:
+        result = []
+        zero = False
+        for i in range(4):
+            d = n % 10
+            if d == 0:
+                if result and not zero:
+                    result.append(digits[0])
+                    zero = True
+            else:
+                result.append(units[i])
+                result.append(digits[d])
+                zero = False
+            n //= 10
+        return "".join(reversed(result)).rstrip(digits[0])
+
+    parts = []
+    unit_index = 0
+    while num > 0 and unit_index < len(big_units):
+        chunk = num % 10000
+        if chunk:
+            chunk_str = four_to_chinese(chunk)
+            parts.append(chunk_str + big_units[unit_index])
         else:
-            safe_print(f"[!] Prompt file {filename} not found, using default")
-            return default_prompt
-    except Exception as e:
-        safe_print(f"[!] Error reading {filename}: {e}")
-        return default_prompt
+            parts.append("")
+        num //= 10000
+        unit_index += 1
 
-def parse_denomination_from_filename(filename):
-    """Extract denomination from filename patterns like '1.svg', '10.svg', etc."""
-    basename = os.path.splitext(filename)[0]
-    match = re.search(r'(\d+)', basename)
-    if match:
-        return match.group(1)
-    return "1"
+    result = "".join(reversed([p for p in parts if p]))
+    result = result.replace("一十", "十")
+    result = result.replace("零零", "零").strip("零")
+    return result or "零"
 
-def create_proper_filename(name, denom, timestamp, side):
-    """Create filename in format: {name}_-_{denom}_-_{timestamp}_{side}.svg"""
-    return f"{name}_-_{denom}_-_{timestamp}_{side}.svg"
-
-def create_basename(name, denom, timestamp, side):
-    """Create filename in format: {name}_-_{denom}_-_{timestamp}_{side}"""
-    return f"{name}_-_{denom}_-_{timestamp}_{side}"
-
-def safe_print(message):
-    """Print message with Unicode fallback handling"""
+def denomination_to_chinese_lkc(value) -> str:
+    """Convert a denomination to Chinese numerals with LKC unit (e.g., 一LKC, 一kLKC, 一mLKC, 一gLKC)."""
     try:
-        print(message)
-    except UnicodeEncodeError:
-        safe_message = message.encode('ascii', 'replace').decode('ascii')
-        print(safe_message)
+        num = int(str(value).strip())
+    except Exception:
+        return "未知"
+
+    if num >= 1_000_000_000:
+        return f"{denomination_to_chinese(num // 1_000_000_000)}gLKC"
+    if num >= 1_000_000:
+        return f"{denomination_to_chinese(num // 1_000_000)}mLKC"
+    if num >= 1_000:
+        return f"{denomination_to_chinese(num // 1_000)}kLKC"
+    return f"{denomination_to_chinese(num)}LKC"
+
+def sanitize_username_for_filename(name: str) -> str:
+    if not name:
+        return "unknown"
+    safe = "".join(ch if ch.isalnum() or ch in "-_" else "_" for ch in str(name))
+    return safe or "unknown"
+def _load_eisen_file(path: str) -> str:
+    try:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                return f.read()
+    except Exception:
+        pass
+    return ""
+def get_portrait_path(username: str) -> str:
+    safe_name = sanitize_username_for_filename(username)
+    return os.path.join("portraits", f"portrait_{safe_name}.png")
+
+def get_user_denom_output_dir(username: str, denomination: str) -> str:
+    safe_name = sanitize_username_for_filename(username)
+    safe_denom = sanitize_username_for_filename(str(denomination))
+    return os.path.join("images", safe_name, safe_denom)
+
+def render_eisenscript_jinja2(script: str, context: dict) -> str:
+    safe_context = dict(context) if context else {}
+    safe_context.setdefault("title", "")
+    safe_context.setdefault("subtitle", "")
+    safe_context.setdefault("denomination", "1")
+    safe_context.setdefault("serial", "")
+    env = Environment(undefined=DebugUndefined)
+    try:
+        parsed = env.parse(script or "")
+        vars_used = sorted(meta.find_undeclared_variables(parsed))
+        print(f"[JINJA2 DEBUG] Vars used: {vars_used}")
+        print(f"[JINJA2 DEBUG] Context keys: {sorted(safe_context.keys())}")
+        if "title" in vars_used or "subtitle" in vars_used:
+            print(f"[JINJA2 DEBUG] title={safe_context.get('title')}, subtitle={safe_context.get('subtitle')}")
+    except Exception as e:
+        print(f"[JINJA2 DEBUG] Failed to parse template vars: {e}")
+    template = env.from_string(script)
+    return template.render(**safe_context)
+
+def load_eisenscript_parts(side: str):
+    """
+    Load EisenScript pre, user, suf for 'front' or 'back' from Settings model.
+    Returns (pre, user, suf) tuple.
+    """
+    from app import app
+    with app.app_context():
+        settings = Settings.query.first()
+        if not settings:
+            return ('', '', '')
+        if side == 'front':
+            pre = getattr(settings, 'eisenscript_prefix_front', '') or ''
+            user = getattr(settings, 'eisenscript_user_front', '') or ''
+            suf = getattr(settings, 'eisenscript_suffix_front', '') or ''
+        else:
+            pre = getattr(settings, 'eisenscript_prefix_back', '') or ''
+            user = getattr(settings, 'eisenscript_user_back', '') or ''
+            suf = getattr(settings, 'eisenscript_suffix_back', '') or ''
+        return (pre, user, suf)
+
+def merge_eisenscript_with_vars(pre, user, suf, context):
+    """
+    Jinja2展開したpre, user, sufを結合して1つのEisenScriptにする
+    """
+    return '\n'.join([
+        render_eisenscript_jinja2(pre, context),
+        render_eisenscript_jinja2(user, context),
+        render_eisenscript_jinja2(suf, context)
+    ])
+
+def inject_back_denom_background(script: str, color: str, width_px: int = 1600, height_px: int = 600) -> str:
+    """Inject a solid background rect into back EisenScript."""
+    if not script:
+        return script
+    if "# denom_bg_rect" in script:
+        return script
+    rect_line = f"rect 0 0 {width_px} {height_px} {color}"
+    lines = script.splitlines()
+    insert_at = 0
+    for idx, line in enumerate(lines):
+        if line.strip().startswith("size "):
+            insert_at = idx + 1
+            break
+    lines.insert(insert_at, "# denom_bg_rect")
+    lines.insert(insert_at + 1, rect_line)
+    return "\n".join(lines)
 
 def generate_png_from_svg(svg_path, png_path, size=(1600, 600)):
-    """Generate PNG from SVG file using cairosvg (fast path + cache)."""
     try:
-        if os.path.exists(png_path) and os.path.exists(svg_path):
-            if os.path.getmtime(png_path) >= os.path.getmtime(svg_path):
+        svg_uri = Path(svg_path).resolve().as_uri()
+        for attempt in range(3):
+            try:
+                png_bytes = cairosvg.svg2png(url=svg_uri, output_width=size[0], output_height=size[1])
+                img = Image.open(BytesIO(png_bytes))
+                img.save(png_path, format="PNG", optimize=False, compress_level=1)
                 return True
-
-        png_bytes = cairosvg.svg2png(
-            url=svg_path,
-            output_width=size[0],
-            output_height=size[1],
-        )
-        img = Image.open(BytesIO(png_bytes))
-        img.save(png_path, format="PNG", optimize=False, compress_level=1)
-        return True
+            except Exception as inner:
+                if attempt < 2:
+                    time.sleep(0.1)
+                    continue
+                raise inner
     except Exception as e:
         print(f"[ERROR] Failed to generate PNG from {svg_path}: {e}")
         return False
 
-def generate_pdf_from_svg(svg_path, pdf_path):
-    """Generate PDF from SVG file using pure ReportLab"""
-    try:
-        # Parse SVG manually (simplified approach)
-        from reportlab.pdfgen import canvas
-        from reportlab.graphics import renderPDF
-        from reportlab.graphics.shapes import Drawing
-        
-        drawing = Drawing(400, 200)  # Adjust size as needed
-        
-        # Basic SVG parsing - this is simplified
-        tree = ET.parse(svg_path)
-        root = tree.getroot()
-        
-        # You would need to implement proper SVG parsing here
-        # This is just a placeholder
-        
-        c = canvas.Canvas(pdf_path)
-        drawing.drawOn(c, 0, 0)
-        c.save()
-        return True
-    except Exception as e:
-        print(f"[ERROR] Failed to generate PDF from {svg_path}: {e}")
-        return False
+def resolve_svg_file(svg_path: Path) -> Path:
+    """Resolve to an actual SVG file if a directory is provided."""
+    svg_path = Path(svg_path)
+    if svg_path.exists() and svg_path.is_dir():
+        eisen = svg_path / "eisen.svg"
+        if eisen.exists():
+            return eisen
+        candidates = sorted(svg_path.glob("*.svg"), key=lambda p: p.stat().st_mtime, reverse=True)
+        if candidates:
+            return candidates[0]
+    return svg_path
 
-# -----------------------
-# Portrait generation functions
-# -----------------------
-def generate_character_portrait(name: str, width: int = 512, height: int = 512, 
-                               seed: int = -1, save_path: str = "./portraits", portrait_prompt=None):
+def write_eisen_file(eisen_path: Path, script: str) -> None:
+    try:
+        eisen_path = Path(eisen_path)
+        eisen_path.parent.mkdir(parents=True, exist_ok=True)
+        eisen_path.write_text(script or "", encoding="utf-8")
+    except Exception as e:
+        print(f"[WARNING] Failed to write EisenScript file: {e}")
+
+def normalize_svg_output(result_path, target_path: Path) -> Path:
+    """Ensure the SVG ends up at target_path, even if renderer returns a directory."""
+    target_path = Path(target_path)
+    if result_path:
+        result_path = Path(result_path)
+        if result_path.exists() and result_path.is_dir():
+            candidate = result_path / "eisen.svg"
+            if candidate.exists():
+                target_path.parent.mkdir(parents=True, exist_ok=True)
+                if candidate.resolve() != target_path.resolve():
+                    shutil.move(str(candidate), str(target_path))
+                return target_path
+        if result_path.exists() and result_path.suffix.lower() == ".svg":
+            target_path.parent.mkdir(parents=True, exist_ok=True)
+            if result_path.resolve() != target_path.resolve():
+                shutil.move(str(result_path), str(target_path))
+            return target_path
+    return target_path
+
+def apply_svg_background_color(svg_path: Path, color: str) -> None:
+    """Insert a background rect as the first SVG element if not present."""
+    try:
+        svg_path = Path(svg_path)
+        if not svg_path.exists():
+            return
+        text = svg_path.read_text(encoding="utf-8")
+        if 'data-denom-bg="1"' in text:
+            return
+        insert_idx = text.find("<svg")
+        if insert_idx == -1:
+            return
+        start_tag_end = text.find(">", insert_idx)
+        if start_tag_end == -1:
+            return
+        rect = f"<rect data-denom-bg=\"1\" width=\"100%\" height=\"100%\" fill=\"{color}\"/>"
+        text = text[:start_tag_end+1] + rect + text[start_tag_end+1:]
+        svg_path.write_text(text, encoding="utf-8")
+    except Exception as e:
+        print(f"[WARNING] Failed to apply background color: {e}")
+
+def wait_for_svg_ready(svg_path, timeout=6.0, interval=0.05):
+    """Wait until SVG exists and is non-empty."""
+    start = time.time()
+    svg_path = resolve_svg_file(Path(svg_path))
+    while time.time() - start < timeout:
+        try:
+            if svg_path.exists() and svg_path.stat().st_size > 0:
+                return True
+        except Exception:
+            pass
+        time.sleep(interval)
+    return False
+
+def create_serial_id():
+    return f"SN-{os.urandom(4).hex()}-{int(time.time()*1000)}"
+
+def create_filename(name, denom, timestamp, side):
+    safe = lambda s: str(s).replace('/', '_').replace('\\', '_')
+    return f"{safe(name)}_-_{safe(denom)}_-_{timestamp}_{side}.svg"
+
+def save_to_database(user, serial, denom, side, svg_path, png_path):
+    from app import app
+    with app.app_context():
+        try:
+            banknote = Banknote(
+                user_id=user.id,
+                serial_number=serial,
+                seed_text=user.username,
+                denomination=str(denom),
+                side=side,
+                svg_path=svg_path,
+                png_path=png_path,
+                is_public=True,
+                created_at=datetime.utcnow()
+            )
+            db.session.add(banknote)
+            db.session.commit()
+            serial_rec = SerialNumber(
+                serial=serial,
+                user_id=user.id,
+                banknote_id=banknote.id,
+                is_active=True,
+                created_at=datetime.utcnow()
+            )
+            db.session.add(serial_rec)
+            db.session.commit()
+            print(f"[+] Registered {side} banknote/serial: {serial}")
+            return True
+        except Exception as e:
+            db.session.rollback()
+            print(f"[ERROR] Failed to register {side} banknote/serial: {e}")
+            return False
+
+# --- Main generation logic ---
+
+def generate_banknote_pair(name, denom, output_dir, width_mm=160.0, height_mm=60.0, extra_context=None, progress_callback=None):
     """
-    Generate a character portrait based on the name using Stable Diffusion API
+    Generate a front/back SVG+PNG pair for a given name/denom, using EisenScript parts from DB.
+    Can be called from app.py or CLI.
     """
-    os.makedirs(save_path, exist_ok=True)
-    
-    # Use provided prompt or read from file (only if not provided)
-    if not portrait_prompt:
-        portrait_prompt = read_prompt_file(
-            "portrait_prompt.txt",
-            "portrait of {name}, elegant character, official portrait, banknote portrait, currency art, detailed face, professional, serious expression, high detail, official document style"
-        )
-    
-    negative_prompt = read_prompt_file(
-        "negative_prompt.txt",
-        "text, words, letters, numbers, blurry, low quality, watermark, signature, ugly, deformed, cartoon, anime, modern, casual"
-    )
-    
-    # Format the prompt with the name
-    formatted_prompt = portrait_prompt.format(name=name)
-    
-    payload = {
-        "prompt": formatted_prompt,
-        "negative_prompt": negative_prompt,
-        "width": width,
-        "height": height,
-        "seed": seed if seed != -1 else random.randint(0, 2**32 - 1),
-        "steps": 20,  # REDUCED from 30 to 20 - 33% faster!
-        "cfg_scale": 7,  # Slightly reduced
-        "sampler_name": "DPM++ 2M Karras",
-        "batch_size": 1,
-        "n_iter": 1,
-        "restore_faces": False,  # Disabled for speed
-        "tiling": False,
-        "enable_hr": False,  # DISABLED hires fix - big speedup!
-        "denoising_strength": 0.4,
+    timestamp = int(time.time()*1000)
+    from app import app
+    with app.app_context():
+        user = User.query.first()
+        if not user:
+            print('[!] No user found')
+            return
+        settings = Settings.query.first()
+    serial_front = create_serial_id()
+    serial_back = create_serial_id()
+    denom = normalize_denomination(denom)
+    if not output_dir:
+        output_dir = get_user_denom_output_dir(name, denom)
+    denom_color = denomination_color(denom)
+    denom_words = denomination_to_words(denom)
+    denom_compact = denomination_to_compact_lkc(denom)
+    denom_words_cn = denomination_to_chinese(denom)
+    denom_compact_cn = denomination_to_chinese_lkc(denom)
+    title = (settings.bill_title if settings else "") or ""
+    subtitle = (settings.bill_subtitle if settings else "") or ""
+    context_base = {
+        "username": name,
+        "denomination": denom,
+        "denomination_words": denom_words,
+        "denomination_compact": denom_compact,
+        "denomination_words_cn": denom_words_cn,
+        "denomination_compact_cn": denom_compact_cn,
+        "serial": serial_front,
+        "title": title,
+        "subtitle": subtitle,
+        "denomination_color": denom_color,
+        "denom_color": denom_color,
+        "width_mm": width_mm,
+        "height_mm": height_mm,
+        "timestamp": timestamp
+    }
+    if extra_context:
+        context_base.update(extra_context)
+    context_front = dict(context_base)
+    context_back = dict(context_base)
+    context_back["serial"] = serial_back
+
+    # EisenScript parts from DB
+    front_pre, front_user, front_suf = load_eisenscript_parts('front')
+    back_pre, back_user, back_suf = load_eisenscript_parts('back')
+    eisenscript_front = merge_eisenscript_with_vars(front_pre, front_user, front_suf, context_front)
+    eisenscript_back = merge_eisenscript_with_vars(back_pre, back_user, back_suf, context_back)
+    eisenscript_back = inject_back_denom_background(eisenscript_back, denom_color)
+
+    front_filename = create_filename(name, denom, timestamp, "FRONT")
+    back_filename = create_filename(name, denom, timestamp, "BACK")
+    front_stem = Path(front_filename).stem
+    back_stem = Path(back_filename).stem
+    front_dir = Path(output_dir) / front_stem
+    back_dir = Path(output_dir) / back_stem
+    svg_front = front_dir / f"{front_stem}.svg"
+    svg_back = back_dir / f"{back_stem}.svg"
+    eisen_front = front_dir / f"{front_stem}.eisen"
+    eisen_back = back_dir / f"{back_stem}.eisen"
+    png_front = front_dir / f"{front_stem}.png"
+    png_back = back_dir / f"{back_stem}.png"
+    os.makedirs(front_dir, exist_ok=True)
+    os.makedirs(back_dir, exist_ok=True)
+    write_eisen_file(eisen_front, eisenscript_front)
+    write_eisen_file(eisen_back, eisenscript_back)
+
+    status = {
+        "front_png": False,
+        "back_png": False,
+        "front_db": False,
+        "back_db": False,
     }
 
-    try:
-        safe_print(f"[+] Generating portrait for: {name}")
-        response = requests.post(SD_API_URL, json=payload, timeout=131313)
-        response.raise_for_status()
-        
-        result = response.json()
-        images = result.get('images', [])
-        
-        if images:
-            image_data = base64.b64decode(images[0])
-            image = Image.open(BytesIO(image_data))
-            
-            # Clean name for filename
-            clean_name = re.sub(r'[^\w\-_]', '_', name)
-            filename = f"portrait_{clean_name}.png"
-            filepath = os.path.join(save_path, filename)
-            
-            image.save(filepath)
-            safe_print(f"[+] Generated portrait: {filepath}")
-            return filepath
-        
-    except Exception as e:
-        safe_print(f"[!] Error generating portrait for {name}: {e}")
-        return None
-
-def get_portrait_for_name(name, force_regenerate=False, portrait_prompt=None):
-    """
-    Get a portrait for the given name - use existing or generate new
-    Returns the same portrait path for all denominations
-    """
-    try:
-        clean_name = re.sub(r'[^\w\-_]', '_', name)
-    except UnicodeEncodeError:
-        try:
-            clean_name = re.sub(r'[^\w\-_]', '_', name.encode('ascii', 'ignore').decode('ascii'))
-        except:
-            clean_name = "unknown"
-    
-    # Look for existing portrait for this name (without timestamp)
-    portrait_patterns = [
-        os.path.join(PORTRAITS_DIR, f"portrait_{clean_name}.png"),
-        os.path.join(PORTRAITS_DIR, f"portrait_{clean_name}.jpg"),
-        os.path.join(PORTRAITS_DIR, f"portrait_{clean_name}.jpeg"),
-        os.path.join(PORTRAITS_DIR, f"*{clean_name}*.png"),
-        os.path.join(PORTRAITS_DIR, f"*{clean_name}*.jpg"),
-        os.path.join(PORTRAITS_DIR, f"*{clean_name}*.jpeg"),
-    ]
-    
-    # Check for existing portrait only if not forcing regeneration
-    existing_portrait = None
-    if not force_regenerate:
-        for pattern in portrait_patterns:
-            existing_portraits = glob.glob(pattern)
-            if existing_portraits:
-                existing_portrait = existing_portraits[0]
-                safe_print(f"[+] Using existing portrait: {existing_portrait}")
-                return existing_portrait
-    
-    # No existing portrait found or force_regenerate is True
-    if not existing_portrait or force_regenerate:
-        safe_print(f"[+] Generating new portrait for {name}...")
-        new_portrait = generate_character_portrait(name, portrait_prompt=portrait_prompt)
-        if new_portrait and os.path.exists(new_portrait):
-            safe_print(f"[+] Successfully generated portrait: {new_portrait}")
-            return new_portrait
+    def on_front_svg_saved(svg_path):
+        svg_file = resolve_svg_file(Path(svg_path))
+        if wait_for_svg_ready(svg_file):
+            status["front_png"] = generate_png_from_svg(svg_file, png_front)
         else:
-            safe_print(f"[!] Failed to generate portrait for {name}")
-            return None
-    
-    return existing_portrait
+            print(f"[WARNING] SVG not ready for PNG (front): {svg_file}")
 
-# -----------------------
-# Banknote generation functions
-# -----------------------
-def generate_front_back_pair(name, denom, img_path, timestamp_ms, denom_folder, user_id=None,
-                          width_mm=160.0, height_mm=60.0, title="灵国国库", subtitle="天圆地方", 
-                          font_dir="./fonts", bg_dir="./backgrounds", dpi=300.0, bg_image=None, background_prompt=None, 
-                          use_parallel=True):
-    """Generate a front+back pair for a single denomination with optional parallel processing"""
-    front_serial = generate_serial_id_with_checksum(timestamp_ms)
-    back_serial = generate_serial_id_combined(timestamp_ms)
-    
-    denom_str = str(denom)  # Ensure denomination is string
-    safe_print(f"[+] Generating {denom}卢纳币 bill (timestamp: {timestamp_ms})")
-    
-    # Generate digital signature for the banknote
-    digital_signature_data = create_digital_banknote_signature(
-        name=name,
-        denomination=denom,
-        serial_number=front_serial,
-        timestamp_ms=timestamp_ms
-    )
-    
-    safe_print(f"[+] Created digital signature for serial: {front_serial}")
-    
-    # Prepare filenames
-    front_filename = create_proper_filename(name, denom_str, timestamp_ms, "FRONT")
-    front_svg_path = os.path.join(denom_folder, front_filename)
-    back_basename = create_basename(name, denom_str, timestamp_ms, "BACK")
-    back_svg_path = os.path.join(denom_folder, f"{back_basename}.svg")
-    
-    def generate_front_task():
-        """Generate front in separate thread"""
-        try:
-            if os.path.exists(front_svg_path) and os.path.getsize(front_svg_path) > 0:
-                safe_print(f"[CACHE] Front SVG exists, skipping generation: {front_svg_path}")
-                return True
-
-            # Set GPU 0 environment if multi-GPU is enabled
-            gpu_env = os.environ.copy()
-            if MULTI_GPU_ENABLED:
-                gpu_env['CUDA_VISIBLE_DEVICES'] = '0'
-                safe_print(f"[GPU0] Generating front for {denom}卢纳币")
-            
-            # Try using imported function first
-            if HAS_FRONT_GENERATOR and generate_front:
-                generate_front(
-                    seed_text=name,
-                    input_image_path=img_path,
-                    single_denom=denom_str,
-                    outfile=front_svg_path,
-                    serial_id=front_serial,
-                    timestamp=int(timestamp_ms),
-                    background_prompt=background_prompt
-                )
-            else:
-                safe_name = name.replace('&', '_')
-                subprocess.run([
-                    'python', FRONT_SCRIPT,
-                    safe_name,
-                    img_path,
-                    '--outfile', front_svg_path,
-                    '--single_denom', denom_str,
-                    '--serial_id', front_serial,
-                    '--timestamp', str(int(timestamp_ms)),
-                    '--width-mm', str(width_mm),
-                    '--height-mm', str(height_mm),
-                    '--title', title,
-                    '--subtitle', subtitle,
-                    '--font-dir', font_dir,
-                    '--bg-dir', bg_dir,
-                    '--dpi', str(dpi),
-                    '--background-prompt', background_prompt or ''
-                ], check=True, timeout=13131313, env=gpu_env)
-            
-            safe_print(f"[+] Generated front: {front_svg_path}")
-            return True
-        except Exception as e:
-            safe_print(f"[!] Failed to generate front: {e}")
-            return False
-    
-    def generate_back_task():
-        """Generate back in separate thread"""
-        try:
-            if os.path.exists(back_svg_path) and os.path.getsize(back_svg_path) > 0:
-                safe_print(f"[CACHE] Back SVG exists, skipping generation: {back_svg_path}")
-                return True
-
-            # Set GPU 1 environment if multi-GPU is enabled
-            gpu_env = os.environ.copy()
-            if MULTI_GPU_ENABLED:
-                gpu_env['CUDA_VISIBLE_DEVICES'] = '1'
-                safe_print(f"[GPU1] Generating back for {denom}卢纳币")
-            
-            if HAS_BACK_GENERATOR and generate_back:
-                generate_back(
-                    outdir=denom_folder,
-                    base_name=back_basename,
-                    denomination=denom_str,
-                    seed_text=name,
-                    serial_id=back_serial,
-                    timestamp=int(timestamp_ms)
-                )
-            else:
-                safe_name = name.replace('&', '_')
-                subprocess.run([
-                    'python', BACK_SCRIPT,
-                    '--outdir', denom_folder,
-                    '--basename', back_basename,
-                    '--denomination', denom_str,
-                    '--seed_text', safe_name,
-                    '--serial_id', back_serial,
-                    '--timestamp', str(int(timestamp_ms)),
-                    '--width-mm', str(width_mm),
-                    '--height-mm', str(height_mm),
-                    '--title', title,
-                    '--phrase', subtitle,
-                    '--dpi', str(dpi)
-                ] + (['--bg-image', bg_image] if bg_image else []), check=True, timeout=13131313, env=gpu_env)
-            
-            safe_print(f"[+] Generated back: {back_svg_path}")
-            return True
-        except Exception as e:
-            safe_print(f"[!] Failed to generate back: {e}")
-            return False
-    
-    try:
-        if use_parallel:
-            # Generate front and back in parallel using threading
-            safe_print(f"[PARALLEL] Using parallel front/back generation")
-            import concurrent.futures
-            
-            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-                front_future = executor.submit(generate_front_task)
-                back_future = executor.submit(generate_back_task)
-                
-                # Wait for both to complete
-                front_success = front_future.result()
-                back_success = back_future.result()
-                
-                if not (front_success and back_success):
-                    raise Exception("Failed to generate front or back")
+    def on_back_svg_saved(svg_path):
+        svg_file = resolve_svg_file(Path(svg_path))
+        if wait_for_svg_ready(svg_file):
+            status["back_png"] = generate_png_from_svg(svg_file, png_back)
         else:
-            # Sequential generation
-            safe_print(f"[SEQUENTIAL] Using single GPU sequential generation")
-            if not generate_front_task():
-                raise Exception("Failed to generate front")
-            if not generate_back_task():
-                raise Exception("Failed to generate back")
-        
-        # Generate PNG and PDF files
-        front_png_path = front_svg_path.replace(".svg", ".png")
-        front_pdf_path = front_svg_path.replace(".svg", ".pdf")
-        back_png_path = back_svg_path.replace(".svg", ".png")
-        back_pdf_path = back_svg_path.replace(".svg", ".pdf")
-        
-        # Generate PNGs in parallel
-        import concurrent.futures
-        with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
-            front_future = executor.submit(generate_png_from_svg, front_svg_path, front_png_path)
-            back_future = executor.submit(generate_png_from_svg, back_svg_path, back_png_path)
-            front_ok = front_future.result()
-            back_ok = back_future.result()
-            if not (front_ok and back_ok):
-                raise Exception("Failed to generate front/back PNG")
-        
-        # Generate PDFs (commented out for now)
-        # generate_pdf_from_svg(front_svg_path, front_pdf_path)
-        # generate_pdf_from_svg(back_svg_path, back_pdf_path)
-        back_pdf_path = ""
-        
-        return {
-            'front_svg': front_svg_path,
-            'front_png': front_png_path,
-            'front_pdf': front_pdf_path,
-            'back_svg': back_svg_path,
-            'back_png': back_png_path,
-            'back_pdf': back_pdf_path,
-            'front_serial': front_serial,
-            'back_serial': back_serial,
-            'digital_signature': digital_signature_data['signature'],
-            'public_key': digital_signature_data['public_key'],
-            'private_key': digital_signature_data.get('private_key'),
-            'metadata_hash': digital_signature_data['metadata_hash'],
-            'is_verified': digital_signature_data['is_verified']
-        }
-        
-    except Exception as e:
-        safe_print(f"[!] Failed to generate {denom}卢纳币: {e}")
-        return None
-        import traceback
-        traceback.print_exc()
-        return None
+            print(f"[WARNING] SVG not ready for PNG (back): {svg_file}")
 
-def save_to_database(name, denom_numeric, files, user_id):
-    """Save the generated banknote pair to database and add to blockchain"""
-    if not HAS_FLASK_CONTEXT:
-        safe_print(f"[!] No Flask context - skipping database save for {name}")
-        return False
-        
-    try:
-        # Convert numeric denomination to string and validate
-        denom_str = str(denom_numeric)
-        
-        # Validate that the denomination is in the allowed set
-        allowed_denominations = ["1", "10", "100", "1000", "10000", "100000", 
-                               "1000000", "10000000", "100000000"]
-        
-        if denom_str not in allowed_denominations:
-            safe_print(f"[!] Invalid denomination {denom_str}. Must be one of: {', '.join(allowed_denominations)}")
-            return False
-        
-        # Prepare transaction data for blockchain
-        transaction_data = {
-            'type': 'banknote',
-            'front_serial': files['front_serial'],
-            'back_serial': files['back_serial'],
-            'metadata_hash': files.get('metadata_hash', ''),
-            'timestamp': int(time.time()),
-            'issued_to': name,
-            'denomination': denom_str,
-            'public_key': files.get('public_key', ''),
-            'signature': files.get('digital_signature', '')
-        }
-        
-        # Save front banknote with digital signature data
-        front_banknote = Banknote(
-            user_id=user_id,
-            serial_number=files['front_serial'],
-            seed_text=name,
-            denomination=denom_str,
-            side="front",
-            svg_path=files['front_svg'],
-            png_path=files['front_png'],
-            pdf_path=files['front_pdf'],
-            is_public=True,
-            transaction_data=json.dumps(transaction_data),
-            digital_signature=files.get('digital_signature'),
-            public_key=files.get('public_key'),
-            metadata_hash=files.get('metadata_hash')
-        )
-        db.session.add(front_banknote)
-        db.session.flush()
-        
-        front_serial_record = SerialNumber(
-            serial=files['front_serial'],
-            user_id=user_id,
-            banknote_id=front_banknote.id,
-            is_active=True
-        )
-        db.session.add(front_serial_record)
-        
-        # Save back banknote
-        back_banknote = Banknote(
-            user_id=user_id,
-            serial_number=files['back_serial'],
-            seed_text=name,
-            denomination=denom_str,
-            side="back",
-            svg_path=files['back_svg'],
-            png_path=files['back_png'],
-            pdf_path=files['back_pdf'],
-            is_public=True
-        )
-        db.session.add(back_banknote)
-        db.session.flush()
-        
-        back_serial_record = SerialNumber(
-            serial=files['back_serial'],
-            user_id=user_id,
-            banknote_id=back_banknote.id,
-            is_active=True
-        )
-        db.session.add(back_serial_record)
-        
-        # Update user balance
-        user = User.query.get(user_id)
-        if user:
-            denom_value = float(denom_str)
-            user.balance += denom_value
-            user.last_generation = datetime.datetime.utcnow()
-        
-        db.session.commit()
-        safe_print(f"[+] Added banknote pair to DB for {denom_str} 卢纳币")
-        safe_print(f"[+] Digital signature: {files.get('digital_signature', 'N/A')[:20]}...")
+    def render_front():
+        svg_result = render_script_to_svg_html(eisenscript_front, front_dir)
+        if isinstance(svg_result, tuple):
+            svg_result = svg_result[0]
+        svg_path = Path(svg_result) if svg_result else svg_front
+        svg_file = resolve_svg_file(normalize_svg_output(svg_path, svg_front))
+        print(f"[+] Saved FRONT SVG: {svg_file}")
+        on_front_svg_saved(svg_file)
+        status["front_db"] = save_to_database(user, serial_front, denom, "front", str(svg_front), str(png_front))
 
-        # Add genesis transactions to blockchain AFTER DB commit succeeds
+    def render_back():
+        svg_result = render_script_to_svg_html(eisenscript_back, back_dir)
+        if isinstance(svg_result, tuple):
+            svg_result = svg_result[0]
+        svg_path = Path(svg_result) if svg_result else svg_back
+        svg_file = resolve_svg_file(normalize_svg_output(svg_path, svg_back))
+        print(f"[+] Saved BACK SVG: {svg_file}")
+        apply_svg_background_color(svg_file, denom_color)
+        on_back_svg_saved(svg_file)
+        status["back_db"] = save_to_database(user, serial_back, denom, "back", str(svg_back), str(png_back))
+
+    t_front = threading.Thread(target=render_front)
+    t_back = threading.Thread(target=render_back)
+    t_front.start()
+    t_back.start()
+    t_front.join()
+    t_back.join()
+    print("[+] Banknote pair generated.")
+    success = status["front_png"] and status["back_png"] and status["front_db"] and status["back_db"]
+    if success:
         try:
             from app import blockchain_daemon_instance
-
-            safe_print(f"[DEBUG] Blockchain daemon instance: {blockchain_daemon_instance}")
-            safe_print(f"[DEBUG] Blockchain daemon type: {type(blockchain_daemon_instance)}")
-
             if blockchain_daemon_instance:
-                safe_print(f"[DEBUG] Blockchain daemon attributes: {[attr for attr in dir(blockchain_daemon_instance) if not attr.startswith('_')]}")
-
-                if hasattr(blockchain_daemon_instance, 'mempool'):
-                    safe_print(f"[DEBUG] Mempool size: {len(blockchain_daemon_instance.mempool)}")
-                else:
-                    safe_print(f"[DEBUG] No mempool attribute found")
-
-                if hasattr(blockchain_daemon_instance, 'is_running'):
-                    safe_print(f"[DEBUG] Daemon running: {blockchain_daemon_instance.is_running}")
-
-                safe_print(f"[DEBUG] Adding genesis transaction for serial: {files['front_serial']}")
-                genesis_success = blockchain_daemon_instance.add_genesis_transaction(
-                    serial_number=files['front_serial'],
-                    denomination=float(denom_str),
-                    issued_to=name
+                blockchain_daemon_instance.add_genesis_transaction(
+                    serial_number=serial_front,
+                    denomination=float(denom),
+                    issued_to=name,
                 )
-
-                back_genesis_success = False
-                if files.get('back_serial'):
-                    safe_print(f"[DEBUG] Adding genesis transaction for serial: {files['back_serial']}")
-                    back_genesis_success = blockchain_daemon_instance.add_genesis_transaction(
-                        serial_number=files['back_serial'],
-                        denomination=float(denom_str),
-                        issued_to=name
-                    )
-
-                safe_print(f"[DEBUG] Genesis transaction result (front): {genesis_success}")
-                safe_print(f"[DEBUG] Genesis transaction result (back): {back_genesis_success}")
-
-                if genesis_success:
-                    safe_print(f"[+] ✓ Genesis transaction added to mempool for serial: {files['front_serial']}")
-                else:
-                    safe_print(f"[!] Failed to add genesis transaction for serial: {files['front_serial']}")
-
-                if files.get('back_serial'):
-                    if back_genesis_success:
-                        safe_print(f"[+] ✓ Genesis transaction added to mempool for serial: {files['back_serial']}")
-                    else:
-                        safe_print(f"[!] Failed to add genesis transaction for serial: {files['back_serial']}")
-
-                if hasattr(blockchain_daemon_instance, 'mempool'):
-                    safe_print(f"[DEBUG] Mempool size after add: {len(blockchain_daemon_instance.mempool)}")
-                    genesis_txs = [tx for tx in blockchain_daemon_instance.mempool if tx.get('type') in ['genesis', 'GTX_Genesis']]
-                    safe_print(f"[DEBUG] Genesis transactions in mempool: {len(genesis_txs)}")
-            else:
-                safe_print(f"[!] Blockchain daemon instance is None - not initialized")
-
-        except ImportError as e:
-            safe_print(f"[!] Could not import blockchain_daemon_instance: {e}")
-        except Exception as e:
-            safe_print(f"[!] Error with blockchain integration: {e}")
-            import traceback
-            traceback.print_exc()
-        return True
-        
-    except Exception as e:
-        db.session.rollback()
-        safe_print(f"[!] Failed to save to database: {e}")
-        import traceback
-        traceback.print_exc()
-        return False
-
-def process_denomination(args_tuple):
-    """Helper function for parallel denomination processing"""
-    name, denom, img_path, timestamp_ms, denom_folder, user_id, width_mm, height_mm, title, subtitle, font_dir, bg_dir, dpi, bg_image, background_prompt = args_tuple
-    result = generate_front_back_pair(name, denom, img_path, timestamp_ms, denom_folder, user_id, width_mm, height_mm, title, subtitle, font_dir, bg_dir, dpi, bg_image, background_prompt)
-    if result:
-        result['denomination'] = denom  # Add denomination to result
-    return result
-
-def process_name(name, user_id, force_regenerate=False, specific_denom=None, single_denom=False, images=None,
-               width_mm=160.0, height_mm=60.0, title="灵国国库", subtitle="天圆地方", 
-               font_dir="./fonts", bg_dir="./backgrounds", dpi=300.0, bg_image=None, portrait_prompt=None, background_prompt=None):
-    """Process a single name with all its denominations in parallel"""
-    try:
-        safe_print(f"[+] Processing: {name}")
-        safe_print("=" * 50)
-    except UnicodeEncodeError:
-        safe_name = name.encode('ascii', 'replace').decode('ascii')
-        safe_print(f"\n[+] Processing: {safe_name}")
-        safe_print("=" * 50)
-
-    # Get or generate ONE portrait for this name
-    img_path = get_portrait_for_name(name, force_regenerate, portrait_prompt)
-    
-    # If portrait generation/retrieval failed, try multiple times to generate a new one
-    retry_count = 0
-    max_retries = 3
-    
-    while (not img_path or not os.path.exists(img_path)) and retry_count < max_retries:
-        retry_count += 1
-        safe_print(f"[!] Portrait not found for {name}, attempt {retry_count}/{max_retries} to generate...")
-        img_path = generate_character_portrait(name, portrait_prompt=portrait_prompt)
-        
-        if img_path and os.path.exists(img_path):
-            safe_print(f"[+] Successfully generated portrait: {img_path}")
-            
-            # Update user's avatar in database if this portrait was just created
-            try:
-                from app import app, db
-                from models import User
-                with app.app_context():
-                    user = User.query.get(user_id)
-                    if user:
-                        # Store just the filename for the avatar
-                        portrait_filename = os.path.basename(img_path)
-                        # Check if user has an avatar field (some schemas may not have this)
-                        if hasattr(user, 'avatar'):
-                            user.avatar = portrait_filename
+                blockchain_daemon_instance.add_genesis_transaction(
+                    serial_number=serial_back,
+                    denomination=float(denom),
+                    issued_to=name,
+                )
+                print("[+] Added GTX_Genesis transactions to mempool")
+                try:
+                    from app import app
+                    with app.app_context():
+                        user_ref = User.query.get(user.id)
+                        if user_ref:
+                            user_ref.balance = float(user_ref.balance or 0) + float(denom)
                             db.session.commit()
-                            safe_print(f"[+] Updated user avatar to: {portrait_filename}")
-                        else:
-                            safe_print(f"[+] User model doesn't have avatar field, skipping avatar update")
-            except Exception as avatar_error:
-                safe_print(f"[!] Warning: Could not update user avatar: {avatar_error}")
-            
-            break
-    
-    # If still no portrait after retries, fail the generation
-    if not img_path or not os.path.exists(img_path):
-        safe_print(f"[!] Failed to generate portrait for {name} after {max_retries} attempts")
-        safe_print(f"[!] Cannot proceed without a portrait. Please check SD API connection.")
-        return 0
-
-    safe_print(f"[+] Using portrait for all bills: {img_path}")
-
-    # CLEAN THE NAME - Remove trailing/leading whitespace and invalid characters
-    clean_name = name.strip()
-    # Replace any remaining problematic characters
-    clean_name = re.sub(r'[<>:"/\\|?*]', '_', clean_name)
-    # Remove multiple consecutive spaces
-    clean_name = re.sub(r'\s+', ' ', clean_name)
-    
-    name_folder = os.path.join(OUTPUT_ROOT, clean_name)
-    os.makedirs(name_folder, exist_ok=True)
-
-    # Determine which denominations to generate
-    if specific_denom:
-        if single_denom:
-            denominations = [specific_denom]
-            safe_print(f"[+] Generating only denomination: {specific_denom}")
-        else:
-            denominations = [d for d in STANDARD_DENOMINATIONS if d == specific_denom]
-            safe_print(f"[+] Generating denomination: {specific_denom}")
-    else:
-        denominations = STANDARD_DENOMINATIONS
-        safe_print(f"[+] Generating all standard denominations: {denominations}")
-
-    # Prepare arguments for parallel processing
-    args_list = []
-    for denom in denominations:
-        denom_str = str(denom)
-        denom_numeric = int(denom)
-        denom_folder = os.path.join(name_folder, denom_str)
-        os.makedirs(denom_folder, exist_ok=True)
-        timestamp_ms = generate_timestamp_ms_precise()
-        args_list.append((name, denom_numeric, img_path, timestamp_ms, denom_folder, user_id, width_mm, height_mm, title, subtitle, font_dir, bg_dir, dpi, bg_image, background_prompt))
-
-    # Use sequential processing to avoid subprocess issues
-    svg_pairs_created = 0
-    results = []
-    
-    safe_print("[+] Using sequential processing for stability")
-    for args in args_list:
+                            print(f"[+] Updated user balance: {user_ref.balance}")
+                except Exception as bal_err:
+                    db.session.rollback()
+                    print(f"[WARNING] Failed to update user balance: {bal_err}")
+        except Exception as e:
+            print(f"[WARNING] Failed to add to mempool: {e}")
+    if callable(progress_callback):
         try:
-            result = process_denomination(args)
-            results.append(result)
-        except Exception as single_error:
-            safe_print(f"[!] Sequential processing failed for denomination: {single_error}")
-            results.append(None)
-    
-    for result in results:
-        if result:
-            denom_str = str(result['denomination'])
-            if save_to_database(name, denom_str, result, user_id):
-                safe_print("Saved Bill to Database.")
-                svg_pairs_created += 1
+            if success:
+                progress_callback("complete")
+        except Exception:
+            pass
 
-    safe_print(f"[+] Completed {name}: {svg_pairs_created} SVG pairs created")
-    
-    # Send email notification if email service is available
-    if svg_pairs_created > 0:
-        try:
-            from app import app, db
-            from models import User
-            with app.app_context():
-                user = User.query.get(user_id)
-                if user and user.email_verified:
-                    from email_service import send_banknote_generation_notification
-                    
-                    # Collect serial numbers from results
-                    serial_numbers = []
-                    denoms_generated = []
-                    
-                    for r in results:
-                        if r:
-                            denoms_generated.append(r.get('denomination'))
-                            # Try to get serial number from result
-                            if 'serial_number' in r:
-                                serial_numbers.append(r['serial_number'])
-                    
-                    # Format denomination info
-                    if len(set(denoms_generated)) == 1:
-                        denom_str = f"{denoms_generated[0]}"
-                    elif len(denoms_generated) <= 3:
-                        denom_str = ", ".join(str(d) for d in sorted(set(denoms_generated)))
-                    else:
-                        denom_str = f"Multiple ({len(set(denoms_generated))} denominations)"
-                    
-                    send_banknote_generation_notification(
-                        user.email,
-                        user.username,
-                        denomination=denom_str,
-                        count=svg_pairs_created,
-                        serial_numbers=serial_numbers[:5] if serial_numbers else None
-                    )
-                    safe_print(f"[+] ✉️  Email notification sent to {user.email}")
-                elif user and not user.email_verified:
-                    safe_print(f"[!] Email not verified for {user.username}, skipping notification")
-        except Exception as email_error:
-            safe_print(f"[!] Failed to send email notification: {email_error}")
-    
-    return svg_pairs_created
+    return 1 if success else 0
 
-# -----------------------
-# Main API function
-# -----------------------
-def generate_for_user(username, user_id, force_regenerate=False, specific_denom=None, single_denom=False, max_threads=1,
-                   width_mm=None, height_mm=None, title=None, subtitle=None, 
-                   font_dir=None, bg_dir=None, dpi=None, bg_image=None, background_prompt=None, portrait_prompt=None):
-    """
-    Generate banknotes for a specific user
-    
-    Args:
-        username (str): The name to generate banknotes for
-        user_id (int): The user ID for database association
-        force_regenerate (bool): Whether to force regeneration of portraits
-        specific_denom (int): Specific denomination to generate (None for all)
-        single_denom (bool): If True, generate only the specific denomination
-        max_threads (int): Maximum number of parallel threads
-        width_mm, height_mm, title, subtitle, font_dir, bg_dir, dpi, bg_image, portrait_prompt: Override settings from database
-    """
-    # Get settings from database
-    settings = Settings.query.first()
-    if settings:
-        # Use database settings as defaults, but allow overrides
-        width_mm = width_mm if width_mm is not None else settings.bill_width_mm
-        height_mm = height_mm if height_mm is not None else settings.bill_height_mm
-        title = title if title is not None else settings.bill_title
-        subtitle = subtitle if subtitle is not None else settings.bill_subtitle
-        font_dir = font_dir if font_dir is not None else settings.font_dir
-        bg_dir = bg_dir if bg_dir is not None else settings.bg_dir
-        dpi = dpi if dpi is not None else settings.bill_dpi
-        # Get background_prompt from settings first (check for non-empty), then file as fallback
-        if background_prompt is None:
-            background_prompt = (settings.background_prompt if settings.background_prompt and settings.background_prompt.strip() 
-                               else read_prompt_file("background_prompt.txt", "A beautiful fantasy landscape with mountains and rivers, mystical atmosphere"))
-        # Get portrait_prompt from settings first (check for non-empty), then file as fallback  
-        if portrait_prompt is None:
-            portrait_prompt = (settings.portrait_prompt if settings.portrait_prompt and settings.portrait_prompt.strip()
-                             else read_prompt_file("portrait_prompt.txt", "A professional portrait of a person, high quality, studio lighting, detailed face"))
-    else:
-        # Fallback defaults if no settings in database
-        width_mm = width_mm or 160.0
-        height_mm = height_mm or 60.0
-        title = title or "灵国国库"
-        subtitle = subtitle or "天圆地方"
-        font_dir = font_dir or "./fonts"
-        bg_dir = bg_dir or "./backgrounds"
-        dpi = dpi or 300.0
-        # Try to read prompts from file if no prompt provided
-        if not background_prompt:
-            background_prompt = read_prompt_file("background_prompt.txt", "A beautiful fantasy landscape with mountains and rivers, mystical atmosphere")
-        if not portrait_prompt:
-            portrait_prompt = read_prompt_file("portrait_prompt.txt", "A professional portrait of a person, high quality, studio lighting, detailed face")
-
-    # Load existing portraits
-    images = []
-    if os.path.exists(PORTRAITS_DIR):
-        for ext in IMAGE_EXTS:
-            pattern = os.path.join(PORTRAITS_DIR, f"*{ext}")
-            images.extend(glob.glob(pattern))
-    
-    # Ensure prompts are not None before passing
-    if not portrait_prompt:
-        portrait_prompt = "A professional portrait of a person, high quality, studio lighting, detailed face"
-    if not background_prompt:
-        background_prompt = "A beautiful fantasy landscape with mountains and rivers, mystical atmosphere"
-
-    # Process the name with all denominations
-    return process_name(username, user_id, force_regenerate, specific_denom, single_denom, images,
-                       width_mm, height_mm, title, subtitle, font_dir, bg_dir, dpi, bg_image, portrait_prompt, background_prompt)
-
-# -----------------------
-# Command line argument parsing
-# -----------------------
-def parse_arguments():
-    parser = argparse.ArgumentParser(description="Generate banknotes for a user")
-    parser.add_argument("--name", required=True, help="Name for banknote generation")
-    parser.add_argument("--user-id", type=int, required=True, help="User ID for database association")
-    parser.add_argument("--force-regenerate", action="store_true", help="Force regeneration of portraits")
-    parser.add_argument("--denom", type=int, help="Specific denomination to generate")
-    parser.add_argument("--single-denom", action="store_true", help="Generate only the specific denomination")
-    parser.add_argument("--threads", type=int, default=1, help="Maximum number of threads")
-    # New customization arguments
-    parser.add_argument("--width-mm", type=float, default=160.0, help="Width in mm (default: 160.0)")
-    parser.add_argument("--height-mm", type=float, default=60.0, help="Height in mm (default: 60.0)")
-    parser.add_argument("--title", type=str, default="灵国国库", help="Title text (default: 灵国国库)")
-    parser.add_argument("--subtitle", type=str, default="天圆地方", help="Subtitle text (default: 天圆地方)")
-    parser.add_argument("--font-dir", type=str, default="./fonts", help="Directory containing font files (default: ./fonts)")
-    parser.add_argument("--bg-dir", type=str, default="./backgrounds", help="Directory containing background images (default: ./backgrounds)")
-    parser.add_argument("--dpi", type=float, default=300.0, help="Resolution in DPI (default: 300.0)")
-    parser.add_argument("--bg-image", type=str, help="Background image path for back")
-    parser.add_argument("--background-prompt", type=str, help="Background generation prompt")
-    return parser.parse_args()
-
-    def main():
-        args = parse_arguments()
-        
-        if not args.name or not args.user_id:
-            print("Error: --name and --user_id are required")
-            return 1
-        
-        # Use the API function
-        result = generate_for_user(
-            username=args.name,
-            user_id=args.user_id,
-            force_regenerate=args.force_regenerate,
-            specific_denom=args.denom,
-            single_denom=args.single_denom,
-            max_threads=args.threads,
-            width_mm=args.width_mm,
-            height_mm=args.height_mm,
-            title=args.title,
-            subtitle=args.subtitle,
-            font_dir=args.font_dir,
-            bg_dir=args.bg_dir,
-            dpi=args.dpi,
-            bg_image=args.bg_image,
-            background_prompt=args.background_prompt
-        )
-        
-        safe_print(f"\n[+] Banknote generation finished! Created {result} SVG pairs!")
-        return 0
-
-    if __name__ == "__main__":
-        sys.exit(main())
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="Generate banknote SVG/PNG pair with EisenScript and Jinja2.")
+    parser.add_argument('--name', type=str, default="", required=True)
+    parser.add_argument('--denomination', type=str, default="", required=True)
+    parser.add_argument('--output_dir', type=str, default='./images')
+    parser.add_argument('--width_mm', type=float, default=160.0)
+    parser.add_argument('--height_mm', type=float, default=60.0)
+    args = parser.parse_args()
+    generate_banknote_pair(
+        args.name,
+        args.denomination,
+        args.output_dir,
+        args.width_mm,
+        args.height_mm
+    )

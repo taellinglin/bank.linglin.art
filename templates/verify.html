@@ -5,7 +5,7 @@
     <div class="profile-header-card">
         <div class="avatar-section">
             <div class="avatar-wrapper">
-                <div class="avatar-initials">🔍</div>
+                <div class="avatar-initials"><i data-feather="search"></i></div>
                 <div class="avatar-glow"></div>
             </div>
         </div>
@@ -33,16 +33,16 @@
     <!-- Tab Navigation -->
     <div class="tab-navigation">
         <button class="tab-button active" onclick="openTab('input')">
-            <span class="tab-icon">🔍</span>
+            <span class="tab-icon"><i data-feather="search"></i></span>
             <span class="tab-text">Verify</span>
         </button>
         <button class="tab-button" onclick="openTab('validation')">
-            <span class="tab-icon">✅</span>
+            <span class="tab-icon"><i data-feather="check-circle"></i></span>
             <span class="tab-text">Validation Layers</span>
             <span class="tab-badge">5</span>
         </button>
         <button class="tab-button" onclick="openTab('signature')" {% if not result or not result.valid %}disabled{% endif %}>
-            <span class="tab-icon">🛡️</span>
+            <span class="tab-icon"><i data-feather="shield"></i></span>
             <span class="tab-text">Digital Signature</span>
             {% if signature_valid is not none %}
                 <span class="tab-badge {% if signature_valid %}success{% else %}error{% endif %}">
@@ -51,7 +51,7 @@
             {% endif %}
         </button>
         <button class="tab-button" onclick="openTab('details')" {% if not result or not result.valid %}disabled{% endif %}>
-            <span class="tab-icon">📄</span>
+            <span class="tab-icon"><i data-feather="file-text"></i></span>
             <span class="tab-text">Details</span>
         </button>
     </div>
@@ -60,7 +60,7 @@
     <div id="input" class="tab-content active">
         <div class="info-card">
             <div class="card-header">
-                <div class="header-icon">🔢</div>
+                <div class="header-icon"><i data-feather="hash"></i></div>
                 <h3 class="header-title">Verify Serial Number</h3>
             </div>
             
@@ -73,7 +73,7 @@
                                required>
                         <button type="submit" class="action-btn primary">
                             <span>Verify Serial</span>
-                            <div class="btn-icon">🔍</div>
+                            <div class="btn-icon"><i data-feather="search"></i></div>
                         </button>
                     </div>
                 </form>
@@ -81,7 +81,7 @@
                 {% if result %}
                     <div class="result-status {% if result.valid %}result-valid{% else %}result-invalid{% endif %}">
                         <div class="status-icon">
-                            {% if result.valid %}✅{% else %}❌{% endif %}
+                            <i data-feather="{% if result.valid %}check-circle{% else %}x-circle{% endif %}"></i>
                         </div>
                         <div class="status-text">
                             <strong>{% if result.valid %}Valid Format{% else %}Invalid Format{% endif %}</strong>
@@ -91,7 +91,7 @@
                     
                     {% if result.valid and validation_score == 5 %}
                     <div class="success-message">
-                        <div class="success-icon">🏆</div>
+                        <div class="success-icon"><i data-feather="award"></i></div>
                         <div class="success-text">
                             <strong>Fully Authenticated!</strong>
                             <span>This serial passed all validation layers</span>
@@ -117,7 +117,7 @@
         <!-- Validation Progress -->
         <div class="info-card">
             <div class="card-header">
-                <div class="header-icon">📊</div>
+                <div class="header-icon"><i data-feather="bar-chart-2"></i></div>
                 <h3 class="header-title">Validation Progress</h3>
             </div>
             
@@ -134,17 +134,17 @@
                 
                 <div class="validation-steps">
                     {% set layers = [
-                        ('Serial Database', validation_results.serial_db, '1', '📚'),
-                        ('Banknote Database', validation_results.banknote_db, '2', '💵'),
-                        ('Digital Signature', validation_results.digital_bill, '3', '🛡️'),
-                        ('Mempool', validation_results.mempool, '4', '⏳'),
-                        ('Blockchain', validation_results.blockchain, '5', '⛓️')
+                        ('Serial Database', validation_results.serial_db, '1', 'book'),
+                        ('Banknote Database', validation_results.banknote_db, '2', 'dollar-sign'),
+                        ('Digital Signature', validation_results.digital_bill, '3', 'shield'),
+                        ('Mempool', validation_results.mempool, '4', 'loader'),
+                        ('Blockchain', validation_results.blockchain, '5', 'link')
                     ] %}
                     
                     {% for name, layer, num, icon in layers %}
                     <div class="validation-step {% if layer and layer.found %}step-complete{% elif layer and not layer.found and not layer.error %}step-incomplete{% else %}step-error{% endif %}">
                         <div class="step-header">
-                            <div class="step-icon">{{ icon }}</div>
+                            <div class="step-icon"><i data-feather="{{ icon }}"></i></div>
                             <div class="step-info">
                                 <div class="step-title">Layer {{ num }}: {{ name }}</div>
                                 <div class="step-status">
@@ -152,12 +152,12 @@
                                         {% if layer.found %}
                                             <span class="status-text success">✓ Validated</span>
                                         {% elif layer.error %}
-                                            <span class="status-text error">⚠️ Error</span>
+                                            <span class="status-text error"><i data-feather="alert-triangle"></i> Error</span>
                                         {% else %}
                                             <span class="status-text incomplete">✗ Not Found</span>
                                         {% endif %}
                                     {% else %}
-                                        <span class="status-text pending">⏳ Pending</span>
+                                        <span class="status-text pending"><i data-feather="loader"></i> Pending</span>
                                     {% endif %}
                                 </div>
                             </div>
@@ -254,7 +254,7 @@
         {% if result and result.valid %}
         <div class="info-card">
             <div class="card-header">
-                <div class="header-icon">🛡️</div>
+                <div class="header-icon"><i data-feather="shield"></i></div>
                 <h3 class="header-title">Digital Signature Verification</h3>
             </div>
             
@@ -262,7 +262,7 @@
                 {% if signature_valid is not none %}
                 <div class="signature-status {% if signature_valid %}signature-valid{% else %}signature-invalid{% endif %}">
                     <div class="status-header">
-                        <div class="status-icon">{% if signature_valid %}🛡️{% else %}⚠️{% endif %}</div>
+                        <div class="status-icon"><i data-feather="{% if signature_valid %}shield{% else %}alert-triangle{% endif %}"></i></div>
                         <div class="status-info">
                             <div class="status-title">{% if signature_valid %}Valid Digital Signature{% else %}Invalid Digital Signature{% endif %}</div>
                             <div class="status-subtitle">Method: {{ signature_details.verification_method|default('Unknown') }}</div>
@@ -366,7 +366,7 @@
                         <div class="verification-notes">
                             {% if signature_details.verification_method == 'mock_signature' %}
                             <div class="note warning">
-                                <div class="note-icon">⚠️</div>
+                                <div class="note-icon"><i data-feather="alert-triangle"></i></div>
                                 <div class="note-content">
                                     <strong>Note:</strong> This is a mock signature generated when SM2 was not available. 
                                     For full cryptographic security, regenerate this banknote with SM2 enabled.
@@ -374,14 +374,14 @@
                             </div>
                             {% elif signature_details.verification_method == 'fallback_accept' %}
                             <div class="note warning">
-                                <div class="note-icon">⚠️</div>
+                                <div class="note-icon"><i data-feather="alert-triangle"></i></div>
                                 <div class="note-content">
                                     <strong>Note:</strong> Using fallback acceptance based on blockchain confirmation.
                                 </div>
                             </div>
                             {% elif signature_details.verification_method == 'sm2' or signature_details.signature_type == 'sm2' %}
                             <div class="note success">
-                                <div class="note-icon">✅</div>
+                                <div class="note-icon"><i data-feather="check-circle"></i></div>
                                 <div class="note-content">
                                     <strong>Note:</strong> This signature uses SM2 cryptographic algorithm (Chinese National Standard GB/T 32918).
                                 </div>
@@ -390,7 +390,7 @@
                             
                             {% if sm2_available %}
                             <div class="note info">
-                                <div class="note-icon">ℹ️</div>
+                                <div class="note-icon"><i data-feather="info"></i></div>
                                 <div class="note-content">
                                     <strong>SM2 Available:</strong> The SM2 cryptographic library is loaded and ready for verification.
                                 </div>
@@ -401,7 +401,7 @@
                 </div>
                 {% else %}
                 <div class="empty-state">
-                    <div class="empty-icon">🔍</div>
+                    <div class="empty-icon"><i data-feather="search"></i></div>
                     <p>No signature data available for this serial</p>
                     {% if not banknote.transaction_data %}
                     <p class="small-text">This banknote was generated without digital signature data.</p>
@@ -413,12 +413,12 @@
         {% else %}
         <div class="info-card">
             <div class="card-header">
-                <div class="header-icon">🛡️</div>
+                <div class="header-icon"><i data-feather="shield"></i></div>
                 <h3 class="header-title">Digital Signature</h3>
             </div>
             <div class="card-content">
                 <div class="empty-state">
-                    <div class="empty-icon">🔍</div>
+                    <div class="empty-icon"><i data-feather="search"></i></div>
                     <p>Enter a valid serial number to view digital signature details</p>
                 </div>
             </div>
@@ -432,7 +432,7 @@
         <!-- Banknote Information -->
         <div class="info-card">
             <div class="card-header">
-                <div class="header-icon">💵</div>
+                <div class="header-icon"><i data-feather="dollar-sign"></i></div>
                 <h3 class="header-title">Banknote Information</h3>
             </div>
             
@@ -440,7 +440,7 @@
                 {% if banknote %}
                 <div class="banknote-details-grid">
                     <div class="detail-card">
-                        <div class="detail-icon">👤</div>
+                        <div class="detail-icon"><i data-feather="user"></i></div>
                         <div class="detail-content">
                             <div class="detail-label">Owner</div>
                             <div class="detail-value">{{ banknote.user.username if banknote.user else 'Unknown' }}</div>
@@ -448,7 +448,7 @@
                     </div>
                     
                     <div class="detail-card">
-                        <div class="detail-icon">💰</div>
+                        <div class="detail-icon"><i data-feather="dollar-sign"></i></div>
                         <div class="detail-content">
                             <div class="detail-label">Denomination</div>
                             <div class="detail-value">{{ banknote.denomination }}</div>
@@ -456,7 +456,7 @@
                     </div>
                     
                     <div class="detail-card">
-                        <div class="detail-icon">🔄</div>
+                        <div class="detail-icon"><i data-feather="refresh-cw"></i></div>
                         <div class="detail-content">
                             <div class="detail-label">Side</div>
                             <div class="detail-value">{{ banknote.side|title }}</div>
@@ -464,7 +464,7 @@
                     </div>
                     
                     <div class="detail-card">
-                        <div class="detail-icon">📅</div>
+                        <div class="detail-icon"><i data-feather="calendar"></i></div>
                         <div class="detail-content">
                             <div class="detail-label">Created</div>
                             <div class="detail-value">{{ banknote.created_at.strftime('%Y-%m-%d %H:%M') }}</div>
@@ -472,7 +472,7 @@
                     </div>
                     
                     <div class="detail-card">
-                        <div class="detail-icon">🌐</div>
+                        <div class="detail-icon"><i data-feather="globe"></i></div>
                         <div class="detail-content">
                             <div class="detail-label">Status</div>
                             <div class="detail-value {% if banknote.is_public %}success{% else %}warning{% endif %}">
@@ -482,7 +482,7 @@
                     </div>
                     
                     <div class="detail-card">
-                        <div class="detail-icon">🛡️</div>
+                        <div class="detail-icon"><i data-feather="shield"></i></div>
                         <div class="detail-content">
                             <div class="detail-label">Digital Signature</div>
                             <div class="detail-value {% if signature_valid %}success{% else %}error{% endif %}">
@@ -493,7 +493,7 @@
                 </div>
                 {% else %}
                 <div class="empty-state">
-                    <div class="empty-icon">💵</div>
+                    <div class="empty-icon"><i data-feather="dollar-sign"></i></div>
                     <p>No banknote information found</p>
                 </div>
                 {% endif %}
@@ -503,7 +503,7 @@
         <!-- Serial Information -->
         <div class="info-card">
             <div class="card-header">
-                <div class="header-icon">🔢</div>
+                <div class="header-icon"><i data-feather="hash"></i></div>
                 <h3 class="header-title">Serial Information</h3>
             </div>
             
@@ -512,7 +512,7 @@
                     <div class="serial-display">
                         <code class="serial-code">{{ serial_input }}</code>
                         <button class="copy-btn" onclick="copyToClipboard('{{ serial_input }}')" title="Copy serial">
-                            <span class="copy-icon">📋</span>
+                            <span class="copy-icon"><i data-feather="clipboard"></i></span>
                         </button>
                     </div>
                     
@@ -554,7 +554,7 @@
         {% if (banknote and banknote.png_path) or (paired_banknote and paired_banknote.png_path) %}
         <div class="info-card">
             <div class="card-header">
-                <div class="header-icon">🖼️</div>
+                <div class="header-icon"><i data-feather="image"></i></div>
                 <h3 class="header-title">Banknote Images</h3>
             </div>
             
@@ -591,7 +591,7 @@
                             <a href="{{ url_for('serve_banknote_image', filename=clean_path) }}" 
                                download class="action-btn cyan small">
                                 <span>Download PNG</span>
-                                <div class="btn-icon">⬇️</div>
+                                <div class="btn-icon"><i data-feather="download"></i></div>
                             </a>
                             
                             {% if img_banknote.svg_path %}
@@ -599,7 +599,7 @@
                                 <a href="{{ url_for('serve_banknote_image', filename=clean_svg_path) }}" 
                                    download class="action-btn purple small">
                                     <span>Download SVG</span>
-                                    <div class="btn-icon">⬇️</div>
+                                    <div class="btn-icon"><i data-feather="download"></i></div>
                                 </a>
                             {% endif %}
                         </div>
@@ -613,13 +613,13 @@
         {% else %}
         <div class="info-card">
             <div class="card-header">
-                <div class="header-icon">📄</div>
+                <div class="header-icon"><i data-feather="file-text"></i></div>
                 <h3 class="header-title">Details</h3>
             </div>
             
             <div class="card-content">
                 <div class="empty-state">
-                    <div class="empty-icon">🔍</div>
+                    <div class="empty-icon"><i data-feather="search"></i></div>
                     <p>Enter a valid serial number to view details</p>
                 </div>
             </div>
@@ -1872,7 +1872,10 @@ function copyToClipboard(text) {
         if (copyBtn) {
             const originalHTML = copyBtn.innerHTML;
             
-            copyBtn.innerHTML = '<span class="copy-icon">✅</span>';
+            copyBtn.innerHTML = '<span class="copy-icon" data-feather="check-circle"></span>';
+            if (window.replaceFeatherIcons) {
+                window.replaceFeatherIcons();
+            }
             copyBtn.style.background = 'var(--success)';
             copyBtn.style.borderColor = 'var(--success)';
             

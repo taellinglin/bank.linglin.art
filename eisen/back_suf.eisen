@@ -1,0 +1,7 @@
+# back_suf.eisen
+# Suffix overlay for banknote back (LunaMint EisenScript)
+# Jinja2 variables: {{ serial }}, {{ denomination }}
+
+back_aztec url="https://bank.linglin.art/verify/{{ serial }}" cx=440 cy=300 scale=3 border=12 rotation=0 border_opacity=0.5 denomination={{ denomination }}
+back_aztec url="https://linglin.art/banknote-viewer/{{ serial }}" cx=1160 cy=300 scale=3 border=12 rotation=180 border_opacity=0.5 denomination={{ denomination }}
+back_verification_text serial_id="{{ serial }}"

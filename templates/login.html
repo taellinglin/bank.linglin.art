@@ -3,7 +3,7 @@
 <div class="profile-container">
     <div class="info-card">
         <div class="card-header">
-            <div class="header-icon">🔐</div>
+            <div class="header-icon"><i data-feather="lock"></i></div>
             <h3 class="header-title">Login</h3>
         </div>
         <div class="card-content">
@@ -13,7 +13,7 @@
                     <input type="password" name="password" placeholder="Password" class="form-input" required>
                     <button type="submit" class="action-btn primary">
                         <span>Login</span>
-                        <div class="btn-icon">➡️</div>
+                        <div class="btn-icon"><i data-feather="arrow-right"></i></div>
                     </button>
                 </div>
             </form>
@@ -22,7 +22,7 @@
 
             <button type="button" class="action-btn secondary" onclick="startSecurityKeyLogin()">
                 <span>Use Security Key</span>
-                <div class="btn-icon">🔑</div>
+                <div class="btn-icon"><i data-feather="key"></i></div>
             </button>
 
             <div class="auth-link">
@@ -172,14 +172,31 @@ async function startSecurityKeyLogin() {
 
     options.challenge = base64urlToBuffer(options.challenge);
     if (options.allowCredentials) {
-        options.allowCredentials = options.allowCredentials.map(c => ({
-            ...c,
-            id: base64urlToBuffer(c.id)
-        }));
+        options.allowCredentials = options.allowCredentials.map(c => {
+            const transports = Array.isArray(c.transports)
+                ? c.transports
+                : (typeof c.transports === 'string'
+                    ? c.transports.split(',').map(t => t.trim()).filter(Boolean)
+                    : undefined);
+            const normalized = {
+                ...c,
+                id: base64urlToBuffer(c.id)
+            };
+            if (transports && transports.length) {
+                normalized.transports = transports;
+            } else {
+                delete normalized.transports;
+            }
+            return normalized;
+        });
     }
 
     const cred = await navigator.credentials.get({ publicKey: options });
-    const credential = credentialToJSON(cred);
+    if (!cred || typeof cred !== 'object') {
+        alert('Security key login was cancelled.');
+        return;
+    }
+    const credential = serializeWebAuthnAssertion(cred);
 
     const verifyRes = await fetch("/webauthn/login/verify", {
         method: "POST",
@@ -215,21 +232,40 @@ function bufferToBase64url(buffer) {
     return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
 }
 
-function credentialToJSON(cred) {
-    if (cred instanceof ArrayBuffer) {
-        return bufferToBase64url(cred);
+function serializeWebAuthnAssertion(cred) {
+    if (!cred || typeof cred !== 'object') {
+        return null;
     }
-    if (Array.isArray(cred)) {
-        return cred.map(credentialToJSON);
-    }
-    if (cred && typeof cred === 'object') {
-        const obj = {};
-        for (const key in cred) {
-            obj[key] = credentialToJSON(cred[key]);
+
+    const rawId = cred.rawId ? bufferToBase64url(cred.rawId) : undefined;
+    const id = rawId || cred.id;
+
+    const response = cred.response || {};
+    const data = {
+        id,
+        rawId,
+        type: cred.type,
+        response: {
+            clientDataJSON: response.clientDataJSON
+                ? bufferToBase64url(response.clientDataJSON)
+                : undefined,
+            authenticatorData: response.authenticatorData
+                ? bufferToBase64url(response.authenticatorData)
+                : undefined,
+            signature: response.signature
+                ? bufferToBase64url(response.signature)
+                : undefined,
+            userHandle: response.userHandle
+                ? bufferToBase64url(response.userHandle)
+                : null
         }
-        return obj;
+    };
+
+    if (response.transports) {
+        data.response.transports = response.transports;
     }
-    return cred;
+
+    return data;
 }
 </script>
 {% endblock %}

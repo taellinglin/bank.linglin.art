@@ -161,13 +161,13 @@
                             <th class="compact-miner">Miner</th>
                             <th class="compact-transactions">Transactions</th>
                             <th class="compact-size">Size</th>
-                            <th class="compact-details">Details</th>
+                            
                         </tr>
                     </thead>
                     <tbody>
                         {% if blocks and blocks|length > 0 %}
                         {% for block in blocks %}
-                        <tr class="compact-block-row">
+                        <tr class="compact-block-row" data-href="/block/{{ block.index }}" role="link" tabindex="0" onclick="navigateToBlock(event, this)" onkeydown="navigateToBlockKey(event, this)">
                             <td class="compact-index-cell">
                                 <div class="compact-index-number">{{ block.index|default(0)|int|format_number }}</div>
                                 {% if block.index == total_blocks - 1 %}
@@ -220,6 +220,17 @@
                                         <span class="nonce-value">{{ block.nonce|default(0)|int|format_number }}</span>
                                     </div>
                                     {% endif %}
+                                    <div class="mining-tags">
+                                        {% set diff_raw = block.difficulty|default(0)|int %}
+                                        {% set diff_level = diff_raw if diff_raw > 0 else 1 %}
+                                        {% if diff_level > 9 %}
+                                            {% set diff_level = 9 %}
+                                        {% endif %}
+                                        <span class="mining-tag difficulty diff-{{ diff_level }}" title="Difficulty {{ block.difficulty|default('N/A') }}">
+                                            <img class="tag-icon" src="{{ url_for('static', filename='images/icons/difficulty.svg') }}" alt="Difficulty">
+                                            <span class="tag-text">Diff {{ block.difficulty|default('N/A') }}</span>
+                                        </span>
+                                    </div>
                                 </div>
                             </td>
                             <td class="compact-transactions-cell">
@@ -249,18 +260,12 @@
                                     {{ block.size|default(0)|int|format_number }} B
                                 </div>
                             </td>
-                            <td class="compact-details-cell">
-                                
-                                    <button class="details-btn">
-                                        <a href="/block/{{ block.index }}"><span class="details-icon">📋</span></a>
-                                    </button>
-                                
-                            </td>
+                            
                         </tr>
                         {% endfor %}
                         {% else %}
                         <tr>
-                            <td colspan="7" class="empty-state">
+                            <td colspan="6" class="empty-state">
                                 <div class="empty-content">
                                     {% if search_query or (not filter_genesis) or (not filter_transfers) or filter_rewards %}
                                         <span class="empty-icon">🔍</span>
@@ -484,36 +489,37 @@ window.addEventListener('DOMContentLoaded', function() {
 }
 
 .blockchain-container {
-    max-width: 100%;
+    max-width: 1100px;
     margin: 0 auto;
-    padding: 2rem;
+    padding: 0.9rem;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     background: var(--bg-primary);
     color: var(--text-primary);
+    font-size: 0.9rem;
 }
 
 /* Stats Grid - Profile Style */
 .compact-stats-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
-    margin-bottom: 2rem;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.7rem;
+    margin-bottom: 1rem;
 }
 
 .compact-stat-card {
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 1.5rem;
+    border-radius: 8px;
+    padding: 0.9rem;
     transition: all 0.3s ease;
     position: relative;
     overflow: hidden;
 }
 
 .compact-stat-card:hover {
-    border-color: var(--primary);
-    transform: translateY(-4px);
-    box-shadow: var(--shadow-xl);
+    border-color: var(--border-light);
+    transform: none;
+    box-shadow: none;
 }
 
 .compact-stat-card::before {
@@ -522,32 +528,32 @@ window.addEventListener('DOMContentLoaded', function() {
     top: 0;
     left: 0;
     right: 0;
-    height: 4px;
-    background: linear-gradient(90deg, var(--primary), var(--info));
-    opacity: 0.7;
+    height: 1px;
+    background: var(--border-light);
+    opacity: 1;
 }
 
 .stat-header {
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    margin-bottom: 1rem;
+    margin-bottom: 0.6rem;
 }
 
 .stat-icon {
-    font-size: 1.5rem;
+    font-size: 1.1rem;
     color: var(--info);
 }
 
 .stat-title {
-    font-size: 1rem;
+    font-size: 0.9rem;
     font-weight: 600;
     color: var(--text-primary);
     margin: 0;
 }
 
 .compact-stat-value {
-    font-size: 2rem;
+    font-size: 1.4rem;
     font-weight: 800;
     color: var(--text-primary);
     margin-bottom: 0.25rem;
@@ -598,20 +604,20 @@ window.addEventListener('DOMContentLoaded', function() {
 .search-section {
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 16px;
-    padding: 1.5rem;
-    margin-bottom: 2rem;
+    border-radius: 8px;
+    padding: 0.9rem;
+    margin-bottom: 1rem;
 }
 
 .search-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    margin-bottom: 1.5rem;
+    margin-bottom: 0.9rem;
 }
 
 .search-header h3 {
-    font-size: 1.25rem;
+    font-size: 1rem;
     font-weight: 700;
     color: var(--text-primary);
     margin: 0;
@@ -619,18 +625,18 @@ window.addEventListener('DOMContentLoaded', function() {
 
 .search-stats {
     display: flex;
-    gap: 1.5rem;
+    gap: 0.75rem;
 }
 
 .search-stat {
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: 0.75rem;
     font-weight: 500;
 }
 
 .search-container {
     display: flex;
-    gap: 1rem;
+    gap: 0.75rem;
     align-items: center;
 }
 
@@ -641,7 +647,7 @@ window.addEventListener('DOMContentLoaded', function() {
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: 8px;
-    padding: 0.5rem 1rem;
+    padding: 0.35rem 0.75rem;
     transition: all 0.2s ease;
 }
 
@@ -652,7 +658,7 @@ window.addEventListener('DOMContentLoaded', function() {
 
 .search-icon {
     color: var(--text-tertiary);
-    font-size: 1rem;
+    font-size: 0.9rem;
     margin-right: 0.5rem;
 }
 
@@ -661,7 +667,7 @@ window.addEventListener('DOMContentLoaded', function() {
     background: transparent;
     border: none;
     color: var(--text-primary);
-    font-size: 0.875rem;
+    font-size: 0.8rem;
     outline: none;
 }
 
@@ -679,8 +685,8 @@ window.addEventListener('DOMContentLoaded', function() {
     border: 1px solid var(--border);
     border-radius: 8px;
     color: var(--text-primary);
-    font-size: 0.875rem;
-    padding: 0.5rem 1rem;
+    font-size: 0.8rem;
+    padding: 0.4rem 0.75rem;
     outline: none;
     cursor: pointer;
     min-width: 150px;
@@ -694,12 +700,12 @@ window.addEventListener('DOMContentLoaded', function() {
     display: flex;
     align-items: center;
     gap: 0.5rem;
-    padding: 0.5rem 1rem;
+    padding: 0.4rem 0.75rem;
     background: var(--bg-secondary);
     border: 1px solid var(--border);
     border-radius: 8px;
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: 0.8rem;
     cursor: pointer;
     transition: all 0.2s ease;
 }
@@ -714,11 +720,11 @@ window.addEventListener('DOMContentLoaded', function() {
 .tab-navigation {
     display: flex;
     gap: 0.5rem;
-    margin-bottom: 2rem;
-    padding: 0.5rem;
+    margin-bottom: 1rem;
+    padding: 0.35rem;
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: 8px;
     overflow-x: auto;
 }
 
@@ -726,12 +732,12 @@ window.addEventListener('DOMContentLoaded', function() {
     display: flex;
     align-items: center;
     gap: 0.75rem;
-    padding: 0.875rem 1.5rem;
+    padding: 0.6rem 1rem;
     background: transparent;
     border: none;
-    border-radius: 8px;
+    border-radius: 6px;
     color: var(--text-secondary);
-    font-size: 0.875rem;
+    font-size: 0.8rem;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.2s ease;
@@ -779,13 +785,13 @@ window.addEventListener('DOMContentLoaded', function() {
 .compact-table-section {
     background: var(--bg-tertiary);
     border: 1px solid var(--border);
-    border-radius: 16px;
+    border-radius: 8px;
     overflow: hidden;
     margin-bottom: 1rem;
 }
 
 .compact-table-header {
-    padding: 1.5rem;
+    padding: 0.9rem 1rem;
     background: rgba(0, 0, 0, 0.2);
     border-bottom: 1px solid var(--border);
     display: flex;
@@ -794,7 +800,7 @@ window.addEventListener('DOMContentLoaded', function() {
 }
 
 .compact-table-header h3 {
-    font-size: 1.25rem;
+    font-size: 1rem;
     font-weight: 700;
     color: var(--text-primary);
     margin: 0;
@@ -802,8 +808,8 @@ window.addEventListener('DOMContentLoaded', function() {
 
 .table-info {
     display: flex;
-    gap: 1.5rem;
-    font-size: 0.875rem;
+    gap: 0.75rem;
+    font-size: 0.75rem;
 }
 
 .info-item {
@@ -819,11 +825,11 @@ window.addEventListener('DOMContentLoaded', function() {
 .compact-blocks-table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.875rem;
+    font-size: 0.8rem;
 }
 
 .compact-blocks-table th {
-    padding: 1rem;
+    padding: 0.7rem 0.8rem;
     text-align: left;
     font-weight: 600;
     color: var(--text-secondary);
@@ -838,7 +844,7 @@ window.addEventListener('DOMContentLoaded', function() {
 }
 
 .compact-blocks-table td {
-    padding: 1rem;
+    padding: 0.7rem 0.8rem;
     border-bottom: 1px solid var(--border);
     vertical-align: middle;
 }
@@ -850,10 +856,11 @@ window.addEventListener('DOMContentLoaded', function() {
 }
 
 .compact-block-row:hover {
-    background: rgba(255, 255, 255, 0.05);
+    background: rgba(0, 122, 255, 0.12);
+    box-shadow: inset 0 0 0 1px rgba(0, 122, 255, 0.6);
 }
 
-.compact-block-row:nth-child(even) {
+.compact-block-row:nth-child(even):not(:hover) {
     background: rgba(255, 255, 255, 0.02);
 }
 
@@ -864,7 +871,7 @@ window.addEventListener('DOMContentLoaded', function() {
 }
 
 .compact-index-number {
-    font-size: 1.125rem;
+    font-size: 0.95rem;
     font-weight: 700;
     color: var(--text-primary);
     font-variant-numeric: tabular-nums;
@@ -1626,6 +1633,92 @@ window.addEventListener('DOMContentLoaded', function() {
     gap: 1.5rem;
 }
 
+.mining-tags {
+    display: flex;
+    gap: 0.4rem;
+    margin-top: 0.4rem;
+    flex-wrap: wrap;
+}
+
+.mining-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.01em;
+    border: 1px solid var(--border-light);
+    background: rgba(255, 255, 255, 0.06);
+    color: var(--text-primary);
+    text-transform: none;
+}
+
+.mining-tag.difficulty.diff-1 {
+    border-color: rgba(48, 209, 88, 0.9) !important;
+    background-color: rgba(48, 209, 88, 0.35) !important;
+    color: #30d158 !important;
+}
+
+.mining-tag.difficulty.diff-2 {
+    border-color: rgba(44, 190, 120, 0.9) !important;
+    background-color: rgba(44, 190, 120, 0.35) !important;
+    color: #2cbe78 !important;
+}
+
+.mining-tag.difficulty.diff-3 {
+    border-color: rgba(10, 132, 255, 0.9) !important;
+    background-color: rgba(10, 132, 255, 0.35) !important;
+    color: #0a84ff !important;
+}
+
+.mining-tag.difficulty.diff-4 {
+    border-color: rgba(94, 92, 230, 0.9) !important;
+    background-color: rgba(94, 92, 230, 0.35) !important;
+    color: #5e5ce6 !important;
+}
+
+.mining-tag.difficulty.diff-5 {
+    border-color: rgba(191, 90, 242, 0.9) !important;
+    background-color: rgba(191, 90, 242, 0.35) !important;
+    color: #bf5af2 !important;
+}
+
+.mining-tag.difficulty.diff-6 {
+    border-color: rgba(255, 69, 58, 0.9) !important;
+    background-color: rgba(255, 69, 58, 0.35) !important;
+    color: #ff453a !important;
+}
+
+.mining-tag.difficulty.diff-7 {
+    border-color: rgba(255, 159, 10, 0.9) !important;
+    background-color: rgba(255, 159, 10, 0.35) !important;
+    color: #ff9f0a !important;
+}
+
+.mining-tag.difficulty.diff-8 {
+    border-color: rgba(255, 214, 10, 0.9) !important;
+    background-color: rgba(255, 214, 10, 0.35) !important;
+    color: #ffd60a !important;
+}
+
+.mining-tag.difficulty.diff-9 {
+    border-color: rgba(255, 232, 90, 0.9) !important;
+    background-color: rgba(255, 232, 90, 0.35) !important;
+    color: #ffe85a !important;
+}
+
+.mining-tag .tag-icon {
+    width: 14px;
+    height: 14px;
+    display: inline-block;
+}
+
+.mining-tag .tag-text {
+    line-height: 1;
+}
+
 /* Responsive */
 @media (max-width: 768px) {
     .blockchain-container {
@@ -1783,6 +1876,29 @@ function openTab(tabName) {
         loadActivityForCurrentState(true);
     } else if (tabName === 'statistics') {
         loadStats();
+    }
+}
+
+function navigateToBlock(event, row) {
+    if (!row) {
+        return;
+    }
+    const interactive = event?.target?.closest('a, button, input, select, textarea');
+    if (interactive && interactive.classList.contains('details-btn')) {
+        event.stopPropagation();
+    } else if (interactive) {
+        return;
+    }
+    const href = row.dataset.href;
+    if (href) {
+        window.location.href = href;
+    }
+}
+
+function navigateToBlockKey(event, row) {
+    if (event.key === 'Enter' || event.key === ' ') {
+        event.preventDefault();
+        navigateToBlock(event, row);
     }
 }
 
