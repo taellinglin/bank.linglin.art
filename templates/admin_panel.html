@@ -639,10 +639,16 @@
             <div class="content-section" id="settings-section">
                 <div class="section-header">
                     <h2>System Settings</h2>
-                    <button type="submit" form="settings-form" class="btn btn-sm btn-primary">
-                        <i class="fas fa-save"></i>
-                        Save
-                    </button>
+                    <div class="section-actions">
+                        <button type="button" id="eisen-compile" class="btn btn-sm btn-outline">
+                            <i class="fas fa-bolt"></i>
+                            Compile
+                        </button>
+                        <button type="submit" form="settings-form" class="btn btn-sm btn-primary">
+                            <i class="fas fa-save"></i>
+                            Save
+                        </button>
+                    </div>
                 </div>
                 
                 <form method="POST" action="/admin/settings" id="settings-form" class="settings-form">
@@ -699,19 +705,6 @@
                             <h6 class="card-title">Banknote Generation Settings</h6>
                             
                             <div class="form-row">
-                                <div class="col-md-6 mb-2">
-                                    <label class="small">Portrait Prompt</label>
-                                    <textarea class="form-control form-control-sm" name="portrait_prompt" rows="6" 
-                                              placeholder="Describe the portrait generation prompt">{{ portrait_prompt_display if portrait_prompt_display else (settings.portrait_prompt if settings.portrait_prompt else 'A professional portrait of a person, high quality, detailed face, neutral background') }}</textarea>
-                                </div>
-                                <div class="col-md-6 mb-2">
-                                    <label class="small">Background Prompt</label>
-                                    <textarea class="form-control form-control-sm" name="background_prompt" rows="6" 
-                                              placeholder="Describe the background generation prompt">{{ background_prompt_display if background_prompt_display else (settings.background_prompt if settings.background_prompt else 'A beautiful fantasy landscape with mountains and rivers, mystical atmosphere') }}</textarea>
-                                </div>
-                            </div>
-                            
-                            <div class="form-row">
                                 <div class="col-md-3 mb-2">
                                     <label class="small">Bill Width (mm)</label>
                                     <input type="number" step="0.1" class="form-control form-control-sm" name="bill_width_mm" 
@@ -745,52 +738,168 @@
                                     <input type="text" class="form-control form-control-sm" name="bill_subtitle" 
                                            value="{{ settings.bill_subtitle if settings.bill_subtitle else '天圆地方' }}">
                                 </div>
-                                <div class="col-md-4 mb-2">
-                                    <label class="small">Font Directory</label>
-                                    <input type="text" class="form-control form-control-sm" name="font_dir" 
-                                           value="{{ settings.font_dir if settings.font_dir else './fonts' }}">
-                                </div>
                             </div>
                             
-                            <div class="form-row">
-                                <div class="col-md-6 mb-2">
-                                    <label class="small">Background Directory</label>
-                                    <input type="text" class="form-control form-control-sm" name="bg_dir" 
-                                           value="{{ settings.bg_dir if settings.bg_dir else './backgrounds' }}">
-                                </div>
-                                <br />
-                            <hr />
-                            <div class="form-row">
-                                <div class="col-md-6 mb-2">
-                                    <label class="small">EisenScript Prefix (Front)</label>
-                                    <textarea class="form-control form-control-sm" name="eisenscript_prefix_front" rows="8" placeholder="Front prefix EisenScript (backgrounds, base elements)">{{ settings.eisenscript_prefix_front or '' }}</textarea>
-                                    <div class="form-helper-text" style="font-size:0.98em; color:var(--text-secondary,#bfc9d9); margin-bottom:0.5em;">
-                                        <b>Available variables:</b> <code>$username</code>, <code>$user_id</code>, <code>$datetime</code>, <code>$date</code>, <code>$time</code>, <code>$serial</code>, <code>$denomination</code>, <code>$title</code>, <code>$subtitle</code>
+                            <div class="config-group">
+                                <div class="config-group-title">Directories</div>
+                                <div class="form-row">
+                                    <div class="col-md-3 mb-2">
+                                        <label class="small">Fonts</label>
+                                        <input type="text" class="form-control form-control-sm" name="font_dir" 
+                                               value="{{ settings.font_dir if settings.font_dir else './fonts' }}">
                                     </div>
-                                </div>
-                                <div class="col-md-6 mb-2">
-                                    <label class="small">EisenScript Suffix (Front)</label>
-                                    <textarea class="form-control form-control-sm" name="eisenscript_suffix_front" rows="8" placeholder="Front suffix EisenScript (QR/overlays on top)">{{ settings.eisenscript_suffix_front or '' }}</textarea>
-                                    <div class="form-helper-text" style="font-size:0.98em; color:var(--text-secondary,#bfc9d9); margin-bottom:0.5em;">
-                                        <b>Available variables:</b> <code>$username</code>, <code>$user_id</code>, <code>$datetime</code>, <code>$date</code>, <code>$time</code>, <code>$serial</code>, <code>$denomination</code>, <code>$title</code>, <code>$subtitle</code>
+                                    <div class="col-md-3 mb-2">
+                                        <label class="small">Backgrounds</label>
+                                        <input type="text" class="form-control form-control-sm" name="bg_dir" 
+                                               value="{{ settings.bg_dir if settings.bg_dir else './backgrounds' }}">
+                                    </div>
+                                    <div class="col-md-3 mb-2">
+                                        <label class="small">Icons</label>
+                                        <input type="text" class="form-control form-control-sm" name="icon_dir" 
+                                               value="{{ settings.icon_dir if settings.icon_dir else './icons' }}">
+                                    </div>
+                                    <div class="col-md-3 mb-2">
+                                        <label class="small">EisenScripts</label>
+                                        <input type="text" class="form-control form-control-sm" name="eisenscript_dir" 
+                                               value="{{ settings.eisenscript_dir if settings.eisenscript_dir else './eisen' }}">
                                     </div>
                                 </div>
                             </div>
-                            <div class="form-row">
-                                <div class="col-md-6 mb-2">
-                                    <label class="small">EisenScript Prefix (Back)</label>
-                                    <textarea class="form-control form-control-sm" name="eisenscript_prefix_back" rows="8" placeholder="Back prefix EisenScript (backgrounds, base elements)">{{ settings.eisenscript_prefix_back or '' }}</textarea>
-                                    <div class="form-helper-text" style="font-size:0.98em; color:var(--text-secondary,#bfc9d9); margin-bottom:0.5em;">
-                                        <b>Available variables:</b> <code>$username</code>, <code>$user_id</code>, <code>$datetime</code>, <code>$date</code>, <code>$time</code>, <code>$serial</code>, <code>$denomination</code>, <code>$title</code>, <code>$subtitle</code>
+                            <br />
+                            <hr />
+                            <div class="eisen-editor">
+                                <div class="eisen-sidebar">
+                                    <div class="eisen-sidebar-title">EISENSCRIPT</div>
+                                    <div class="eisen-tree">
+                                        <div class="eisen-tree-group">banknote</div>
+                                        <button type="button" class="eisen-node active" data-target="eisen-front-prefix">front / prefix</button>
+                                        <button type="button" class="eisen-node" data-target="eisen-front-suffix">front / suffix</button>
+                                        <button type="button" class="eisen-node" data-target="eisen-back-prefix">back / prefix</button>
+                                        <button type="button" class="eisen-node" data-target="eisen-back-suffix">back / suffix</button>
+                                        <div class="eisen-tree-group">coin</div>
+                                        <button type="button" class="eisen-node" data-target="eisen-coin-front-prefix">front / prefix</button>
+                                        <button type="button" class="eisen-node" data-target="eisen-coin-front-suffix">front / suffix</button>
+                                        <button type="button" class="eisen-node" data-target="eisen-coin-back-prefix">back / prefix</button>
+                                        <button type="button" class="eisen-node" data-target="eisen-coin-back-suffix">back / suffix</button>
+                                        <div class="eisen-tree-group">card</div>
+                                        <button type="button" class="eisen-node" data-target="eisen-card-front-prefix">front / prefix</button>
+                                        <button type="button" class="eisen-node" data-target="eisen-card-front-suffix">front / suffix</button>
+                                        <button type="button" class="eisen-node" data-target="eisen-card-back-prefix">back / prefix</button>
+                                        <button type="button" class="eisen-node" data-target="eisen-card-back-suffix">back / suffix</button>
+                                        <div class="eisen-tree-group">receipt</div>
+                                        <button type="button" class="eisen-node" data-target="eisen-receipt">receipt</button>
                                     </div>
                                 </div>
-                                <div class="col-md-6 mb-2">
-                                    <label class="small">EisenScript Suffix (Back)</label>
-                                    <textarea class="form-control form-control-sm" name="eisenscript_suffix_back" rows="8" placeholder="Back suffix EisenScript (QR/overlays on top)">{{ settings.eisenscript_suffix_back or '' }}</textarea>
-                                    <div class="form-helper-text" style="font-size:0.98em; color:var(--text-secondary,#bfc9d9); margin-bottom:0.5em;">
-                                        <b>Available variables:</b> <code>$username</code>, <code>$user_id</code>, <code>$datetime</code>, <code>$date</code>, <code>$time</code>, <code>$serial</code>, <code>$denomination</code>, <code>$title</code>, <code>$subtitle</code>
+                                <div class="eisen-pane-wrap">
+                                    <div class="eisen-pane active" id="eisen-front-prefix">
+                                        <label class="small">Banknote · Front · Prefix</label>
+                                        <textarea class="vscode-textarea" name="eisenscript_prefix_front" rows="16" placeholder="Front prefix EisenScript (backgrounds, base elements)">{{ settings.eisenscript_prefix_front or '' }}</textarea>
+                                        <div class="eisen-helper">右側の変数一覧をダブルクリックで挿入できます。</div>
+                                    </div>
+                                    <div class="eisen-pane" id="eisen-front-suffix">
+                                        <label class="small">Banknote · Front · Suffix</label>
+                                        <textarea class="vscode-textarea" name="eisenscript_suffix_front" rows="16" placeholder="Front suffix EisenScript (QR/overlays on top)">{{ settings.eisenscript_suffix_front or '' }}</textarea>
+                                        <div class="eisen-helper">右側の変数一覧をダブルクリックで挿入できます。</div>
+                                    </div>
+                                    <div class="eisen-pane" id="eisen-back-prefix">
+                                        <label class="small">Banknote · Back · Prefix</label>
+                                        <textarea class="vscode-textarea" name="eisenscript_prefix_back" rows="16" placeholder="Back prefix EisenScript (backgrounds, base elements)">{{ settings.eisenscript_prefix_back or '' }}</textarea>
+                                        <div class="eisen-helper">右側の変数一覧をダブルクリックで挿入できます。</div>
+                                    </div>
+                                    <div class="eisen-pane" id="eisen-back-suffix">
+                                        <label class="small">Banknote · Back · Suffix</label>
+                                        <textarea class="vscode-textarea" name="eisenscript_suffix_back" rows="16" placeholder="Back suffix EisenScript (QR/overlays on top)">{{ settings.eisenscript_suffix_back or '' }}</textarea>
+                                        <div class="eisen-helper">右側の変数一覧をダブルクリックで挿入できます。</div>
+                                    </div>
+                                    <div class="eisen-pane" id="eisen-coin-front-prefix">
+                                        <label class="small">Coin · Front · Prefix</label>
+                                        <textarea class="vscode-textarea" name="eisenscript_prefix_coin_front" rows="16" placeholder="Coin front prefix EisenScript">{{ settings.eisenscript_prefix_coin_front or '' }}</textarea>
+                                        <div class="eisen-helper">右側の変数一覧をダブルクリックで挿入できます。</div>
+                                    </div>
+                                    <div class="eisen-pane" id="eisen-coin-front-suffix">
+                                        <label class="small">Coin · Front · Suffix</label>
+                                        <textarea class="vscode-textarea" name="eisenscript_suffix_coin_front" rows="16" placeholder="Coin front suffix EisenScript">{{ settings.eisenscript_suffix_coin_front or '' }}</textarea>
+                                        <div class="eisen-helper">右側の変数一覧をダブルクリックで挿入できます。</div>
+                                    </div>
+                                    <div class="eisen-pane" id="eisen-coin-back-prefix">
+                                        <label class="small">Coin · Back · Prefix</label>
+                                        <textarea class="vscode-textarea" name="eisenscript_prefix_coin_back" rows="16" placeholder="Coin back prefix EisenScript">{{ settings.eisenscript_prefix_coin_back or '' }}</textarea>
+                                        <div class="eisen-helper">右側の変数一覧をダブルクリックで挿入できます。</div>
+                                    </div>
+                                    <div class="eisen-pane" id="eisen-coin-back-suffix">
+                                        <label class="small">Coin · Back · Suffix</label>
+                                        <textarea class="vscode-textarea" name="eisenscript_suffix_coin_back" rows="16" placeholder="Coin back suffix EisenScript">{{ settings.eisenscript_suffix_coin_back or '' }}</textarea>
+                                        <div class="eisen-helper">右側の変数一覧をダブルクリックで挿入できます。</div>
+                                    </div>
+                                    <div class="eisen-pane" id="eisen-card-front-prefix">
+                                        <label class="small">Card · Front · Prefix</label>
+                                        <textarea class="vscode-textarea" name="eisenscript_prefix_card_front" rows="16" placeholder="Card front prefix EisenScript">{{ settings.eisenscript_prefix_card_front or '' }}</textarea>
+                                        <div class="eisen-helper">右側の変数一覧をダブルクリックで挿入できます。</div>
+                                    </div>
+                                    <div class="eisen-pane" id="eisen-card-front-suffix">
+                                        <label class="small">Card · Front · Suffix</label>
+                                        <textarea class="vscode-textarea" name="eisenscript_suffix_card_front" rows="16" placeholder="Card front suffix EisenScript">{{ settings.eisenscript_suffix_card_front or '' }}</textarea>
+                                        <div class="eisen-helper">右側の変数一覧をダブルクリックで挿入できます。</div>
+                                    </div>
+                                    <div class="eisen-pane" id="eisen-card-back-prefix">
+                                        <label class="small">Card · Back · Prefix</label>
+                                        <textarea class="vscode-textarea" name="eisenscript_prefix_card_back" rows="16" placeholder="Card back prefix EisenScript">{{ settings.eisenscript_prefix_card_back or '' }}</textarea>
+                                        <div class="eisen-helper">右側の変数一覧をダブルクリックで挿入できます。</div>
+                                    </div>
+                                    <div class="eisen-pane" id="eisen-card-back-suffix">
+                                        <label class="small">Card · Back · Suffix</label>
+                                        <textarea class="vscode-textarea" name="eisenscript_suffix_card_back" rows="16" placeholder="Card back suffix EisenScript">{{ settings.eisenscript_suffix_card_back or '' }}</textarea>
+                                        <div class="eisen-helper">右側の変数一覧をダブルクリックで挿入できます。</div>
+                                    </div>
+                                    <div class="eisen-pane" id="eisen-receipt">
+                                        <label class="small">Receipt</label>
+                                        <textarea class="vscode-textarea" name="eisenscript_receipt" rows="16" placeholder="Receipt EisenScript (single-sided)">{{ settings.eisenscript_receipt or '' }}</textarea>
+                                        <div class="eisen-helper">右側の変数一覧をダブルクリックで挿入できます。</div>
                                     </div>
                                 </div>
+                                <div class="eisen-vars">
+                                    <div class="eisen-vars-header">
+                                        <span>Jinja2 変数</span>
+                                        <button type="button" class="var-toggle" aria-label="Toggle variables panel">⟩</button>
+                                    </div>
+                                    <details open>
+                                        <summary>一覧</summary>
+                                        <div class="var-list">
+                                            <button type="button" class="var-pill" data-token="{{ '{{ username }}' }}">{{ '{{ username }}' }}</button>
+                                            <button type="button" class="var-pill" data-token="{{ '{{ denomination }}' }}">{{ '{{ denomination }}' }}</button>
+                                            <button type="button" class="var-pill" data-token="{{ '{{ denom_exponent }}' }}">{{ '{{ denom_exponent }}' }}</button>
+                                            <button type="button" class="var-pill" data-token="{{ '{{ denom_exp }}' }}">{{ '{{ denom_exp }}' }}</button>
+                                            <button type="button" class="var-pill" data-token="{{ '{{ pow_level }}' }}">{{ '{{ pow_level }}' }}</button>
+                                            <button type="button" class="var-pill" data-token="{{ '{{ denomination_words }}' }}">{{ '{{ denomination_words }}' }}</button>
+                                            <button type="button" class="var-pill" data-token="{{ '{{ denomination_compact }}' }}">{{ '{{ denomination_compact }}' }}</button>
+                                            <button type="button" class="var-pill" data-token="{{ '{{ denomination_words_cn }}' }}">{{ '{{ denomination_words_cn }}' }}</button>
+                                            <button type="button" class="var-pill" data-token="{{ '{{ denomination_compact_cn }}' }}">{{ '{{ denomination_compact_cn }}' }}</button>
+                                            <button type="button" class="var-pill" data-token="{{ '{{ serial }}' }}">{{ '{{ serial }}' }}</button>
+                                            <button type="button" class="var-pill" data-token="{{ '{{ title }}' }}">{{ '{{ title }}' }}</button>
+                                            <button type="button" class="var-pill" data-token="{{ '{{ subtitle }}' }}">{{ '{{ subtitle }}' }}</button>
+                                            <button type="button" class="var-pill" data-token="{{ '{{ denomination_color }}' }}">{{ '{{ denomination_color }}' }}</button>
+                                            <button type="button" class="var-pill" data-token="{{ '{{ denom_color }}' }}">{{ '{{ denom_color }}' }}</button>
+                                            <button type="button" class="var-pill" data-token="{{ '{{ width_mm }}' }}">{{ '{{ width_mm }}' }}</button>
+                                            <button type="button" class="var-pill" data-token="{{ '{{ height_mm }}' }}">{{ '{{ height_mm }}' }}</button>
+                                            <button type="button" class="var-pill" data-token="{{ '{{ timestamp }}' }}">{{ '{{ timestamp }}' }}</button>
+                                        </div>
+                                        <div class="var-hint">ダブルクリックでアクティブなエディタに挿入</div>
+                                    </details>
+                                </div>
+                            </div>
+                            <div class="eisen-actions">
+                                <button type="button" id="eisen-compile-bottom" class="btn btn-sm btn-outline">
+                                    <i class="fas fa-bolt"></i>
+                                    Compile
+                                </button>
+                                <button type="submit" form="settings-form" class="btn btn-sm btn-primary">
+                                    <i class="fas fa-save"></i>
+                                    Save
+                                </button>
+                            </div>
+                            <div class="eisen-console">
+                                <div class="console-title">Compile Console</div>
+                                <pre id="eisen-console-output">Ready.</pre>
                             </div>
                             <hr />
                         </div>
@@ -827,6 +936,312 @@ body {
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
     font-size: 14px;
     line-height: 1.4;
+}
+
+/* EisenScript VS Code-like editor */
+.eisen-editor {
+    display: grid;
+    grid-template-columns: 220px 1fr 200px;
+    gap: 16px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 12px;
+}
+
+.eisen-editor.vars-collapsed {
+    grid-template-columns: 220px 1fr 26px;
+}
+
+.eisen-sidebar {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-height: 320px;
+}
+
+.eisen-sidebar-title {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: 6px;
+}
+
+.eisen-tree {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.eisen-tree-group {
+    color: var(--text-secondary);
+    font-size: 12px;
+    margin-top: 6px;
+    text-transform: lowercase;
+}
+
+.eisen-node {
+    background: transparent;
+    border: 1px solid transparent;
+    color: var(--text-secondary);
+    text-align: left;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.eisen-node:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-primary);
+}
+
+.eisen-node.active {
+    background: rgba(0, 123, 255, 0.2);
+    border-color: rgba(0, 123, 255, 0.5);
+    color: #d9ecff;
+}
+
+.eisen-node.is-disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.eisen-pane-wrap {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+}
+
+.eisen-pane {
+    display: none;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.eisen-pane.active {
+    display: flex;
+}
+
+.vscode-textarea {
+    width: 100%;
+    background: #1e1e1e;
+    color: #d4d4d4;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 10px 12px;
+    font-family: 'JetBrains Mono', 'Fira Code', Consolas, 'Courier New', monospace;
+    font-size: 12.5px;
+    line-height: 1.6;
+    min-height: 260px;
+    resize: none;
+    box-shadow: inset 0 0 0 1px rgba(0,0,0,0.2);
+}
+
+.code-editor-shell {
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    background: #1e1e1e;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.code-gutter {
+    background: #1a1a1a;
+    color: #6b6f76;
+    text-align: right;
+    padding: 10px 6px;
+    font-family: 'JetBrains Mono', 'Fira Code', Consolas, 'Courier New', monospace;
+    font-size: 11.5px;
+    line-height: 1.6;
+    user-select: none;
+    border-right: 1px solid #2a2a2a;
+    overflow: hidden;
+}
+
+.code-editor-shell .vscode-textarea {
+    border: none;
+    border-radius: 0;
+    padding: 10px 12px;
+    min-height: 260px;
+}
+
+.vscode-textarea:focus {
+    outline: none;
+    border-color: #3794ff;
+    box-shadow: 0 0 0 2px rgba(55, 148, 255, 0.25);
+}
+
+.eisen-helper {
+    color: var(--text-secondary);
+    font-size: 12px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.eisen-helper span {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 4px;
+    padding: 2px 6px;
+    color: #cdd6f4;
+}
+
+.eisen-vars {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    height: fit-content;
+}
+
+.eisen-vars-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: 6px;
+}
+
+.var-toggle {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    border-radius: 6px;
+    width: 22px;
+    height: 22px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.var-toggle:hover {
+    color: var(--text-primary);
+    border-color: #3794ff;
+}
+
+.eisen-editor.vars-collapsed .eisen-vars {
+    padding: 6px 2px;
+}
+
+.eisen-editor.vars-collapsed .eisen-vars details,
+.eisen-editor.vars-collapsed .var-list,
+.eisen-editor.vars-collapsed .var-hint {
+    display: none;
+}
+
+.eisen-editor.vars-collapsed .eisen-vars-header span {
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    margin: 4px auto;
+}
+
+.eisen-editor.vars-collapsed .var-toggle {
+    transform: rotate(180deg);
+}
+
+.eisen-vars details {
+    color: var(--text-secondary);
+}
+
+.eisen-vars summary {
+    cursor: pointer;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: 8px;
+}
+
+.var-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+}
+
+.var-pill {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.var-pill:hover {
+    border-color: #3794ff;
+    color: #e6f1ff;
+}
+
+.var-hint {
+    margin-top: 10px;
+    font-size: 11px;
+    color: var(--text-tertiary);
+}
+
+.eisen-console {
+    margin-top: 12px;
+    background: #121212;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+}
+
+.eisen-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 10px;
+}
+
+.console-title {
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: 6px;
+}
+
+#eisen-console-output {
+    margin: 0;
+    white-space: pre-wrap;
+    color: #d4d4d4;
+    font-family: 'JetBrains Mono', 'Fira Code', Consolas, 'Courier New', monospace;
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.config-group {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-top: 10px;
+}
+
+.config-group-title {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: 8px;
 }
 
 /* Admin Container */
@@ -2071,6 +2486,123 @@ document.addEventListener('DOMContentLoaded', function() {
     updateMempoolTimeline();
     // Update every 3 seconds
     setInterval(updateMempoolTimeline, 3000);
+
+    const nodes = document.querySelectorAll('.eisen-node[data-target]');
+    const panes = document.querySelectorAll('.eisen-pane');
+    nodes.forEach(node => {
+        node.addEventListener('click', () => {
+            if (node.classList.contains('is-disabled')) {
+                return;
+            }
+            nodes.forEach(n => n.classList.remove('active'));
+            panes.forEach(p => p.classList.remove('active'));
+            node.classList.add('active');
+            const target = node.getAttribute('data-target');
+            const pane = document.getElementById(target);
+            if (pane) {
+                pane.classList.add('active');
+            }
+        });
+    });
+
+    let activeEditor = null;
+    document.querySelectorAll('.vscode-textarea').forEach(area => {
+        area.addEventListener('focus', () => {
+            activeEditor = area;
+        });
+        area.addEventListener('click', () => {
+            activeEditor = area;
+        });
+    });
+
+    document.querySelectorAll('.var-pill').forEach(pill => {
+        pill.addEventListener('dblclick', () => {
+            if (!activeEditor) {
+                return;
+            }
+            const token = pill.getAttribute('data-token') || '';
+            const start = activeEditor.selectionStart || 0;
+            const end = activeEditor.selectionEnd || 0;
+            const value = activeEditor.value;
+            activeEditor.value = value.slice(0, start) + token + value.slice(end);
+            const nextPos = start + token.length;
+            activeEditor.setSelectionRange(nextPos, nextPos);
+            activeEditor.focus();
+        });
+    });
+
+    document.querySelectorAll('.vscode-textarea').forEach(textarea => {
+        const shell = document.createElement('div');
+        shell.className = 'code-editor-shell';
+        const gutter = document.createElement('div');
+        gutter.className = 'code-gutter';
+
+        textarea.parentNode.insertBefore(shell, textarea);
+        shell.appendChild(gutter);
+        shell.appendChild(textarea);
+
+        const updateLineNumbers = () => {
+            const lines = textarea.value.split('\n').length || 1;
+            let html = '';
+            for (let i = 1; i <= lines; i += 1) {
+                html += i + '<br>';
+            }
+            gutter.innerHTML = html;
+        };
+
+        updateLineNumbers();
+        textarea.addEventListener('input', updateLineNumbers);
+        textarea.addEventListener('scroll', () => {
+            gutter.scrollTop = textarea.scrollTop;
+        });
+    });
+
+    const varsPanel = document.querySelector('.eisen-vars');
+    const editorShell = document.querySelector('.eisen-editor');
+    const varsToggle = document.querySelector('.var-toggle');
+    if (varsToggle && editorShell && varsPanel) {
+        varsToggle.addEventListener('click', () => {
+            editorShell.classList.toggle('vars-collapsed');
+        });
+    }
+
+    const compileButtons = [
+        document.getElementById('eisen-compile'),
+        document.getElementById('eisen-compile-bottom')
+    ].filter(Boolean);
+    const consoleOutput = document.getElementById('eisen-console-output');
+    if (compileButtons.length && consoleOutput) {
+        const runCompile = async () => {
+            if (!activeEditor) {
+                consoleOutput.textContent = 'No active editor selected.';
+                return;
+            }
+            const script = activeEditor.value || '';
+            const name = activeEditor.getAttribute('name') || 'eisenscript';
+            consoleOutput.textContent = `Compiling ${name}...`;
+            try {
+                const response = await fetch('/admin/compile-eisenscript', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ script, name })
+                });
+                const data = await response.json();
+                if (data.ok) {
+                    consoleOutput.textContent = `OK: ${data.message || 'Compile succeeded.'}`;
+                } else {
+                    consoleOutput.textContent = `ERROR: ${data.message || 'Compile failed.'}`;
+                }
+            } catch (error) {
+                consoleOutput.textContent = `ERROR: ${error.message}`;
+            }
+        };
+
+        compileButtons.forEach(button => {
+            button.addEventListener('click', runCompile);
+        });
+    }
 });
 
 function updateMiningConfig() {

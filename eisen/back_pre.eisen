@@ -1,9 +1,8 @@
 size 1600 600
+letter_border x_mm=0 y_mm=0 width_mm=160 height_mm=60 border_thickness_mm=10.0 text="{{random_letters}}" font="Daemon Full Working" font_dir=./fonts font_size_mm=1.0 spacing_mm=0.35 fill_color="#000000" opacity=1.0 case=lower pattern=solid pattern_color="#000000" pattern_opacity=1.0
 back_vectorized_background bg_dir=backgrounds margin=60 n_segments=1024 background_prompt="Oekaki Baby Galactic Princess RPG theme in the style of Studio Ghibli Origami"
 
 back_security_background denomination={{denomination}} serial_id={{serial}} margin=60 base_triangle_size=16 hierarchy_levels=2
-
-back_qr_border seed_text={{username}} serial_id={{serial}}
 
 back_corner_decorations denomination={{denomination}} serial_id={{serial}} size=100 padding=75 stroke_width=1
 

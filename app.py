@@ -55,6 +55,7 @@ from utils import (
     sanitize_bio,
     MAX_GENERATION_THREADS,
     execute_generation_task,
+    clear_generation_queue_state,
 )
 import pyotp
 from signatures import DigitalBill
@@ -245,6 +246,61 @@ def _ensure_settings_eisenscript_columns():
             with engine.begin() as conn:
                 conn.execute(
                     text("ALTER TABLE settings ADD COLUMN eisenscript_suffix_back TEXT DEFAULT ''")
+                )
+        if "icon_dir" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE settings ADD COLUMN icon_dir VARCHAR(255) DEFAULT './icons'")
+                )
+        if "eisenscript_dir" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE settings ADD COLUMN eisenscript_dir VARCHAR(255) DEFAULT './eisen'")
+                )
+        if "eisenscript_prefix_coin_front" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE settings ADD COLUMN eisenscript_prefix_coin_front TEXT DEFAULT ''")
+                )
+        if "eisenscript_suffix_coin_front" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE settings ADD COLUMN eisenscript_suffix_coin_front TEXT DEFAULT ''")
+                )
+        if "eisenscript_prefix_coin_back" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE settings ADD COLUMN eisenscript_prefix_coin_back TEXT DEFAULT ''")
+                )
+        if "eisenscript_suffix_coin_back" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE settings ADD COLUMN eisenscript_suffix_coin_back TEXT DEFAULT ''")
+                )
+        if "eisenscript_prefix_card_front" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE settings ADD COLUMN eisenscript_prefix_card_front TEXT DEFAULT ''")
+                )
+        if "eisenscript_suffix_card_front" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE settings ADD COLUMN eisenscript_suffix_card_front TEXT DEFAULT ''")
+                )
+        if "eisenscript_prefix_card_back" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE settings ADD COLUMN eisenscript_prefix_card_back TEXT DEFAULT ''")
+                )
+        if "eisenscript_suffix_card_back" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE settings ADD COLUMN eisenscript_suffix_card_back TEXT DEFAULT ''")
+                )
+        if "eisenscript_receipt" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE settings ADD COLUMN eisenscript_receipt TEXT DEFAULT ''")
                 )
     except Exception as e:
         logger.warning(f"Settings eisenscript column check failed: {e}")
@@ -6888,6 +6944,25 @@ def admin_delete_task(task_id):
     return redirect(url_for("admin_panel", section="tasks"))
 
 
+@app.route("/admin/clear-generation-tasks", methods=["POST"])
+@admin_required
+def admin_clear_generation_tasks():
+    """Clear all generation tasks and in-memory tracking."""
+    try:
+        tasks_deleted = GenerationTask.query.delete()
+        db.session.commit()
+
+        clear_generation_queue_state()
+
+        flash(f"Cleared {tasks_deleted} generation tasks.", "success")
+    except Exception as e:
+        db.session.rollback()
+        current_app.logger.error(f"Error clearing generation tasks: {e}")
+        flash(f"Error clearing generation tasks: {e}", "danger")
+
+    return redirect(url_for("admin_panel", section="tasks"))
+
+
 import atexit
 import threading
 
@@ -7213,14 +7288,6 @@ def admin_settings():
                 raise ValueError("mining_reward out of allowed range")
             settings.mining_reward = mining_reward_val
 
-            # Banknote generation settings
-            portrait_input = request.form.get("portrait_prompt", "").strip()
-            background_input = request.form.get("background_prompt", "").strip()
-
-            # Save the values (convert empty strings to None for proper fallback behavior)
-            settings.portrait_prompt = portrait_input if portrait_input else None
-            settings.background_prompt = background_input if background_input else None
-
             settings.bill_width_mm = _get_float("bill_width_mm", settings.bill_width_mm or 160.0)
             settings.bill_height_mm = _get_float("bill_height_mm", settings.bill_height_mm or 60.0)
             settings.bill_title = _get_text("bill_title", settings.bill_title or "灵国国库")
@@ -7228,10 +7295,21 @@ def admin_settings():
             settings.bill_dpi = _get_float("bill_dpi", settings.bill_dpi or 300.0)
             settings.font_dir = _get_text("font_dir", settings.font_dir or "./fonts")
             settings.bg_dir = _get_text("bg_dir", settings.bg_dir or "./backgrounds")
+            settings.icon_dir = _get_text("icon_dir", settings.icon_dir or "./icons")
+            settings.eisenscript_dir = _get_text("eisenscript_dir", settings.eisenscript_dir or "./eisen")
             settings.eisenscript_prefix_front = sanitize_eisenscript(request.form.get("eisenscript_prefix_front", ""))
             settings.eisenscript_suffix_front = sanitize_eisenscript(request.form.get("eisenscript_suffix_front", ""))
             settings.eisenscript_prefix_back = sanitize_eisenscript(request.form.get("eisenscript_prefix_back", ""))
             settings.eisenscript_suffix_back = sanitize_eisenscript(request.form.get("eisenscript_suffix_back", ""))
+            settings.eisenscript_prefix_coin_front = sanitize_eisenscript(request.form.get("eisenscript_prefix_coin_front", ""))
+            settings.eisenscript_suffix_coin_front = sanitize_eisenscript(request.form.get("eisenscript_suffix_coin_front", ""))
+            settings.eisenscript_prefix_coin_back = sanitize_eisenscript(request.form.get("eisenscript_prefix_coin_back", ""))
+            settings.eisenscript_suffix_coin_back = sanitize_eisenscript(request.form.get("eisenscript_suffix_coin_back", ""))
+            settings.eisenscript_prefix_card_front = sanitize_eisenscript(request.form.get("eisenscript_prefix_card_front", ""))
+            settings.eisenscript_suffix_card_front = sanitize_eisenscript(request.form.get("eisenscript_suffix_card_front", ""))
+            settings.eisenscript_prefix_card_back = sanitize_eisenscript(request.form.get("eisenscript_prefix_card_back", ""))
+            settings.eisenscript_suffix_card_back = sanitize_eisenscript(request.form.get("eisenscript_suffix_card_back", ""))
+            settings.eisenscript_receipt = sanitize_eisenscript(request.form.get("eisenscript_receipt", ""))
 
             # Retry commit if SQLite is temporarily locked
             max_attempts = 3
@@ -7253,22 +7331,10 @@ def admin_settings():
 
         return redirect(url_for("admin_settings"))
 
-    # Load prompts from files if not set in database
-    portrait_prompt_display = settings.portrait_prompt or read_prompt_file(
-        "portrait_prompt.txt",
-        "A professional portrait of a person, high quality, detailed face, neutral background",
-    )
-    background_prompt_display = settings.background_prompt or read_prompt_file(
-        "background_prompt.txt",
-        "A beautiful fantasy landscape with mountains and rivers, mystical atmosphere",
-    )
-
     return render_template(
         "admin_panel.html",
         active_section="settings",
         settings=settings,
-        portrait_prompt_display=portrait_prompt_display,
-        background_prompt_display=background_prompt_display,
         users=User.query.all(),  # You might want to paginate this
         banknotes=Banknote.query.all(),
         current_user=get_current_user(),
@@ -7279,6 +7345,50 @@ def admin_settings():
         serials=SerialNumber.query.order_by(SerialNumber.created_at.desc()).all(),
         queue_status=get_generation_queue_status(),
     )
+
+
+@app.route("/admin/compile-eisenscript", methods=["POST"])
+def compile_eisenscript():
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        script = payload.get("script", "")
+        name = payload.get("name", "eisenscript")
+        if not script.strip():
+            return jsonify({"ok": False, "message": "Script is empty."}), 400
+
+        from generate import render_eisenscript_jinja2
+        from lunamint.scripting import render_script_to_svg_html
+        import tempfile
+        from pathlib import Path
+
+        context = {
+            "username": "user",
+            "denomination": "1",
+            "denom_exponent": 0,
+            "dendom_exp": 0,
+            "pow_level": 0,
+            "denomination_words": "one",
+            "denomination_compact": "1",
+            "denomination_words_cn": "一",
+            "denomination_compact_cn": "壹",
+            "serial": "SERIAL",
+            "title": "TITLE",
+            "subtitle": "SUBTITLE",
+            "denomination_color": "#000000",
+            "denom_color": "#000000",
+            "width_mm": 160.0,
+            "height_mm": 60.0,
+            "timestamp": 0,
+        }
+
+        rendered = render_eisenscript_jinja2(script, context)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            out_path = Path(tmpdir) / "preview.svg"
+            render_script_to_svg_html(rendered, out_path)
+
+        return jsonify({"ok": True, "message": f"{name} compiled successfully."})
+    except Exception as e:
+        return jsonify({"ok": False, "message": str(e)}), 400
 
 
 @app.route("/admin/mining/config", methods=["POST"])

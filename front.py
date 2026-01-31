@@ -2155,10 +2155,13 @@ def add_security_background(
     def rgb_to_hex(rgb):
         return "#{:02X}{:02X}{:02X}".format(*rgb)
 
-    # --- Hierarchy level from denomination exponent ---
+    # --- Hierarchy level from denomination exponent (1..9) ---
     if denomination > 0:
-        hierarchy_levels = max(1, int(math.log10(denomination)))
+        denom_exponent = int(math.log10(denomination)) + 1
+        denom_exponent = max(1, min(9, denom_exponent))
+        hierarchy_levels = denom_exponent
     else:
+        denom_exponent = 1
         hierarchy_levels = 1
 
     # --- Draw triangles recursively ---
@@ -2201,7 +2204,7 @@ def add_security_background(
 
     # --- Add denomination exponent and date text in background ---
     date_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    text_str = f"Denom Exp: {denomination}   Date: {date_str}"
+    text_str = f"Denom Exp: {denom_exponent}   Date: {date_str}"
     dwg.add(dwg.text(
         text_str,
         insert=(margin, H - margin),
@@ -2997,7 +3000,8 @@ def generate_fantasy_banknote(seed_text: str, input_image_path: str, outfile_svg
     #embed_font(dwg, TTFont("./fonts/FengGuangMingRui.ttf"), "FengGuangMingRui")
     
     denom_value = denom_to_int(denomination)
-    denom_exponent = int(round(math.log10(denom_value))) if denom_value > 0 else 0
+    denom_exponent = int(math.log10(denom_value)) + 1 if denom_value > 0 else 1
+    denom_exponent = max(1, min(9, denom_exponent))
     seed_text=seed_text
     # Generate seed and background
     seed_hash = sha3_512_salted(seed_text, serial_id)
@@ -3113,11 +3117,10 @@ import segno
 
 # Example denomination_to_color function
 def denomination_to_color(denom_exponent: int) -> str:
-    """Map denomination exponent (0-8) to a color in a 9-color spectrum."""
+    """Map denomination exponent (1-9) to a color in a 9-color spectrum."""
     spectrum = ["#FF0000", "#FF7F00", "#FFFF00", "#00FF00", "#00FFFF", "#0000FF", "#4B0082", "#8F00FF", "#FF00FF"]
-    # Clamp to 0-8
-    idx = max(0, min(denom_exponent, len(spectrum)-1))
-    return spectrum[idx]
+    exponent = max(1, min(denom_exponent, len(spectrum)))
+    return spectrum[exponent - 1]
 
 def add_colored_aztec_to_canvas(
     dwg, cx, cy, matrix, denom_exponent,

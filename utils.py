@@ -416,6 +416,12 @@ class GenerationQueue:
                 del self.active_tasks[user_id]
                 print(f"[CLEANUP] Removed completed task {task_id} for user {user_id}")
 
+    def clear_active_tasks(self) -> None:
+        """Clear all in-memory active task tracking (does not stop threads)."""
+        with self.lock:
+            self.active_tasks.clear()
+            print("[QUEUE] Cleared in-memory active tasks")
+
 
 # Define generation_queue FIRST
 generation_queue = GenerationQueue(max_workers=1)
@@ -575,6 +581,13 @@ def execute_generation_task(task_id: int):
 def get_generation_queue_status() -> Dict:
     """Get current generation queue status"""
     return generation_queue.get_queue_status()
+
+def clear_generation_queue_state() -> None:
+    """Clear in-memory tracking for generation tasks."""
+    generation_queue.clear_active_tasks()
+    with GENERATION_LOCK:
+        GENERATION_THREADS.clear()
+        print("[QUEUE] Cleared GENERATION_THREADS tracking")
 
 def mark_generation_complete(user_id: int, task_id: int, status: str, message: str):
     from models import db, GenerationTask

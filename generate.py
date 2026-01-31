@@ -225,6 +225,17 @@ def denomination_to_chinese_lkc(value) -> str:
         return f"{denomination_to_chinese(num // 1_000)}kLKC"
     return f"{denomination_to_chinese(num)}LKC"
 
+def denomination_to_exponent(value) -> int:
+    """Map denomination 1..100000000 to exponent 1..9."""
+    try:
+        num = int(str(value).strip())
+    except Exception:
+        return 1
+    if num <= 0:
+        return 1
+    exponent = int(math.log10(num)) + 1
+    return max(1, min(9, exponent))
+
 def sanitize_username_for_filename(name: str) -> str:
     if not name:
         return "unknown"
@@ -465,6 +476,7 @@ def generate_banknote_pair(name, denom, output_dir, width_mm=160.0, height_mm=60
     if not output_dir:
         output_dir = get_user_denom_output_dir(name, denom)
     denom_color = denomination_color(denom)
+    denom_exponent = denomination_to_exponent(denom)
     denom_words = denomination_to_words(denom)
     denom_compact = denomination_to_compact_lkc(denom)
     denom_words_cn = denomination_to_chinese(denom)
@@ -474,6 +486,9 @@ def generate_banknote_pair(name, denom, output_dir, width_mm=160.0, height_mm=60
     context_base = {
         "username": name,
         "denomination": denom,
+        "denom_exponent": denom_exponent,
+        "dendom_exp": denom_exponent,
+        "pow_level": denom_exponent,
         "denomination_words": denom_words,
         "denomination_compact": denom_compact,
         "denomination_words_cn": denom_words_cn,
@@ -496,6 +511,14 @@ def generate_banknote_pair(name, denom, output_dir, width_mm=160.0, height_mm=60
     # EisenScript parts from DB
     front_pre, front_user, front_suf = load_eisenscript_parts('front')
     back_pre, back_user, back_suf = load_eisenscript_parts('back')
+
+    # Apply per-user custom EisenScript (from profile)
+    custom_eisenscript = ""
+    if extra_context and isinstance(extra_context, dict):
+        custom_eisenscript = (extra_context.get("custom_eisenscript") or "").strip()
+    if custom_eisenscript:
+        front_user = f"{front_user}\n{custom_eisenscript}" if front_user else custom_eisenscript
+        back_user = f"{back_user}\n{custom_eisenscript}" if back_user else custom_eisenscript
     eisenscript_front = merge_eisenscript_with_vars(front_pre, front_user, front_suf, context_front)
     eisenscript_back = merge_eisenscript_with_vars(back_pre, back_user, back_suf, context_back)
     eisenscript_back = inject_back_denom_background(eisenscript_back, denom_color)
