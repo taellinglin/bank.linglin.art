@@ -1,6 +1,9 @@
 {% extends "base.html" %}
 
 {% block content %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+
 <div class="admin-container">
 
 
@@ -697,6 +700,50 @@
                                     </div>
                                 </div>
                             </div>
+                            <div class="form-row">
+                                <div class="col-md-4 mb-2">
+                                    <label class="small">LunaMint Server</label>
+                                    <div class="form-check">
+                                        <input class="form-check-input" type="checkbox" name="lunamint_use_custom_server" id="lunamint_use_custom_server"
+                                               {% if settings.lunamint_use_custom_server %}checked{% endif %}>
+                                        <label class="form-check-label" for="lunamint_use_custom_server">Use custom server</label>
+                                    </div>
+                                </div>
+                                <div class="col-md-8 mb-2">
+                                    <label class="small">LunaMint Compile URL</label>
+                                    <input type="text" class="form-control form-control-sm" name="lunamint_server_url"
+                                           placeholder="https://your-server.example/mint/compile"
+                                           value="{{ settings.lunamint_server_url or '' }}">
+                                </div>
+                            </div>
+                            <div class="form-row">
+                                <div class="col-12 mb-2">
+                                    <label class="small">LunaMint Server Pool (comma-separated)</label>
+                                    <textarea class="form-control form-control-sm" name="lunamint_server_urls" rows="2"
+                                              placeholder="https://server-a.example/mint/compile, https://server-b.example/mint/compile">{{ settings.lunamint_server_urls or '' }}</textarea>
+                                    <div class="small text-muted">The Mint page will try these in order and use the first available.</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="card mt-3">
+                        <div class="card-body">
+                            <h6 class="card-title">Email Diagnostics</h6>
+                            <div class="form-row align-items-end">
+                                <div class="col-md-8 mb-2">
+                                    <label class="small">Test Email Recipient</label>
+                                    <input type="email" class="form-control form-control-sm" id="test-email-recipient"
+                                           placeholder="name@example.com">
+                                </div>
+                                <div class="col-md-4 mb-2">
+                                    <button type="button" class="btn btn-sm btn-primary w-100" onclick="sendTestEmail()">
+                                        <i class="fas fa-paper-plane"></i>
+                                        Send Test Email
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="small text-muted">Sends a themed test message using the current mail configuration.</div>
                         </div>
                     </div>
                     
@@ -874,6 +921,8 @@
                                             <button type="button" class="var-pill" data-token="{{ '{{ denomination_compact }}' }}">{{ '{{ denomination_compact }}' }}</button>
                                             <button type="button" class="var-pill" data-token="{{ '{{ denomination_words_cn }}' }}">{{ '{{ denomination_words_cn }}' }}</button>
                                             <button type="button" class="var-pill" data-token="{{ '{{ denomination_compact_cn }}' }}">{{ '{{ denomination_compact_cn }}' }}</button>
+                                            <button type="button" class="var-pill" data-token="{{ '{{ coin_amount }}' }}">{{ '{{ coin_amount }}' }}</button>
+                                            <button type="button" class="var-pill" data-token="{{ '{{ coin_amount_text }}' }}">{{ '{{ coin_amount_text }}' }}</button>
                                             <button type="button" class="var-pill" data-token="{{ '{{ serial }}' }}">{{ '{{ serial }}' }}</button>
                                             <button type="button" class="var-pill" data-token="{{ '{{ title }}' }}">{{ '{{ title }}' }}</button>
                                             <button type="button" class="var-pill" data-token="{{ '{{ subtitle }}' }}">{{ '{{ subtitle }}' }}</button>
@@ -1043,6 +1092,33 @@ body {
     min-height: 260px;
     resize: none;
     box-shadow: inset 0 0 0 1px rgba(0,0,0,0.2);
+}
+
+.CodeMirror {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    font-family: 'JetBrains Mono', 'Fira Code', Consolas, 'Courier New', monospace;
+    font-size: 12.5px;
+    min-height: 260px;
+    height: auto;
+}
+
+.CodeMirror-gutters {
+    background: #1a1a1a;
+    border-right: 1px solid #2a2a2a;
+    color: #6b6f76;
+}
+
+.CodeMirror-cursor {
+    border-left: 1px solid #d4d4d4;
+}
+
+.CodeMirror-focused {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(55, 148, 255, 0.25);
+    border-color: #3794ff;
 }
 
 .code-editor-shell {
@@ -2072,7 +2148,13 @@ body {
 }
 </style>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/mode/simple.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+
 <script>
+{% raw %}
 // Navigation
 document.addEventListener('DOMContentLoaded', function() {
     // Handle sidebar navigation
@@ -2198,7 +2280,11 @@ function refreshData() {
 // User Management Functions
 function generateMoneyForAll() {
     if (confirm('Generate money for all users?')) {
-        showNotification('Generating money for all users...', 'info');
+        const form = document.createElement('form');
+        form.method = 'POST';
+        form.action = '/admin/generate-money-all';
+        document.body.appendChild(form);
+        form.submit();
     }
 }
 
@@ -2392,6 +2478,31 @@ function cleanupMempool() {
     }
 }
 
+function sendTestEmail() {
+    const input = document.getElementById('test-email-recipient');
+    const recipient = (input?.value || '').trim();
+    if (!recipient) {
+        showNotification('Enter an email address to send a test email.', 'warning');
+        return;
+    }
+
+    showNotification('Sending test email...', 'info');
+    fetch('/admin/test-email', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded'
+        },
+        body: `email=${encodeURIComponent(recipient)}`
+    })
+    .then(response => response.json())
+    .then(data => {
+        showNotification(data.message || 'Test email sent', data.success ? 'success' : 'error');
+    })
+    .catch(error => {
+        showNotification('Error sending test email: ' + error.message, 'error');
+    });
+}
+
 function mineAllTransfers() {
     if (confirm('Mine all pending transfers? This may take some time.')) {
         window.location.href = '/mine-all-transfers';
@@ -2501,19 +2612,130 @@ document.addEventListener('DOMContentLoaded', function() {
             const pane = document.getElementById(target);
             if (pane) {
                 pane.classList.add('active');
+                const paneTextarea = pane.querySelector('.vscode-textarea');
+                if (paneTextarea && paneTextarea._cm) {
+                    activeEditor = paneTextarea._cm;
+                    paneTextarea._cm.refresh();
+                    paneTextarea._cm.focus();
+                } else if (paneTextarea) {
+                    activeEditor = paneTextarea;
+                    paneTextarea.focus();
+                }
             }
         });
     });
 
     let activeEditor = null;
-    document.querySelectorAll('.vscode-textarea').forEach(area => {
-        area.addEventListener('focus', () => {
-            activeEditor = area;
+    const editorInstances = [];
+
+    const getActiveEditorElement = () => {
+        if (!activeEditor) {
+            return null;
+        }
+        return activeEditor.getTextArea ? activeEditor.getTextArea() : activeEditor;
+    };
+
+    const getActiveEditorValue = () => {
+        if (!activeEditor) {
+            return '';
+        }
+        return activeEditor.getValue ? activeEditor.getValue() : (activeEditor.value || '');
+    };
+
+    const replaceSelection = (token) => {
+        if (!activeEditor) {
+            return;
+        }
+        if (activeEditor.replaceSelection) {
+            activeEditor.replaceSelection(token, 'around');
+            activeEditor.focus();
+            return;
+        }
+        const textarea = activeEditor;
+        const start = textarea.selectionStart || 0;
+        const end = textarea.selectionEnd || 0;
+        const value = textarea.value || '';
+        textarea.value = value.slice(0, start) + token + value.slice(end);
+        const nextPos = start + token.length;
+        textarea.setSelectionRange(nextPos, nextPos);
+        textarea.focus();
+    };
+
+    const initCodeMirror = () => {
+        if (typeof CodeMirror === 'undefined' || !CodeMirror.fromTextArea) {
+            return false;
+        }
+
+        if (!CodeMirror.modes || !CodeMirror.modes.eisenscript) {
+            CodeMirror.defineSimpleMode('eisenscript', {
+                start: [
+                    { regex: /#.*/, token: 'comment' },
+                    { regex: /\{\{.*?\}\}/, token: 'variable-2' },
+                    { regex: /\{%-?.*?-?%\}/, token: 'def' },
+                    { regex: /"(?:[^\\]|\\.)*?"/, token: 'string' },
+                    { regex: /'(?:[^\\]|\\.)*?'/, token: 'string' },
+                    { regex: /\b(?:size|background|rect|circle|line|text|text_dial|text_grid|letter_border|hash_mandala|daemon_security|front_color_qr|qr|image|polygon|polyline|ellipse|gradient|pattern|mask|clip)\b/i, token: 'keyword' },
+                    { regex: /\b(?:x_mm|y_mm|width_mm|height_mm|radius_mm|font_size_mm|spacing_mm|row_spacing_mm|opacity|angle_deg|density|rows|cols|rotation|stroke_width_mm|stroke|fill|color|font|font_dir|snap_grid_px|rings|sectors|text|case)\b/i, token: 'atom' },
+                    { regex: /#[0-9a-fA-F]{3,8}/, token: 'number' },
+                    { regex: /-?\d+(?:\.\d+)?/, token: 'number' }
+                ]
+            });
+        }
+
+        document.querySelectorAll('.vscode-textarea').forEach(textarea => {
+            const editor = CodeMirror.fromTextArea(textarea, {
+                mode: 'eisenscript',
+                theme: 'material-darker',
+                lineNumbers: true,
+                lineWrapping: true,
+                indentUnit: 4,
+                tabSize: 4,
+                indentWithTabs: false,
+                matchBrackets: true,
+                autoCloseBrackets: true
+            });
+            textarea._cm = editor;
+            editor.on('focus', () => {
+                activeEditor = editor;
+            });
+            editor.on('cursorActivity', () => {
+                activeEditor = editor;
+            });
+            editor.on('change', () => {
+                textarea.value = editor.getValue();
+            });
+            editorInstances.push(editor);
         });
-        area.addEventListener('click', () => {
-            activeEditor = area;
+
+        if (editorInstances.length) {
+            const activePane = document.querySelector('.eisen-pane.active .vscode-textarea');
+            if (activePane && activePane._cm) {
+                activeEditor = activePane._cm;
+                activePane._cm.refresh();
+            } else {
+                activeEditor = editorInstances[0];
+                editorInstances[0].refresh();
+            }
+        }
+        return true;
+    };
+
+    const hasCodeMirror = initCodeMirror();
+
+    if (!hasCodeMirror) {
+        const firstArea = document.querySelector('.vscode-textarea');
+        if (firstArea) {
+            activeEditor = firstArea;
+        }
+        document.querySelectorAll('.vscode-textarea').forEach(area => {
+            area.addEventListener('focus', () => {
+                activeEditor = area;
+            });
+            area.addEventListener('click', () => {
+                activeEditor = area;
+            });
         });
-    });
+    }
 
     document.querySelectorAll('.var-pill').forEach(pill => {
         pill.addEventListener('dblclick', () => {
@@ -2521,41 +2743,37 @@ document.addEventListener('DOMContentLoaded', function() {
                 return;
             }
             const token = pill.getAttribute('data-token') || '';
-            const start = activeEditor.selectionStart || 0;
-            const end = activeEditor.selectionEnd || 0;
-            const value = activeEditor.value;
-            activeEditor.value = value.slice(0, start) + token + value.slice(end);
-            const nextPos = start + token.length;
-            activeEditor.setSelectionRange(nextPos, nextPos);
-            activeEditor.focus();
+            replaceSelection(token);
         });
     });
 
-    document.querySelectorAll('.vscode-textarea').forEach(textarea => {
-        const shell = document.createElement('div');
-        shell.className = 'code-editor-shell';
-        const gutter = document.createElement('div');
-        gutter.className = 'code-gutter';
+    if (!hasCodeMirror) {
+        document.querySelectorAll('.vscode-textarea').forEach(textarea => {
+            const shell = document.createElement('div');
+            shell.className = 'code-editor-shell';
+            const gutter = document.createElement('div');
+            gutter.className = 'code-gutter';
 
-        textarea.parentNode.insertBefore(shell, textarea);
-        shell.appendChild(gutter);
-        shell.appendChild(textarea);
+            textarea.parentNode.insertBefore(shell, textarea);
+            shell.appendChild(gutter);
+            shell.appendChild(textarea);
 
-        const updateLineNumbers = () => {
-            const lines = textarea.value.split('\n').length || 1;
-            let html = '';
-            for (let i = 1; i <= lines; i += 1) {
-                html += i + '<br>';
-            }
-            gutter.innerHTML = html;
-        };
+            const updateLineNumbers = () => {
+                const lines = textarea.value.split('\n').length || 1;
+                let html = '';
+                for (let i = 1; i <= lines; i += 1) {
+                    html += i + '<br>';
+                }
+                gutter.innerHTML = html;
+            };
 
-        updateLineNumbers();
-        textarea.addEventListener('input', updateLineNumbers);
-        textarea.addEventListener('scroll', () => {
-            gutter.scrollTop = textarea.scrollTop;
+            updateLineNumbers();
+            textarea.addEventListener('input', updateLineNumbers);
+            textarea.addEventListener('scroll', () => {
+                gutter.scrollTop = textarea.scrollTop;
+            });
         });
-    });
+    }
 
     const varsPanel = document.querySelector('.eisen-vars');
     const editorShell = document.querySelector('.eisen-editor');
@@ -2577,8 +2795,9 @@ document.addEventListener('DOMContentLoaded', function() {
                 consoleOutput.textContent = 'No active editor selected.';
                 return;
             }
-            const script = activeEditor.value || '';
-            const name = activeEditor.getAttribute('name') || 'eisenscript';
+            const script = getActiveEditorValue();
+            const editorElement = getActiveEditorElement();
+            const name = editorElement ? (editorElement.getAttribute('name') || 'eisenscript') : 'eisenscript';
             consoleOutput.textContent = `Compiling ${name}...`;
             try {
                 const response = await fetch('/admin/compile-eisenscript', {
@@ -2692,5 +2911,6 @@ notificationStyles.textContent = `
 }
 `;
 document.head.appendChild(notificationStyles);
+{% endraw %}
 </script>
 {% endblock %}

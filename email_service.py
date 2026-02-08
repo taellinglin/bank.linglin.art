@@ -12,7 +12,7 @@ APP_NAME = "Ling Country Treasury"
 APP_SHORT = "Linglin Treasury"
 
 def _get_app_url() -> str:
-    return os.environ.get("APP_URL", "http://localhost:5000").rstrip("/")
+    return os.environ.get("APP_URL", "https://bank.linglin.art").rstrip("/")
 
 def _build_email_html(
     title: str,
@@ -28,7 +28,7 @@ def _build_email_html(
         button_html = f"""
             <tr>
                 <td align=\"center\" style=\"padding: 24px 0 0;\">
-                    <a href=\"{cta_url}\" style=\"display: inline-block; padding: 14px 28px; background: linear-gradient(135deg, #3B82F6 0%, #22D3EE 100%); color: #0b0f14; text-decoration: none; font-weight: 700; border-radius: 999px; letter-spacing: 0.2px;\">{cta_text}</a>
+                    <a href=\"{cta_url}\" style=\"display: inline-block; padding: 14px 30px; background: linear-gradient(135deg, #1d4ed8 0%, #22d3ee 100%); color: #07111f; text-decoration: none; font-weight: 700; border-radius: 999px; letter-spacing: 0.4px; box-shadow: 0 10px 24px rgba(29,78,216,0.35); border: 1px solid rgba(148,163,184,0.2);\">{cta_text}</a>
                 </td>
             </tr>
         """
@@ -41,17 +41,24 @@ def _build_email_html(
         <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">
         <title>{title}</title>
     </head>
-    <body style=\"margin:0; padding:0; background-color:#0b0f14; color:#e6edf3; font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Arial, sans-serif;\">
+    <body style=\"margin:0; padding:0; background-color:#0a0f1a; color:#e6edf3; font-family: 'Space Grotesk', 'Segoe UI', sans-serif;\">
         <span style=\"display:none; visibility:hidden; opacity:0; height:0; width:0;\">{preheader}</span>
-        <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background-color:#0b0f14; padding:32px 16px;\">
+        <table role=\"presentation\" width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background-color:#0a0f1a; padding:36px 16px;\">
             <tr>
                 <td align=\"center\">
-                    <table role=\"presentation\" width=\"600\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:600px; width:100%; background:#0f172a; border:1px solid #1f2937; border-radius:20px; overflow:hidden; box-shadow:0 16px 40px rgba(0,0,0,0.45);\">
+                    <table role=\"presentation\" width=\"640\" cellpadding=\"0\" cellspacing=\"0\" style=\"max-width:640px; width:100%; background:#0f172a; border:1px solid #1f2a44; border-radius:20px; overflow:hidden; box-shadow:0 22px 48px rgba(0,0,0,0.45);\">
                         <tr>
-                            <td style=\"padding:28px 32px; background:linear-gradient(135deg, #111827 0%, #0b1220 100%); border-bottom:1px solid #1f2937;\">
-                                <div style=\"font-size:14px; letter-spacing:2px; text-transform:uppercase; color:#94a3b8; font-weight:600;\">{APP_NAME}</div>
+                            <td style=\"height:5px; background:linear-gradient(90deg, #22d3ee 0%, #3b82f6 45%, #0ea5e9 100%);\"></td>
+                        </tr>
+                        <tr>
+                            <td style=\"padding:26px 32px; background:linear-gradient(135deg, #0b1220 0%, #111c2e 100%); border-bottom:1px solid #1f2a44;\">
+                                <div style=\"font-size:12px; letter-spacing:2.6px; text-transform:uppercase; color:#7dd3fc; font-weight:700;\">{APP_SHORT}</div>
                                 <h1 style=\"margin:10px 0 6px; font-size:26px; color:#f8fafc;\">{heading}</h1>
                                 <p style=\"margin:0; color:#cbd5f5; font-size:15px;\">{subtitle}</p>
+                                <div style=\"margin-top:14px;\">
+                                    <span style=\"display:inline-block; padding:4px 10px; border-radius:999px; background:#0b1220; border:1px solid #1f2a44; color:#93c5fd; font-size:11px; font-weight:600; letter-spacing:0.5px; text-transform:uppercase;\">Mempool</span>
+                                    <span style=\"display:inline-block; margin-left:8px; padding:4px 10px; border-radius:999px; background:#0b1220; border:1px solid #1f2a44; color:#a7f3d0; font-size:11px; font-weight:600; letter-spacing:0.5px; text-transform:uppercase;\">Blockchain</span>
+                                </div>
                             </td>
                         </tr>
                         <tr>
@@ -61,7 +68,7 @@ def _build_email_html(
                             </td>
                         </tr>
                         <tr>
-                            <td style=\"padding:20px 32px 28px; color:#64748b; font-size:12px; border-top:1px dashed #1f2937;\">
+                            <td style=\"padding:20px 32px 28px; color:#64748b; font-size:12px; border-top:1px dashed #1f2a44;\">
                                 This email was sent by {APP_NAME}. If you did not request this, you can safely ignore it.
                             </td>
                         </tr>
@@ -141,9 +148,10 @@ def send_banknote_generation_started_notification(user_email, username, task_id=
         print(f"[EMAIL ERROR] Failed to send generation-started notification: {e}")
         return False
 
-def send_email_change_verification(new_email, username, verification_token, old_email, app_url='http://localhost:5000'):
+def send_email_change_verification(new_email, username, verification_token, old_email, app_url=None):
     """Send email verification when user changes their email address"""
-    verification_url = f"{app_url}/profile/verify-email-change/{verification_token}"
+    resolved_app_url = app_url or _get_app_url()
+    verification_url = f"{resolved_app_url}/profile/verify-email-change/{verification_token}"
     subject = "Ling Country Treasury — Confirm your new email"
 
     content_html = f"""
@@ -181,9 +189,10 @@ def send_email_change_verification(new_email, username, verification_token, old_
         print(f"[EMAIL ERROR] Failed to send email change verification: {e}")
         return False
 
-def send_verification_email(user_email, username, verification_token, app_url='http://localhost:5000'):
+def send_verification_email(user_email, username, verification_token, app_url=None):
     """Send email verification email to new user"""
-    verification_url = f"{app_url}/verify-email/{verification_token}"
+    resolved_app_url = app_url or _get_app_url()
+    verification_url = f"{resolved_app_url}/verify-email/{verification_token}"
     subject = "Ling Country Treasury — Verify your email"
 
     content_html = f"""
@@ -441,4 +450,94 @@ def send_generation_failed_notification(user_email, username, error_message=None
         return True
     except Exception as e:
         print(f"[ERROR] Failed to send generation failed notification: {e}")
+        return False
+
+
+def send_test_email(recipient_email, app_url=None):
+    """Send a themed test email to verify styling and link behavior."""
+    resolved_app_url = app_url or _get_app_url()
+    subject = "Ling Country Treasury — Test email"
+
+    content_html = f"""
+        <p style=\"margin:0 0 16px; color:#e2e8f0;\">This is a test email from {APP_NAME}.</p>
+        <div style=\"background:#0b1220; border:1px solid #1f2a44; padding:16px; border-radius:14px;\">
+            <p style=\"margin:0; color:#e2e8f0;\"><strong>Theme preview</strong></p>
+            <ul style=\"margin:12px 0 0; padding-left:18px; color:#cbd5f5;\">
+                <li>Network: mainnet</li>
+                <li>Environment: production</li>
+                <li>Link base: {resolved_app_url}</li>
+            </ul>
+        </div>
+        <p style=\"margin:16px 0 0; color:#94a3b8;\">If you can read this, email delivery is working.</p>
+    """
+
+    html_body = _build_email_html(
+        title=subject,
+        preheader="Test message from Ling Country Treasury.",
+        heading="Test email",
+        subtitle="Mempool + blockchain theme check",
+        content_html=content_html,
+        cta_text="Open dashboard",
+        cta_url=f"{resolved_app_url}/dashboard",
+    )
+
+    text_body = f"""
+    {APP_NAME} — Test email
+
+    This is a test message to verify email delivery and styling.
+    {resolved_app_url}/dashboard
+    """
+
+    try:
+        msg = Message(subject, recipients=[recipient_email])
+        msg.body = text_body
+        msg.html = html_body
+        mail.send(msg)
+        print(f"[EMAIL] Sent test email to {recipient_email}")
+        return True
+    except Exception as e:
+        print(f"[EMAIL ERROR] Failed to send test email: {e}")
+        return False
+
+
+def send_data_export_email(user_email, username, download_url):
+    subject = "Ling Country Treasury — Your data export is ready"
+
+    content_html = f"""
+        <p style=\"margin:0 0 16px; color:#e2e8f0;\">Hi {username},</p>
+        <div style=\"background:#0b1220; border:1px solid #1f2937; padding:16px; border-radius:14px;\">
+            <p style=\"margin:0; color:#e2e8f0;\"><strong>Your data export is ready.</strong></p>
+            <p style=\"margin:10px 0 0; color:#cbd5f5;\">This link expires in 24 hours and requires login.</p>
+            <p style=\"margin:10px 0 0; color:#94a3b8; word-break: break-all;\">{download_url}</p>
+        </div>
+        <p style=\"margin:16px 0 0; color:#94a3b8;\">If you didn't request this, you can ignore this email.</p>
+    """
+
+    html_body = _build_email_html(
+        title=subject,
+        preheader="Your data export is ready.",
+        heading="Data export ready",
+        subtitle="Download your account data",
+        content_html=content_html,
+        cta_text="Download data",
+        cta_url=download_url,
+    )
+
+    text_body = f"""
+    {APP_NAME} — Your data export is ready
+
+    Hi {username},
+
+    Download your data here (link expires in 24 hours and requires login):
+    {download_url}
+    """
+
+    try:
+        msg = Message(subject, recipients=[user_email])
+        msg.body = text_body
+        msg.html = html_body
+        mail.send(msg)
+        return True
+    except Exception as e:
+        print(f"[EMAIL ERROR] Failed to send data export email: {e}")
         return False

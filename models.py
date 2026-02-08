@@ -24,6 +24,8 @@ class User(UserMixin, db.Model):
     last_login = db.Column(db.DateTime)
     last_generation = db.Column(db.DateTime)
     custom_eisenscript = db.Column(db.Text, default="")
+    generation_credits = db.Column(db.Float, default=6.0)
+    credits_granted_at = db.Column(db.DateTime)
     
     # Email verification
     email_verified = db.Column(db.Boolean, default=False)
@@ -73,31 +75,12 @@ class User(UserMixin, db.Model):
         return False
     
     def can_generate_money(self):
-        """Check if user can generate money based on cooldown period"""
-        if not self.last_generation:
-            return True
-        
-        cooldown_days = 7  # Default cooldown period
-        settings = Settings.query.first()
-        if settings:
-            cooldown_days = settings.cooldown_days
-        
-        next_generation_date = self.last_generation + timedelta(days=cooldown_days)
-        return datetime.utcnow() >= next_generation_date
+        """Credits-based generation: allow if user has credits."""
+        return (self.generation_credits or 0) > 0
     
     def days_until_next_generation(self):
-        """Calculate days until next money generation is allowed"""
-        if not self.last_generation:
-            return 0
-        
-        cooldown_days = 7  # Default cooldown period
-        settings = Settings.query.first()
-        if settings:
-            cooldown_days = settings.cooldown_days
-        
-        next_generation_date = self.last_generation + timedelta(days=cooldown_days)
-        days_left = (next_generation_date - datetime.utcnow()).days
-        return max(0, days_left)
+        """Cooldown no longer applies; return 0."""
+        return 0
     
     def get_total_banknote_value(self):
         """Calculate total value of user's banknotes"""
@@ -198,6 +181,9 @@ class GenerationTask(db.Model):
     status = db.Column(db.String(20), default='queued')  # queued, pending, processing, completed, failed, cancelled
     message = db.Column(db.Text, default="")
     progress = db.Column(db.Integer, default=0)  # 0-100 percentage
+    requested_denomination = db.Column(db.String(50))
+    requested_quantity = db.Column(db.Integer, default=1)
+    credits_spent = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     completed_at = db.Column(db.DateTime)
     
@@ -218,6 +204,25 @@ class GenerationTask(db.Model):
     
     def __repr__(self):
         return f'<GenerationTask {self.id} - {self.status}>'
+
+
+class CreditsPurchase(db.Model):
+    __tablename__ = 'credits_purchases'
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    credits = db.Column(db.Integer, default=0)
+    amount_cents = db.Column(db.Integer, default=0)
+    currency = db.Column(db.String(10), default="usd")
+    stripe_session_id = db.Column(db.String(255), unique=True)
+    stripe_payment_intent = db.Column(db.String(255))
+    status = db.Column(db.String(20), default="pending")
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    user = db.relationship('User', backref='credit_purchases')
+
+    def __repr__(self):
+        return f'<CreditsPurchase {self.id} user={self.user_id} credits={self.credits}>'
 
 class WebAuthnCredential(db.Model):
     __tablename__ = 'webauthn_credentials'
@@ -274,6 +279,9 @@ class Settings(db.Model):
     eisenscript_prefix_card_back = db.Column(db.Text, default="")
     eisenscript_suffix_card_back = db.Column(db.Text, default="")
     eisenscript_receipt = db.Column(db.Text, default="")
+    lunamint_use_custom_server = db.Column(db.Boolean, default=False)
+    lunamint_server_url = db.Column(db.String(255), default="http://localhost:4242/mint/compile")
+    lunamint_server_urls = db.Column(db.Text, default="")
     
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
@@ -403,7 +411,8 @@ def get_user_stats(user_id):
         'pending_tasks': len([t for t in user.generation_tasks if t.status in ['queued', 'pending', 'processing']]),
         'last_generation': user.last_generation,
         'can_generate': user.can_generate_money(),
-        'days_until_next': user.days_until_next_generation()
+        'days_until_next': user.days_until_next_generation(),
+        'generation_credits': user.generation_credits or 0,
     }
     
     return stats

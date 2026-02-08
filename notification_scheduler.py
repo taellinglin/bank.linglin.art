@@ -57,61 +57,40 @@ class NotificationScheduler:
                 time.sleep(1)
     
     def _check_cooldown_expired(self):
-        """Check for users whose cooldown has expired"""
+        """Grant monthly credits instead of cooldown gating."""
         try:
-            # Import here to avoid circular import
-            from models import User, Settings
-            from email_service import send_generation_ready_notification
-            
-            # Get settings for cooldown period
-            settings = Settings.query.first()
-            cooldown_days = settings.cooldown_days if settings else 7
-            
-            # Find users who:
-            # 1. Have generated before (last_generation is not None)
-            # 2. Cooldown period has expired
-            # 3. Have verified email
-            # 4. Haven't been notified yet
-            
+            from models import User
+
             now = datetime.utcnow()
-            cutoff_time = now - timedelta(days=cooldown_days)
-            
-            users = User.query.filter(
-                User.last_generation.isnot(None),
-                User.last_generation <= cutoff_time,
-                User.email_verified == True
+            cutoff_time = now - timedelta(days=30)
+            from models import db
+
+            # Initialize missing timestamps without granting credits on startup.
+            users_missing_timestamp = User.query.filter(
+                User.credits_granted_at.is_(None)
             ).all()
-            
-            notified_count = 0
+            if users_missing_timestamp:
+                for user in users_missing_timestamp:
+                    user.credits_granted_at = now
+                db.session.commit()
+                logger.info(
+                    f"[SCHEDULER] Initialized credits timestamps for {len(users_missing_timestamp)} users"
+                )
+
+            users = User.query.filter(
+                User.credits_granted_at <= cutoff_time
+            ).all()
+
+            granted = 0
             for user in users:
-                # Check if we've already notified this user
-                user_key = f"{user.id}_{user.last_generation.isoformat()}"
-                if user_key in self.notified_users:
-                    continue
-                
-                # Check if they can generate (double-check)
-                if not user.can_generate_money():
-                    continue
-                
-                try:
-                    send_generation_ready_notification(
-                        user.email,
-                        user.username,
-                        days_until_next=0
-                    )
-                    
-                    self.notified_users.add(user_key)
-                    notified_count += 1
-                    logger.info(f"[SCHEDULER] Sent generation-ready notification to {user.username}")
-                    
-                except Exception as e:
-                    logger.error(f"[SCHEDULER] Failed to send notification to {user.username}: {e}")
-            
-            if notified_count > 0:
-                logger.info(f"[SCHEDULER] Sent {notified_count} generation-ready notifications")
-                
+                user.generation_credits = round((user.generation_credits or 0) + 6, 3)
+                user.credits_granted_at = now
+                granted += 1
+            if granted:
+                db.session.commit()
+                logger.info(f"[SCHEDULER] Granted monthly credits to {granted} users")
         except Exception as e:
-            logger.error(f"[SCHEDULER] Error checking cooldown: {e}")
+            logger.error(f"[SCHEDULER] Error granting monthly credits: {e}")
     
     def _check_completed_generations(self):
         """Check for completed generation tasks that haven't been notified"""

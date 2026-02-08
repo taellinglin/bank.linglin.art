@@ -6,20 +6,20 @@
     <div class="compact-stats-grid">
         <div class="compact-stat-card">
             <div class="stat-header">
-                <div class="stat-icon">🔍</div>
+                <div class="stat-icon"><i data-feather="search"></i></div>
                 <h4 class="stat-title">Transaction Details</h4>
             </div>
             <div class="compact-stat-value">TX-{{ transaction.txid|truncate(12, True, '...') if transaction.txid else 'N/A' }}</div>
             <div class="compact-stat-label">Transaction ID</div>
             <div class="stat-trend">
-                <span class="trend-indicator up">✓</span>
+                <span class="trend-indicator up"><i data-feather="check"></i></span>
                 <span class="trend-value">Confirmed</span>
             </div>
         </div>
 
         <div class="compact-stat-card">
             <div class="stat-header">
-                <div class="stat-icon">💵</div>
+                <div class="stat-icon"><i data-feather="credit-card"></i></div>
                 <h4 class="stat-title">Amount</h4>
             </div>
             <div class="compact-stat-value">${{ transaction.amount|default(0)|format_number }}</div>
@@ -32,7 +32,7 @@
 
         <div class="compact-stat-card">
             <div class="stat-header">
-                <div class="stat-icon">⛓️</div>
+                <div class="stat-icon"><i data-feather="link-2"></i></div>
                 <h4 class="stat-title">Block Info</h4>
             </div>
             <div class="compact-stat-value">#{{ transaction.block_index|default('Pending')|format_number }}</div>
@@ -45,7 +45,7 @@
 
         <div class="compact-stat-card">
             <div class="stat-header">
-                <div class="stat-icon">📊</div>
+                <div class="stat-icon"><i data-feather="bar-chart-2"></i></div>
                 <h4 class="stat-title">Status</h4>
             </div>
             <div class="compact-stat-value">{{ transaction.status|default('Confirmed')|title }}</div>
@@ -68,7 +68,7 @@
         </div>
         <div class="search-container">
             <div class="search-input-group">
-                <div class="search-icon">🔍</div>
+                <div class="search-icon"><i data-feather="search"></i></div>
                 <input type="text" 
                        class="search-input" 
                        id="transactionSearch" 
@@ -76,7 +76,7 @@
                        onkeyup="filterTable()">
             </div>
             <button class="filter-btn" onclick="copyTransactionId()">
-                <span class="filter-btn-icon">📋</span>
+                <span class="filter-btn-icon"><i data-feather="copy"></i></span>
                 <span class="filter-btn-text">Copy TX ID</span>
             </button>
         </div>
@@ -85,15 +85,15 @@
     <!-- Tab Navigation -->
     <div class="tab-navigation">
         <button class="tab-button active" onclick="openTab('overview')">
-            <span class="tab-icon">📄</span>
+            <span class="tab-icon"><i data-feather="file-text"></i></span>
             <span class="tab-text">Overview</span>
         </button>
         <button class="tab-button" onclick="openTab('participants')">
-            <span class="tab-icon">👥</span>
+            <span class="tab-icon"><i data-feather="users"></i></span>
             <span class="tab-text">Participants</span>
         </button>
         <button class="tab-button" onclick="openTab('raw')">
-            <span class="tab-icon">📋</span>
+            <span class="tab-icon"><i data-feather="clipboard"></i></span>
             <span class="tab-text">Raw Data</span>
         </button>
     </div>
@@ -117,7 +117,7 @@
                             <td class="detail-value">
                                 <code class="hash-display">{{ transaction.txid|default('N/A') }}</code>
                                 <button class="copy-btn" onclick="copyToClipboard('{{ transaction.txid }}')">
-                                    <span class="copy-icon">📋</span>
+                                    <span class="copy-icon"><i data-feather="copy"></i></span>
                                 </button>
                             </td>
                         </tr>
@@ -213,11 +213,11 @@
                                     {% endif %}
                                 </div>
                                 <a href="{{ url_for('profile', username=transaction.sender) }}" class="profile-link">
-                                    View Profile →
+                                    View Profile <i data-feather="arrow-right"></i>
                                 </a>
                             </td>
                             <td class="amount-cell negative">-${{ transaction.amount|default(0)|format_number }}</td>
-                            <td class="change-cell negative">↓ Decrease</td>
+                            <td class="change-cell negative"><i data-feather="arrow-down"></i> Decrease</td>
                         </tr>
                         {% endif %}
                         
@@ -235,11 +235,11 @@
                                     {% endif %}
                                 </div>
                                 <a href="{{ url_for('profile', username=transaction.recipient) }}" class="profile-link">
-                                    View Profile →
+                                    View Profile <i data-feather="arrow-right"></i>
                                 </a>
                             </td>
                             <td class="amount-cell positive">+${{ transaction.amount|default(0)|format_number }}</td>
-                            <td class="change-cell positive">↑ Increase</td>
+                            <td class="change-cell positive"><i data-feather="arrow-up"></i> Increase</td>
                         </tr>
                         {% endif %}
                         
@@ -258,7 +258,7 @@
                                 </div>
                             </td>
                             <td class="amount-cell reward">+${{ transaction.fee|default('0.001')|format_number }}</td>
-                            <td class="change-cell reward">⛏️ Reward</td>
+                            <td class="change-cell reward"><i data-feather="tool"></i> Reward</td>
                         </tr>
                         {% endif %}
                     </tbody>
@@ -276,7 +276,7 @@
                     <span class="info-item">JSON Format</span>
                     <span class="info-item">
                         <button class="copy-btn" onclick="copyRawData()">
-                            <span class="copy-icon">📋</span>
+                            <span class="copy-icon"><i data-feather="copy"></i></span>
                             Copy JSON
                         </button>
                     </span>
@@ -337,7 +337,7 @@
                     <tr>
                         <td colspan="6" class="empty-state">
                             <div class="empty-content">
-                                <span class="empty-icon">📭</span>
+                                <span class="empty-icon"><i data-feather="inbox"></i></span>
                                 <span>No related transactions found</span>
                             </div>
                         </td>

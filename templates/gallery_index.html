@@ -5,19 +5,19 @@
     <div class="stats-grid">
         <div class="stat-card">
             <div class="stat-header">
-                <span class="stat-icon">👥</span>
+                <span class="stat-icon"><i data-feather="users"></i></span>
                 <span class="stat-label">Total Members</span>
             </div>
             <div class="stat-value">{{ total_users|default(0)|int }}</div>
             <div class="stat-trend">
-                <span class="trend-indicator up">▲</span>
+                <span class="trend-indicator up"><i data-feather="trending-up"></i></span>
                 <span class="trend-value">Active Community</span>
             </div>
         </div>
 
         <div class="stat-card">
             <div class="stat-header">
-                <span class="stat-icon">💰</span>
+                <span class="stat-icon"><i data-feather="dollar-sign"></i></span>
                 <span class="stat-label">Total Balance</span>
             </div>
             <div class="stat-value">
@@ -37,7 +37,7 @@
 
         <div class="stat-card">
             <div class="stat-header">
-                <span class="stat-icon">💵</span>
+                <span class="stat-icon"><i data-feather="credit-card"></i></span>
                 <span class="stat-label">Banknotes</span>
             </div>
             <div class="stat-value">
@@ -57,7 +57,7 @@
 
         <div class="stat-card">
             <div class="stat-header">
-                <span class="stat-icon">📅</span>
+                <span class="stat-icon"><i data-feather="calendar"></i></span>
                 <span class="stat-label">New This Year</span>
             </div>
             <div class="stat-value">
@@ -74,10 +74,10 @@
     <div class="filter-section">
         <div class="filter-main">
             <div class="search-box">
-                <span class="search-icon">🔍</span>
+                <span class="search-icon"><i data-feather="search"></i></span>
                 <input type="text" id="memberSearch" placeholder="Search members by name or bio..." class="search-input">
                 <button class="clear-search" onclick="clearSearch()" title="Clear search">
-                    <span class="clear-icon">✕</span>
+                    <span class="clear-icon"><i data-feather="x"></i></span>
                 </button>
             </div>
             
@@ -154,15 +154,15 @@
                     </div>
                     <div class="member-badges">
                         {% if user.balance|default(0) >= 10000 %}
-                        <span class="badge elite" title="Elite Member">💎</span>
+                        <span class="badge elite" title="Elite Member"><i data-feather="award"></i></span>
                         {% endif %}
                         {% if user_banknotes_count >= 20 %}
-                        <span class="badge collector" title="Master Collector">🏆</span>
+                        <span class="badge collector" title="Master Collector"><i data-feather="award"></i></span>
                         {% elif user_banknotes_count >= 10 %}
-                        <span class="badge collector" title="Active Collector">⭐</span>
+                        <span class="badge collector" title="Active Collector"><i data-feather="star"></i></span>
                         {% endif %}
                         {% if user.created_at and user.created_at.year <= 2024 %}
-                        <span class="badge veteran" title="Early Adopter">🎖️</span>
+                        <span class="badge veteran" title="Early Adopter"><i data-feather="flag"></i></span>
                         {% endif %}
                     </div>
                 </div>
@@ -182,7 +182,7 @@
                     
                     <div class="member-stats">
                         <div class="member-stat">
-                            <span class="stat-icon">💰</span>
+                            <span class="stat-icon"><i data-feather="dollar-sign"></i></span>
                             <div class="stat-content">
                                 <span class="stat-label">Balance</span>
                                 <span class="stat-value">${{ "{:,.0f}".format(user.balance|default(0)) }}</span>
@@ -190,7 +190,7 @@
                         </div>
                         
                         <div class="member-stat">
-                            <span class="stat-icon">💵</span>
+                            <span class="stat-icon"><i data-feather="credit-card"></i></span>
                             <div class="stat-content">
                                 <span class="stat-label">Banknotes</span>
                                 <span class="stat-value">{{ user_banknotes_count }}</span>
@@ -198,7 +198,7 @@
                         </div>
                         
                         <div class="member-stat">
-                            <span class="stat-icon">📅</span>
+                            <span class="stat-icon"><i data-feather="calendar"></i></span>
                             <div class="stat-content">
                                 <span class="stat-label">Since</span>
                                 <span class="stat-value">
@@ -217,7 +217,7 @@
             <div class="member-footer">
                 {% if user.last_active %}
                 <div class="member-activity">
-                    <span class="activity-icon">🕒</span>
+                    <span class="activity-icon"><i data-feather="clock"></i></span>
                     <span class="activity-text">
                         {% set days_since = 0 %}
                         {% if user.last_active %}
@@ -241,7 +241,7 @@
                 <div class="member-actions">
                     <a href="{{ url_for('profile', username=user.username) if url_for else '#' }}" class="btn btn-primary btn-sm">
                         <span class="btn-text">View Profile</span>
-                        <span class="btn-icon">→</span>
+                        <span class="btn-icon"><i data-feather="arrow-right"></i></span>
                     </a>
                 </div>
             </div>
@@ -252,7 +252,7 @@
     <!-- Empty State -->
     {% if not users %}
     <div class="empty-state">
-        <div class="empty-icon">👥</div>
+        <div class="empty-icon"><i data-feather="users"></i></div>
         <h4>No Members Found</h4>
         <p>There are no members in the community yet.</p>
         <p>Be the first to join and start creating banknotes!</p>
@@ -268,12 +268,12 @@
         <div class="pagination-controls">
             {% if pagination.has_prev %}
             <a href="{{ url_for('gallery_index', page=pagination.prev_num) }}" class="btn btn-outline">
-                <span class="btn-icon">←</span>
+                <span class="btn-icon"><i data-feather="arrow-left"></i></span>
                 <span class="btn-text">Previous</span>
             </a>
             {% else %}
             <span class="btn btn-outline disabled">
-                <span class="btn-icon">←</span>
+                <span class="btn-icon"><i data-feather="arrow-left"></i></span>
                 <span class="btn-text">Previous</span>
             </span>
             {% endif %}
@@ -305,12 +305,12 @@
             {% if pagination.has_next %}
             <a href="{{ url_for('gallery_index', page=pagination.next_num) }}" class="btn btn-outline">
                 <span class="btn-text">Next</span>
-                <span class="btn-icon">→</span>
+                <span class="btn-icon"><i data-feather="arrow-right"></i></span>
             </a>
             {% else %}
             <span class="btn btn-outline disabled">
                 <span class="btn-text">Next</span>
-                <span class="btn-icon">→</span>
+                <span class="btn-icon"><i data-feather="arrow-right"></i></span>
             </span>
             {% endif %}
         </div>
@@ -446,6 +446,11 @@ body {
     color: var(--primary-light);
 }
 
+.stat-icon svg {
+    width: 20px;
+    height: 20px;
+}
+
 .stat-label {
     font-size: 0.875rem;
     font-weight: 600;
@@ -473,6 +478,12 @@ body {
 
 .trend-indicator {
     font-size: 0.75rem;
+}
+
+.trend-indicator svg {
+    width: 12px;
+    height: 12px;
+    vertical-align: -2px;
 }
 
 .trend-indicator.up {
@@ -533,6 +544,11 @@ body {
     pointer-events: none;
 }
 
+.search-icon svg {
+    width: 18px;
+    height: 18px;
+}
+
 .search-input {
     width: 100%;
     padding: 1rem 3.5rem 1rem 3.25rem;
@@ -584,6 +600,11 @@ body {
 .clear-icon {
     display: block;
     line-height: 1;
+}
+
+.clear-icon svg {
+    width: 14px;
+    height: 14px;
 }
 
 .filter-controls {
@@ -775,6 +796,11 @@ body {
     cursor: default;
 }
 
+.badge svg {
+    width: 18px;
+    height: 18px;
+}
+
 .badge:hover {
     opacity: 1;
     transform: scale(1.15);
@@ -846,6 +872,11 @@ body {
     flex-shrink: 0;
 }
 
+.member-stat .stat-icon svg {
+    width: 16px;
+    height: 16px;
+}
+
 .stat-content {
     flex: 1;
     min-width: 0;
@@ -895,6 +926,11 @@ body {
     font-size: 1rem;
     color: var(--text-tertiary);
     flex-shrink: 0;
+}
+
+.activity-icon svg {
+    width: 16px;
+    height: 16px;
 }
 
 .activity-text {
@@ -976,6 +1012,11 @@ body {
     flex-shrink: 0;
 }
 
+.btn-icon svg {
+    width: 16px;
+    height: 16px;
+}
+
 /* Empty State */
 .empty-state {
     text-align: center;
@@ -992,6 +1033,11 @@ body {
     margin-bottom: 1.5rem;
     opacity: 0.5;
     line-height: 1;
+}
+
+.empty-icon svg {
+    width: 56px;
+    height: 56px;
 }
 
 .empty-state h4 {

@@ -79,6 +79,23 @@
             </button>
         </div>
     </div>
+
+    <div class="info-card">
+        <div class="card-header">
+            <div class="header-icon">📦</div>
+            <h3 class="header-title">Download My Data</h3>
+        </div>
+        <div class="card-content">
+            <p class="card-subtitle">Get a ZIP of your user files, account data, and transaction history.</p>
+            <form method="POST" action="{{ url_for('account_settings_export_data') }}">
+                <button type="submit" class="action-btn primary">
+                    <span>Download My Data</span>
+                    <div class="btn-icon">⬇️</div>
+                </button>
+            </form>
+            <p class="card-subtitle" style="margin-top: 0.75rem;">We will email you a login-protected link that expires in 24 hours.</p>
+        </div>
+    </div>
 </div>
 
 <style>
@@ -173,6 +190,7 @@
 .note-icon {
     font-size: 1.1rem;
 }
+
 
 .verify-form {
     margin: 0;

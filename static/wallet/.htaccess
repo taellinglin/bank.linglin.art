@@ -1,0 +1,14 @@
+# Ensure cookies are accepted in third-party context (CHIPS)
+# Requires mod_headers
+<IfModule mod_headers.c>
+  Header always edit Set-Cookie "(?i)^((?!;\s*Partitioned).*)$" "$1; Partitioned; SameSite=None; Secure"
+</IfModule>
+
+# Default document
+DirectoryIndex index.html
+
+# Correct SVG MIME type
+<IfModule mod_mime.c>
+  AddType image/svg+xml .svg .svgz
+  AddEncoding gzip .svgz
+</IfModule>

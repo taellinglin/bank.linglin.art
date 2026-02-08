@@ -6,20 +6,20 @@
     <div class="compact-stats-grid">
         <div class="compact-stat-card">
             <div class="stat-header">
-                <div class="stat-icon">🔍</div>
+                <div class="stat-icon"><i data-feather="search"></i></div>
                 <h4 class="stat-title">Transactions Found</h4>
             </div>
             <div class="compact-stat-value">{{ transactions|length|default(0)|format_number }}</div>
             <div class="compact-stat-label">Total Results</div>
             <div class="stat-trend">
-                <span class="trend-indicator up">📈</span>
+                <span class="trend-indicator up"><i data-feather="trending-up"></i></span>
                 <span class="trend-value">Real-time</span>
             </div>
         </div>
 
         <div class="compact-stat-card">
             <div class="stat-header">
-                <div class="stat-icon">💰</div>
+                <div class="stat-icon"><i data-feather="dollar-sign"></i></div>
                 <h4 class="stat-title">Total Value</h4>
             </div>
             <div class="compact-stat-value">${{ total_value|default(0)|format_number }}</div>
@@ -32,7 +32,7 @@
 
         <div class="compact-stat-card">
             <div class="stat-header">
-                <div class="stat-icon">👤</div>
+                <div class="stat-icon"><i data-feather="user"></i></div>
                 <h4 class="stat-title">Unique Addresses</h4>
             </div>
             <div class="compact-stat-value">{{ unique_addresses|default(0)|format_number }}</div>
@@ -45,7 +45,7 @@
 
         <div class="compact-stat-card">
             <div class="stat-header">
-                <div class="stat-icon">📊</div>
+                <div class="stat-icon"><i data-feather="bar-chart-2"></i></div>
                 <h4 class="stat-title">Types</h4>
             </div>
             <div class="compact-stat-value">{{ tx_types|length|default(0) }}</div>
@@ -60,7 +60,7 @@
 
         <div class="compact-stat-card">
             <div class="stat-header">
-                <div class="stat-icon">⏱️</div>
+                <div class="stat-icon"><i data-feather="clock"></i></div>
                 <h4 class="stat-title">Time Range</h4>
             </div>
             <div class="compact-stat-value">{{ time_range|default('24h') }}</div>
@@ -85,7 +85,7 @@
         
         <form method="GET" action="{{ url_for('transaction_search') }}" class="search-container">
             <div class="search-input-group">
-                <div class="search-icon">🔍</div>
+                <div class="search-icon"><i data-feather="search"></i></div>
                 <input type="text" 
                        name="q"
                        class="search-input" 
@@ -110,12 +110,12 @@
                 </select>
                 
                 <button type="submit" class="filter-btn">
-                    <span class="filter-btn-icon">🔍</span>
+                    <span class="filter-btn-icon"><i data-feather="search"></i></span>
                     <span class="filter-btn-text">Search</span>
                 </button>
                 
                 <a href="{{ url_for('transaction_search') }}" class="filter-btn">
-                    <span class="filter-btn-icon">⟳</span>
+                    <span class="filter-btn-icon"><i data-feather="rotate-ccw"></i></span>
                     <span class="filter-btn-text">Clear</span>
                 </a>
             </div>
@@ -125,15 +125,15 @@
     <!-- Tab Navigation -->
     <div class="tab-navigation">
         <button class="tab-button active" onclick="openTab('results')">
-            <span class="tab-icon">📋</span>
+            <span class="tab-icon"><i data-feather="clipboard"></i></span>
             <span class="tab-text">Results ({{ transactions|length }})</span>
         </button>
         <button class="tab-button" onclick="openTab('analysis')">
-            <span class="tab-icon">📊</span>
+            <span class="tab-icon"><i data-feather="bar-chart-2"></i></span>
             <span class="tab-text">Analysis</span>
         </button>
         <button class="tab-button" onclick="openTab('export')">
-            <span class="tab-icon">📤</span>
+            <span class="tab-icon"><i data-feather="upload"></i></span>
             <span class="tab-text">Export</span>
         </button>
     </div>
@@ -237,10 +237,10 @@
                                 <div class="action-buttons">
                                     {% if tx.txid %}
                                     <a href="{{ url_for('transaction_detail', txid=tx.txid) }}" class="action-btn" title="View Details">
-                                        <span class="action-icon">👁️</span>
+                                        <span class="action-icon"><i data-feather="eye"></i></span>
                                     </a>
                                     <button class="action-btn" onclick="copyTxId('{{ tx.txid }}')" title="Copy TX ID">
-                                        <span class="action-icon">📋</span>
+                                        <span class="action-icon"><i data-feather="copy"></i></span>
                                     </button>
                                     {% endif %}
                                 </div>
@@ -251,7 +251,7 @@
                         <tr>
                             <td colspan="8" class="empty-state">
                                 <div class="empty-content">
-                                    <span class="empty-icon">🔍</span>
+                                    <span class="empty-icon"><i data-feather="search"></i></span>
                                     <span>No transactions found{% if query %} for "{{ query }}"{% endif %}</span>
                                     {% if query %}
                                     <p class="empty-subtext">Try a different search term or clear filters</p>
@@ -272,7 +272,7 @@
             <div class="statistics-grid">
                 <div class="stat-card">
                     <div class="stat-card-header">
-                        <div class="stat-card-icon">📈</div>
+                        <div class="stat-card-icon"><i data-feather="activity"></i></div>
                         <h4>Volume Analysis</h4>
                     </div>
                     <div class="stat-card-content">

@@ -11,12 +11,15 @@ import hashlib
 import gzip
 import logging
 import os
+import secrets
+import zipfile
 from typing import Dict
 from datetime import timedelta, datetime
 from urllib.parse import unquote
 from functools import wraps
 from urllib.parse import quote_plus
 import re
+import stripe
 from flask import (
     Flask,
     render_template,
@@ -29,14 +32,17 @@ from flask import (
     session,
     abort,
     jsonify,
+    Response,
+    stream_with_context,
     g,
 )
+from werkzeug.utils import secure_filename
 from PIL import Image, ImageOps
 from flask_migrate import Migrate
 from werkzeug.middleware.proxy_fix import ProxyFix
 from sqlalchemy import desc
 from sqlalchemy.exc import OperationalError
-from models import User, GenerationTask, Banknote, SerialNumber, Settings, db, WebAuthnCredential
+from models import User, GenerationTask, Banknote, SerialNumber, Settings, db, WebAuthnCredential, CreditsPurchase
 from utils import (
     get_current_user,
     generate_qr_code,
@@ -56,6 +62,7 @@ from utils import (
     MAX_GENERATION_THREADS,
     execute_generation_task,
     clear_generation_queue_state,
+    get_next_generation_denomination,
 )
 import pyotp
 from signatures import DigitalBill
@@ -218,6 +225,29 @@ def _ensure_users_custom_eisenscript_column():
         logger.warning(f"Users custom_eisenscript column check failed: {e}")
 
 
+def _ensure_users_credits_columns():
+    try:
+        from sqlalchemy import inspect, text
+
+        engine = db.engine
+        inspector = inspect(engine)
+        if "users" not in inspector.get_table_names():
+            return
+        columns = [col["name"] for col in inspector.get_columns("users")]
+        if "generation_credits" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE users ADD COLUMN generation_credits REAL DEFAULT 6.0")
+                )
+        if "credits_granted_at" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE users ADD COLUMN credits_granted_at DATETIME")
+                )
+    except Exception as e:
+        logger.warning(f"Users credits column check failed: {e}")
+
+
 def _ensure_settings_eisenscript_columns():
     try:
         from sqlalchemy import inspect, text
@@ -292,6 +322,21 @@ def _ensure_settings_eisenscript_columns():
                 conn.execute(
                     text("ALTER TABLE settings ADD COLUMN eisenscript_prefix_card_back TEXT DEFAULT ''")
                 )
+        if "lunamint_use_custom_server" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE settings ADD COLUMN lunamint_use_custom_server BOOLEAN DEFAULT 0")
+                )
+        if "lunamint_server_url" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE settings ADD COLUMN lunamint_server_url VARCHAR(255) DEFAULT ''")
+                )
+        if "lunamint_server_urls" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE settings ADD COLUMN lunamint_server_urls TEXT DEFAULT ''")
+                )
         if "eisenscript_suffix_card_back" not in columns:
             with engine.begin() as conn:
                 conn.execute(
@@ -304,6 +349,41 @@ def _ensure_settings_eisenscript_columns():
                 )
     except Exception as e:
         logger.warning(f"Settings eisenscript column check failed: {e}")
+
+
+def _ensure_generation_tasks_quantity_column():
+    try:
+        from sqlalchemy import inspect, text
+
+        engine = db.engine
+        inspector = inspect(engine)
+        if "generation_tasks" not in inspector.get_table_names():
+            return
+        columns = [col["name"] for col in inspector.get_columns("generation_tasks")]
+        if "requested_quantity" not in columns:
+            with engine.begin() as conn:
+                conn.execute(
+                    text("ALTER TABLE generation_tasks ADD COLUMN requested_quantity INTEGER DEFAULT 1")
+                )
+    except Exception as e:
+        logger.warning(f"Generation tasks quantity column check failed: {e}")
+
+
+def _ensure_lunamint_settings_defaults(settings: Settings) -> None:
+    if not settings:
+        return
+    changed = False
+    if settings.lunamint_server_urls is None:
+        settings.lunamint_server_urls = ""
+        changed = True
+    if not settings.lunamint_server_url and not settings.lunamint_server_urls:
+        settings.lunamint_server_url = "http://localhost:4242/mint/compile"
+        changed = True
+    if changed:
+        try:
+            db.session.commit()
+        except Exception:
+            db.session.rollback()
 
 
 def sanitize_eisenscript(script_text: str, max_length: int = 20000) -> str:
@@ -386,11 +466,23 @@ def color_text(text, *color_codes):
 app = Flask(__name__)
 app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)
 app.secret_key = os.environ.get("SECRET_KEY", "ILoveYouForeverXOXO")
-app.config["SQLALCHEMY_DATABASE_URI"] = "sqlite:///lingcountrytreasury.db"
-app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
-app.config["SQLALCHEMY_ENGINE_OPTIONS"] = {
+app.config["PREFERRED_URL_SCHEME"] = os.environ.get("PREFERRED_URL_SCHEME", "https")
+app.config["SERVER_NAME"] = os.environ.get("SERVER_NAME", "bank.linglin.art")
+os.makedirs(app.instance_path, exist_ok=True)
+default_db_path = os.path.join(app.instance_path, "lingcountrytreasury.db")
+app.config["SQLALCHEMY_DATABASE_URI"] = os.environ.get(
+    "DATABASE_URL",
+    f"sqlite:///{default_db_path}",
+)
+engine_options = {
     "connect_args": {"timeout": 30, "check_same_thread": False},
 }
+if app.config["SQLALCHEMY_DATABASE_URI"].startswith("sqlite:"):
+    from sqlalchemy.pool import NullPool
+
+    engine_options["poolclass"] = NullPool
+app.config["SQLALCHEMY_TRACK_MODIFICATIONS"] = False
+app.config["SQLALCHEMY_ENGINE_OPTIONS"] = engine_options
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=7)
 
 # Initialize email service
@@ -406,6 +498,299 @@ mail = init_mail(app)
 from notification_scheduler import init_notification_scheduler
 
 notification_scheduler = None
+
+
+def _resolve_app_url():
+    env_url = os.environ.get("APP_URL")
+    if env_url:
+        return env_url.rstrip("/")
+    return request.url_root.rstrip("/")
+
+
+def _resolve_images_root() -> str:
+    if os.path.isabs(IMAGES_ROOT):
+        return IMAGES_ROOT
+    return os.path.normpath(os.path.join(app.root_path, IMAGES_ROOT))
+
+
+def _normalize_image_relpath(path_value: str | None) -> str | None:
+    if not path_value:
+        return None
+    normalized = str(path_value).replace("\\", "/")
+    images_root = _resolve_images_root().replace("\\", "/")
+    if os.path.isabs(normalized):
+        try:
+            rel = os.path.relpath(normalized, images_root).replace("\\", "/")
+        except ValueError:
+            return None
+        if rel.startswith(".."):
+            return None
+        return rel
+    if normalized.startswith("./"):
+        normalized = normalized[2:]
+    if normalized.startswith("images/"):
+        return normalized[len("images/") :]
+    return normalized
+
+
+def _build_banknote_preview_urls(user_id: int, since: datetime | None = None) -> dict:
+    previews = {"front_url": None, "back_url": None}
+    if not user_id:
+        return previews
+
+    front_query = Banknote.query.filter_by(user_id=user_id, side="front")
+    back_query = Banknote.query.filter_by(user_id=user_id, side="back")
+    if since:
+        front_query = front_query.filter(Banknote.created_at >= since)
+        back_query = back_query.filter(Banknote.created_at >= since)
+
+    front_note = front_query.order_by(Banknote.created_at.desc()).first()
+    back_note = back_query.order_by(Banknote.created_at.desc()).first()
+
+    if not front_note and since:
+        front_note = (
+            Banknote.query.filter_by(user_id=user_id, side="front")
+            .order_by(Banknote.created_at.desc())
+            .first()
+        )
+    if not back_note and since:
+        back_note = (
+            Banknote.query.filter_by(user_id=user_id, side="back")
+            .order_by(Banknote.created_at.desc())
+            .first()
+        )
+
+    def _note_to_url(note: Banknote | None) -> str | None:
+        if not note:
+            return None
+        candidate = note.png_path or note.svg_path
+        rel_path = _normalize_image_relpath(candidate)
+        if not rel_path:
+            return None
+        return url_for("serve_image", filename=rel_path)
+
+    previews["front_url"] = _note_to_url(front_note)
+    previews["back_url"] = _note_to_url(back_note)
+    return previews
+
+
+def _get_exports_dir() -> str:
+    exports_dir = os.path.join(app.instance_path, "exports")
+    os.makedirs(exports_dir, exist_ok=True)
+    return exports_dir
+
+
+def _load_exports_index() -> dict:
+    exports_dir = _get_exports_dir()
+    index_path = os.path.join(exports_dir, "exports.json")
+    if not os.path.exists(index_path):
+        return {}
+    try:
+        with open(index_path, "r", encoding="utf-8") as index_file:
+            return json.load(index_file)
+    except Exception:
+        return {}
+
+
+def _save_exports_index(index_data: dict) -> None:
+    exports_dir = _get_exports_dir()
+    index_path = os.path.join(exports_dir, "exports.json")
+    with open(index_path, "w", encoding="utf-8") as index_file:
+        json.dump(index_data, index_file, ensure_ascii=True, indent=2)
+
+
+def _tx_matches_user(tx: dict, username: str) -> bool:
+    if not isinstance(tx, dict) or not username:
+        return False
+    lookup_keys = [
+        "sender",
+        "recipient",
+        "from",
+        "to",
+        "issued_to",
+        "owner",
+        "username",
+        "user",
+        "miner",
+    ]
+    for key in lookup_keys:
+        value = tx.get(key)
+        if isinstance(value, str) and value.lower() == username.lower():
+            return True
+    for value in tx.values():
+        if isinstance(value, str) and username.lower() in value.lower():
+            return True
+    return False
+
+
+def _build_user_export_zip(current_user) -> tuple[str, str]:
+    exports_dir = _get_exports_dir()
+    timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+    safe_name = secure_filename(current_user.username) or f"user_{current_user.id}"
+    token = secrets.token_urlsafe(24)
+    zip_name = f"export_{safe_name}_{timestamp}.zip"
+    zip_path = os.path.join(exports_dir, zip_name)
+    base_dir = f"user_data/{safe_name}"
+
+    user_dir = os.path.join(_resolve_images_root(), current_user.username)
+
+    with zipfile.ZipFile(zip_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        if os.path.isdir(user_dir):
+            for root, _, files in os.walk(user_dir):
+                for file_name in files:
+                    abs_path = os.path.join(root, file_name)
+                    rel_path = os.path.relpath(abs_path, user_dir)
+                    archive.write(abs_path, os.path.join(base_dir, "files", rel_path))
+
+        profile_data = {
+            "id": current_user.id,
+            "username": current_user.username,
+            "email": current_user.email,
+            "balance": current_user.balance,
+            "bio": current_user.bio,
+            "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
+            "last_login": current_user.last_login.isoformat() if current_user.last_login else None,
+            "last_generation": current_user.last_generation.isoformat() if current_user.last_generation else None,
+            "email_verified": current_user.email_verified,
+            "generation_credits": current_user.generation_credits,
+        }
+        archive.writestr(
+            os.path.join(base_dir, "data", "profile.json"),
+            json.dumps(profile_data, ensure_ascii=True, indent=2),
+        )
+
+        banknotes = Banknote.query.filter_by(user_id=current_user.id).all()
+        archive.writestr(
+            os.path.join(base_dir, "data", "banknotes.json"),
+            json.dumps(
+                [
+                    {
+                        "id": note.id,
+                        "serial_number": note.serial_number,
+                        "denomination": note.denomination,
+                        "side": note.side,
+                        "svg_path": note.svg_path,
+                        "png_path": note.png_path,
+                        "pdf_path": note.pdf_path,
+                        "is_public": note.is_public,
+                        "created_at": note.created_at.isoformat() if note.created_at else None,
+                        "transaction_data": note.get_transaction_data(),
+                    }
+                    for note in banknotes
+                ],
+                ensure_ascii=True,
+                indent=2,
+            ),
+        )
+
+        serials = SerialNumber.query.filter_by(user_id=current_user.id).all()
+        archive.writestr(
+            os.path.join(base_dir, "data", "serials.json"),
+            json.dumps(
+                [
+                    {
+                        "id": serial.id,
+                        "serial": serial.serial,
+                        "banknote_id": serial.banknote_id,
+                        "is_active": serial.is_active,
+                        "is_mined": serial.is_mined,
+                        "created_at": serial.created_at.isoformat() if serial.created_at else None,
+                    }
+                    for serial in serials
+                ],
+                ensure_ascii=True,
+                indent=2,
+            ),
+        )
+
+        tasks = GenerationTask.query.filter_by(user_id=current_user.id).all()
+        archive.writestr(
+            os.path.join(base_dir, "data", "generation_tasks.json"),
+            json.dumps(
+                [
+                    {
+                        "id": task.id,
+                        "status": task.status,
+                        "message": task.message,
+                        "progress": task.progress,
+                        "requested_denomination": task.requested_denomination,
+                        "requested_quantity": task.requested_quantity,
+                        "credits_spent": task.credits_spent,
+                        "created_at": task.created_at.isoformat() if task.created_at else None,
+                        "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+                    }
+                    for task in tasks
+                ],
+                ensure_ascii=True,
+                indent=2,
+            ),
+        )
+
+        from models import EmailHistory, CreditsPurchase
+
+        history = EmailHistory.query.filter_by(user_id=current_user.id).all()
+        archive.writestr(
+            os.path.join(base_dir, "data", "email_history.json"),
+            json.dumps(
+                [
+                    {
+                        "old_email": item.old_email,
+                        "new_email": item.new_email,
+                        "ip_address": item.ip_address,
+                        "user_agent": item.user_agent,
+                        "changed_at": item.changed_at.isoformat() if item.changed_at else None,
+                    }
+                    for item in history
+                ],
+                ensure_ascii=True,
+                indent=2,
+            ),
+        )
+
+        purchases = CreditsPurchase.query.filter_by(user_id=current_user.id).all()
+        archive.writestr(
+            os.path.join(base_dir, "data", "credits_purchases.json"),
+            json.dumps(
+                [
+                    {
+                        "id": purchase.id,
+                        "credits": purchase.credits,
+                        "amount_cents": purchase.amount_cents,
+                        "currency": purchase.currency,
+                        "status": purchase.status,
+                        "stripe_session_id": purchase.stripe_session_id,
+                        "stripe_payment_intent": purchase.stripe_payment_intent,
+                        "created_at": purchase.created_at.isoformat() if purchase.created_at else None,
+                    }
+                    for purchase in purchases
+                ],
+                ensure_ascii=True,
+                indent=2,
+            ),
+        )
+
+        blockchain = getattr(blockchain_daemon_instance, "blockchain", []) or []
+        mempool = getattr(blockchain_daemon_instance, "mempool", []) or []
+        tx_matches = []
+        for block in blockchain:
+            for tx in block.get("transactions", []) or []:
+                if _tx_matches_user(tx, current_user.username):
+                    tx_entry = dict(tx)
+                    tx_entry["block_index"] = block.get("index")
+                    tx_entry["block_hash"] = block.get("hash")
+                    tx_matches.append(tx_entry)
+        for tx in mempool:
+            if _tx_matches_user(tx, current_user.username):
+                tx_entry = dict(tx)
+                tx_entry["status"] = "mempool"
+                tx_matches.append(tx_entry)
+
+        archive.writestr(
+            os.path.join(base_dir, "data", "transactions.json"),
+            json.dumps(tx_matches, ensure_ascii=True, indent=2),
+        )
+
+    return token, zip_name
 
 # Initialize db with app
 DATA_DIR = "./system-data/"
@@ -488,6 +873,53 @@ def format_lkc(value):
     return f"{whole}.{decimals}"
 
 
+@app.template_filter("human_color")
+def human_color(value):
+    """Format color strings into a human-readable form."""
+    if value is None:
+        return ""
+
+    text = str(value).strip()
+    if not text:
+        return ""
+
+    lower = text.lower()
+
+    hex_match = re.fullmatch(r"#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})", lower)
+    if hex_match:
+        hex_value = hex_match.group(1)
+        if len(hex_value) == 3:
+            r, g, b = [int(c * 2, 16) for c in hex_value]
+            return f"RGB({r}, {g}, {b})"
+        if len(hex_value) == 6:
+            r = int(hex_value[0:2], 16)
+            g = int(hex_value[2:4], 16)
+            b = int(hex_value[4:6], 16)
+            return f"RGB({r}, {g}, {b})"
+        r = int(hex_value[0:2], 16)
+        g = int(hex_value[2:4], 16)
+        b = int(hex_value[4:6], 16)
+        a = int(hex_value[6:8], 16) / 255
+        return f"RGBA({r}, {g}, {b}, {a:.2f})"
+
+    rgb_match = re.fullmatch(
+        r"rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)",
+        lower,
+    )
+    if rgb_match:
+        r, g, b = (int(float(rgb_match.group(i))) for i in range(1, 4))
+        a_raw = rgb_match.group(4)
+        if a_raw is None:
+            return f"RGB({r}, {g}, {b})"
+        try:
+            a = float(a_raw)
+        except ValueError:
+            a = 1.0
+        return f"RGBA({r}, {g}, {b}, {a:.2f})"
+
+    return text
+
+
 # Add as both a global and filter for flexibility
 @app.template_global("max")
 def template_max(a, b):
@@ -545,14 +977,71 @@ def _user_has_strong_auth(user: User) -> bool:
         return False
 
 
-def run_generation_task(user_id, username):
+def _compute_generation_difficulty(denomination: str) -> int:
+    """Map denomination to a difficulty/credit cost (1..9) for bills."""
+    try:
+        denom_text = str(denomination).strip()
+        denom_value = float(denom_text)
+    except Exception:
+        denom_value = 1.0
+    if denom_value < 1:
+        return 1
+    denom_int = int(denom_value)
+    if denom_int <= 1:
+        return 1
+    difficulty = len(str(denom_int))
+    return max(1, min(9, difficulty))
+
+
+def _compute_generation_cost(denominations) -> float:
+    total = 0.0
+    for denom in denominations:
+        try:
+            denom_value = float(str(denom).strip())
+        except Exception:
+            denom_value = 1.0
+        if denom_value < 1:
+            total += 1
+        else:
+            total += _compute_generation_difficulty(denom)
+    return total
+
+
+def _get_stripe_api_key() -> str | None:
+    return os.getenv("STRIPE_SECRET_KEY")
+
+
+def _get_stripe_publishable_key() -> str | None:
+    return os.getenv("STRIPE_PUBLISHABLE_KEY")
+
+
+CREDIT_PACKS = {
+    10: 1000,
+    100: 10000,
+    1000: 100000,
+}
+
+
+def run_generation_task(
+    user_id,
+    username,
+    requested_denomination=None,
+    requested_quantity=1,
+    credits_spent=0,
+):
     """Queue a generation task."""
     try:
         # Ensure the background processor is running before enqueuing.
         start_generation_task_processor()
         # Always create a task in 'pending' state.
         # The worker will pick it up.
-        task = GenerationTask(user_id=user_id, status="pending")
+        task = GenerationTask(
+            user_id=user_id,
+            status="pending",
+            requested_denomination=requested_denomination,
+            requested_quantity=requested_quantity or 1,
+            credits_spent=credits_spent or 0,
+        )
         db.session.add(task)
         db.session.commit()
         print(f"Queued generation task {task.id} for user {username}.")
@@ -590,9 +1079,36 @@ def process_pending_generation_tasks():
 
         while True:
             try:
-                # Find the next pending task
+                # Clean up dead threads and reset stuck tasks
+                with GENERATION_LOCK:
+                    for task_id, thread in list(GENERATION_THREADS.items()):
+                        if not thread.is_alive():
+                            del GENERATION_THREADS[task_id]
+
+                active_task_ids = set(GENERATION_THREADS.keys())
+                stuck_tasks = GenerationTask.query.filter(
+                    GenerationTask.status == "processing"
+                ).all()
+                reset_count = 0
+                for stuck in stuck_tasks:
+                    stale = False
+                    if stuck.created_at:
+                        try:
+                            stale = (datetime.utcnow() - stuck.created_at).total_seconds() > 7200
+                        except Exception:
+                            stale = False
+                    if stuck.id not in active_task_ids or stale:
+                        stuck.status = "pending"
+                        if not stuck.message:
+                            stuck.message = "Resumed after inactivity."
+                        reset_count += 1
+                if reset_count:
+                    db.session.commit()
+                    print(f"[GENERATION] Reset {reset_count} stuck task(s) to pending")
+
+                # Find the next pending/queued task
                 task = GenerationTask.query.filter(
-                    GenerationTask.status.in_(["pending", "queued", "processing"])
+                    GenerationTask.status.in_(["pending", "queued"])
                 ).order_by(GenerationTask.created_at).first()
 
                 if task:
@@ -623,6 +1139,11 @@ def process_pending_generation_tasks():
 
             except Exception as e:
                 print(f"Error in pending task processor: {e}")
+            finally:
+                try:
+                    db.session.remove()
+                except Exception:
+                    pass
 
             # Wait for a bit before checking again to avoid busy-waiting
             time.sleep(10)
@@ -1224,6 +1745,7 @@ def mempool_viewer(page=1):
     """Display detailed mempool information in a web interface WITH PAGINATION"""
     try:
         page_provided = bool(request.view_args and "page" in request.view_args)
+        from models import Banknote, SerialNumber
         # Get mempool data locally (avoid network calls)
         mempool_data = getattr(blockchain_daemon_instance, "mempool", []) or []
         allowed_types = {"transfer", "genesis", "GTX_Genesis"}
@@ -1239,6 +1761,54 @@ def mempool_viewer(page=1):
 
         # Pagination settings
         per_page = 15  # Reduced for compact view
+
+        def normalize_png_path(png_path: str) -> str:
+            if not png_path:
+                return ""
+            path = str(png_path).replace("\\", "/")
+            if os.path.isabs(path):
+                try:
+                    rel = os.path.relpath(path, IMAGES_ROOT)
+                    rel = rel.replace("\\", "/")
+                    if not rel.startswith(".."):
+                        path = rel
+                except Exception:
+                    pass
+            if path.startswith("./"):
+                path = path[2:]
+            if path.startswith("images/"):
+                path = path[len("images/"):]
+            return path
+
+        def resolve_banknote_by_serial(serial_value: str):
+            if not serial_value:
+                return None
+            banknote = Banknote.query.filter_by(serial_number=serial_value).first()
+            if not banknote:
+                serial_record = SerialNumber.query.filter_by(serial=serial_value).first()
+                if serial_record and serial_record.banknote_id:
+                    banknote = Banknote.query.get(serial_record.banknote_id)
+            return banknote
+
+        def derive_counterpart_thumbnail(png_path: str, target_side: str) -> str:
+            if not png_path:
+                return ""
+            rel_path = normalize_png_path(png_path)
+            if not rel_path:
+                return ""
+            dir_rel = os.path.dirname(rel_path)
+            filename = os.path.basename(rel_path)
+            if target_side == "front":
+                swapped = re.sub(r"_BACK", "_FRONT", filename, flags=re.IGNORECASE)
+            else:
+                swapped = re.sub(r"_FRONT", "_BACK", filename, flags=re.IGNORECASE)
+            if swapped == filename:
+                return ""
+            candidate_rel = f"{dir_rel}/{swapped}" if dir_rel else swapped
+            candidate_abs = os.path.join(IMAGES_ROOT, candidate_rel)
+            if os.path.exists(candidate_abs):
+                return candidate_rel
+            return ""
 
         # Build transaction details for all mempool entries
         transactions = []
@@ -1275,6 +1845,40 @@ def mempool_viewer(page=1):
                 tx_info["issued_to"] = tx.get("issued_to", "N/A")
                 tx_info["denomination"] = tx.get("denomination", "N/A")
                 tx_info["amount"] = tx.get("amount", tx_info["denomination"])
+
+                primary_serial = front_serial or back_serial or serial_number
+                primary_banknote = resolve_banknote_by_serial(primary_serial)
+                if primary_banknote and primary_banknote.side:
+                    side_value = str(primary_banknote.side).lower()
+                    if side_value == "front" and not front_serial:
+                        front_serial = primary_serial
+                    if side_value == "back" and not back_serial:
+                        back_serial = primary_serial
+                elif primary_serial and not front_serial and not back_serial:
+                    front_serial = primary_serial
+
+                front_banknote = resolve_banknote_by_serial(front_serial)
+                back_banknote = resolve_banknote_by_serial(back_serial)
+
+                front_thumbnail = normalize_png_path(front_banknote.png_path) if front_banknote and front_banknote.png_path else ""
+                back_thumbnail = normalize_png_path(back_banknote.png_path) if back_banknote and back_banknote.png_path else ""
+
+                if primary_banknote and primary_banknote.png_path:
+                    primary_thumb = normalize_png_path(primary_banknote.png_path)
+                    if primary_thumb and not (front_thumbnail and back_thumbnail):
+                        primary_side = str(primary_banknote.side or "").lower()
+                        if primary_side == "front" and not front_thumbnail:
+                            front_thumbnail = primary_thumb
+                        elif primary_side == "back" and not back_thumbnail:
+                            back_thumbnail = primary_thumb
+
+                        if primary_side == "front" and not back_thumbnail:
+                            back_thumbnail = derive_counterpart_thumbnail(primary_banknote.png_path, "back")
+                        if primary_side == "back" and not front_thumbnail:
+                            front_thumbnail = derive_counterpart_thumbnail(primary_banknote.png_path, "front")
+
+                tx_info["front_thumbnail"] = front_thumbnail
+                tx_info["back_thumbnail"] = back_thumbnail
 
             transactions.append(tx_info)
 
@@ -1428,7 +2032,8 @@ def mempool_viewer(page=1):
         )
 
     except Exception as e:
-        print(f"❌ Error in mempool_viewer: {e}")
+        import logging
+        logging.error(f"❌ Error in mempool_viewer: {e}")
         flash(f"Error loading mempool data: {str(e)}", "error")
         return render_template(
             "mempool_viewer.html",
@@ -5300,6 +5905,7 @@ def debug_signature_analysis(serial_id):
 def verify_serial(serial_id=None):
     result = None
     serial_input = ""
+    code_input = ""
     banknote = None
     signature_valid = None
     signature_details = {}
@@ -5343,10 +5949,22 @@ def verify_serial(serial_id=None):
         result = validate_serial_id(serial_input)
     elif request.method == "POST":
         serial_input = request.form.get("serial", "").strip()
-        result = validate_serial_id(serial_input)
+        code_input = request.form.get("code", "").strip()
+        if serial_input:
+            result = validate_serial_id(serial_input)
+        elif code_input:
+            serial_input = code_input
+            result = {"valid": True, "reason": "Code lookup"}
+        else:
+            result = validate_serial_id(serial_input)
     elif request.method == "GET" and "serial" in request.args:
         serial_input = request.args.get("serial", "").strip()
         result = validate_serial_id(serial_input)
+    elif request.method == "GET" and "code" in request.args:
+        code_input = request.args.get("code", "").strip()
+        if code_input:
+            serial_input = code_input
+            result = {"valid": True, "reason": "Code lookup"}
 
     if result and result.get("valid"):
         def _build_serial_candidates(serial_value: str):
@@ -5356,6 +5974,8 @@ def verify_serial(serial_id=None):
             if serial_value.upper().startswith("GTX-"):
                 return candidates
             serial_upper = serial_value.upper()
+            if not serial_upper.startswith("SN-"):
+                candidates.append(f"SN-{serial_value}")
             if serial_upper.endswith("_FRONT") or serial_upper.endswith("_BACK"):
                 base_serial = serial_value.rsplit("_", 1)[0]
                 if base_serial and base_serial not in candidates:
@@ -6322,6 +6942,8 @@ def admin_panel():
     # Get the active section from query parameter or default to 'dashboard'
     active_section = request.args.get("section", "dashboard")
 
+    _ensure_settings_eisenscript_columns()
+
     # Get real statistics
     stats = get_admin_stats()
 
@@ -6337,6 +6959,7 @@ def admin_panel():
         settings = Settings()
         db.session.add(settings)
         db.session.commit()
+    _ensure_lunamint_settings_defaults(settings)
 
     # Get data for other sections
     portrait_prompt_display = ""
@@ -7022,6 +7645,8 @@ def generation_status(user_id):
     with GENERATION_LOCK:
         is_thread_active = task.id in GENERATION_THREADS
 
+    previews = _build_banknote_preview_urls(task.user_id, since=task.created_at)
+
     return jsonify(
         {
             "status": "found",
@@ -7032,8 +7657,89 @@ def generation_status(user_id):
             "created_at": task.created_at.isoformat() if task.created_at else None,
             "completed_at": task.completed_at.isoformat() if task.completed_at else None,
             "thread_active": is_thread_active,
+            "preview": previews,
         }
     )
+
+
+@app.route("/generation-status-stream/<int:user_id>")
+def generation_status_stream(user_id):
+    current_user = get_current_user()
+    if not current_user or (current_user.id != user_id and not current_user.is_admin):
+        return abort(403)
+
+    def event_stream():
+        last_payload = None
+        while True:
+            task = (
+                GenerationTask.query.filter_by(user_id=user_id)
+                .order_by(GenerationTask.created_at.desc())
+                .first()
+            )
+
+            if not task:
+                payload = {"status": "not_found"}
+            else:
+                with GENERATION_LOCK:
+                    is_thread_active = task.id in GENERATION_THREADS
+                previews = _build_banknote_preview_urls(task.user_id, since=task.created_at)
+                payload = {
+                    "status": "found",
+                    "task_id": task.id,
+                    "db_status": task.status,
+                    "message": task.message,
+                    "progress": task.progress,
+                    "created_at": task.created_at.isoformat() if task.created_at else None,
+                    "completed_at": task.completed_at.isoformat() if task.completed_at else None,
+                    "thread_active": is_thread_active,
+                    "preview": previews,
+                }
+
+            if payload != last_payload:
+                last_payload = payload
+                yield f"data: {json.dumps(payload)}\n\n"
+
+            time.sleep(1)
+            try:
+                db.session.remove()
+            except Exception:
+                pass
+
+    return Response(stream_with_context(event_stream()), mimetype="text/event-stream")
+
+
+@app.post("/generation-tasks/<int:task_id>/resume")
+def resume_generation_task(task_id: int):
+    current_user = get_current_user()
+    if not current_user:
+        flash("Please log in to resume tasks", "error")
+        return redirect(url_for("login"))
+
+    task = GenerationTask.query.get(task_id)
+    if not task:
+        flash("Generation task not found", "error")
+        return redirect(url_for("generate_page"))
+
+    if task.user_id != current_user.id and not current_user.is_admin:
+        flash("You do not have permission to resume this task", "error")
+        return redirect(url_for("generate_page"))
+
+    if task.status in {"completed", "cancelled"}:
+        flash("This task is already completed", "warning")
+        return redirect(url_for("generate_page"))
+
+    task.status = "pending"
+    task.message = "Manually resumed."
+    task.completed_at = None
+    task.progress = 0
+    db.session.commit()
+
+    with GENERATION_LOCK:
+        GENERATION_THREADS.pop(task.id, None)
+
+    start_generation_task_processor()
+    flash("Generation task resumed", "success")
+    return redirect(url_for("generate_page"))
 
 
 @app.route("/admin/generate-money/<int:user_id>", methods=["POST"])
@@ -7072,6 +7778,42 @@ def generate_money(user_id):
             pass
         flash(f"Failed to start generation task for {user.username}.", "error")
         print(f"[ADMIN ERROR] Failed to start generation for user {user.username}")
+
+    return redirect(url_for("admin_panel"))
+
+
+@app.route("/admin/generate-money-all", methods=["POST"])
+@admin_required
+def generate_money_all():
+    """Generate banknotes for all users using the queue system"""
+    current_user = get_current_user()
+    if not _user_has_strong_auth(current_user):
+        flash("2FA or a security key is required to generate bills.", "error")
+        return redirect(url_for("admin_panel"))
+
+    users = User.query.all()
+    queue_status = get_generation_queue_status() or {}
+    active_tasks = set(queue_status.get("active_tasks", []))
+
+    started = 0
+    skipped_active = 0
+    failed = 0
+
+    for user in users:
+        if user.id in active_tasks:
+            skipped_active += 1
+            continue
+
+        task_id = run_generation_task(user.id, user.username)
+        if task_id:
+            started += 1
+        else:
+            failed += 1
+
+    flash(
+        f"Queued {started} generation task(s). Skipped {skipped_active} active user(s). Failed {failed}.",
+        "success" if started > 0 else "warning",
+    )
 
     return redirect(url_for("admin_panel"))
 
@@ -7184,6 +7926,23 @@ def queue_status():
     }
 
 
+@app.route("/admin/test-email", methods=["POST"])
+@admin_required
+def admin_test_email():
+    from email_service import send_test_email
+
+    recipient = (request.form.get("email") or "").strip()
+    if not recipient:
+        return jsonify({"success": False, "error": "Email address required"}), 400
+
+    app_url = _resolve_app_url()
+    sent = send_test_email(recipient, app_url=app_url)
+    if not sent:
+        return jsonify({"success": False, "error": "Failed to send test email"}), 500
+
+    return jsonify({"success": True, "message": f"Test email sent to {recipient}"})
+
+
 @app.route("/generate-money", methods=["POST"])
 def generate_money_user():
     current_user = get_current_user()
@@ -7195,31 +7954,359 @@ def generate_money_user():
         flash("2FA or a security key is required to generate bills.", "error")
         return redirect(url_for("account_settings"))
 
+    if not current_user.email_verified:
+        flash("Please verify your email before generating.", "error")
+        return redirect(url_for("generate_page"))
+
     if not current_user.can_generate_money():
         flash(
-            f"You can generate money again in {current_user.days_until_next_generation()} days",
+            "Not enough credits to generate. Please purchase credits.",
             "error",
         )
-        return redirect(url_for("profile", username=current_user.username))
+        return redirect(url_for("generate_page"))
 
-    # Check if user already has an active task
-    queue_status = get_generation_queue_status()
-    if current_user.id in queue_status["active_tasks"]:
-        flash("You already have a generation task in progress", "error")
-        return redirect(url_for("profile", username=current_user.username))
+
+    requested_denomination = request.form.get("generation_denomination")
+    custom_denomination = request.form.get("custom_denomination")
+    generation_kind = request.form.get("generation_kind", "bill")
+    generation_quantity = request.form.get("generation_quantity")
+    if custom_denomination:
+        requested_denomination = custom_denomination
+    if requested_denomination in ("", None, "all"):
+        requested_denomination = None
+
+    is_coin = generation_kind == "coin"
+    auto_next = False
+    if not requested_denomination:
+        requested_denomination = get_next_generation_denomination(current_user, is_coin=is_coin)
+        auto_next = True
+
+    if is_coin:
+        try:
+            denom_value = float(str(requested_denomination or ""))
+        except Exception:
+            denom_value = 0.0
+        if denom_value <= 0 or denom_value >= 1:
+            flash("Coin generation requires a decimal denomination between 0 and 1.", "error")
+            return redirect(url_for("generate_page"))
+
+    quantity = 1
+    if requested_denomination and not is_coin:
+        try:
+            quantity = int(str(generation_quantity or "1").strip())
+        except Exception:
+            quantity = 1
+        quantity = max(1, min(100, quantity))
+        if auto_next:
+            quantity = 1
+
+    if requested_denomination:
+        required_cost = _compute_generation_cost([requested_denomination]) * quantity
+    else:
+        required_cost = _compute_generation_cost([1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000])
+
+    current_credits = current_user.generation_credits or 0
+    if current_credits < required_cost:
+        flash(
+            f"Not enough credits. You have {current_credits:.3f} credit(s), need {required_cost:.3f}.",
+            "error",
+        )
+        return redirect(url_for("generate_page"))
 
     # This returns IMMEDIATELY - no blocking
-    task_id = run_generation_task(current_user.id, current_user.username)
+    task_id = run_generation_task(
+        current_user.id,
+        current_user.username,
+        requested_denomination=requested_denomination,
+        requested_quantity=quantity,
+        credits_spent=0,
+    )
 
     if task_id:
         flash(
-            "Banknote generation started! This will run in the background. You can check status on your profile.",
+            "Banknote generation started! This will run in the background. You can check status on the Generate page.",
             "success",
         )
     else:
         flash("Failed to start generation. Please try again.", "error")
 
-    return redirect(url_for("profile", username=current_user.username))
+    return redirect(url_for("generate_page"))
+
+
+@app.route("/generate", methods=["GET", "POST"])
+def generate_page():
+    current_user = get_current_user()
+    if not current_user:
+        flash("Please log in to generate money", "error")
+        return redirect(url_for("login"))
+
+    allowed_upload_exts = {
+        ".mid",
+        ".midi",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".ogg",
+        ".mp3",
+    }
+
+    def _is_allowed_upload(filename: str) -> bool:
+        _, ext = os.path.splitext(filename)
+        return ext.lower() in allowed_upload_exts
+
+    def _build_upload_list(username: str) -> list[dict]:
+        images_root = _resolve_images_root()
+        upload_dir = os.path.join(images_root, username, "uploads")
+        if not os.path.isdir(upload_dir):
+            return []
+        entries = []
+        for entry in os.listdir(upload_dir):
+            if not entry or entry.startswith("."):
+                continue
+            full_path = os.path.join(upload_dir, entry)
+            if not os.path.isfile(full_path):
+                continue
+            if not _is_allowed_upload(entry):
+                continue
+            rel_path = f"{username}/uploads/{entry}"
+            ext = os.path.splitext(entry)[1].lower().lstrip(".")
+            entries.append(
+                {
+                    "name": entry,
+                    "rel_path": rel_path,
+                    "ext": ext,
+                    "mtime": os.path.getmtime(full_path),
+                }
+            )
+        entries.sort(key=lambda item: item["mtime"], reverse=True)
+        return entries
+
+    if request.method == "POST":
+        uploads = request.files.getlist("user_upload") if request.files else []
+        uploaded_names = []
+        if uploads:
+            images_root = _resolve_images_root()
+            upload_dir = os.path.join(images_root, current_user.username, "uploads")
+            os.makedirs(upload_dir, exist_ok=True)
+            for uploaded in uploads:
+                if not uploaded or not uploaded.filename:
+                    continue
+                if not _is_allowed_upload(uploaded.filename):
+                    flash("Only MIDI, images, and OGG/MP3 files are allowed.", "error")
+                    return redirect(url_for("generate_page"))
+                safe_name = secure_filename(uploaded.filename)
+                if not safe_name:
+                    continue
+                stem, ext = os.path.splitext(safe_name)
+                timestamp = datetime.utcnow().strftime("%Y%m%d%H%M%S")
+                target_name = f"{stem}_{timestamp}{ext.lower()}"
+                target_path = os.path.join(upload_dir, target_name)
+                uploaded.save(target_path)
+                uploaded_names.append(target_name)
+            if uploaded_names:
+                flash(f"Uploaded {len(uploaded_names)} file(s) to your folder.", "success")
+
+        raw_script = request.form.get("custom_eisenscript")
+        if raw_script is not None:
+            current_user = User.query.get(current_user.id)
+            current_user.custom_eisenscript = sanitize_eisenscript(raw_script)
+            db.session.commit()
+            flash("Custom EisenScript updated.", "success")
+            return redirect(url_for("generate_page"))
+        if uploaded_names:
+            return redirect(url_for("generate_page"))
+
+    generation_tasks = (
+        GenerationTask.query.filter_by(user_id=current_user.id)
+        .order_by(desc(GenerationTask.created_at))
+        .limit(10)
+        .all()
+    )
+
+    denomination_values = [
+        1,
+        10,
+        100,
+        1000,
+        10000,
+        100000,
+        1000000,
+        10000000,
+        100000000,
+    ]
+    denomination_options_values = [0.001, *denomination_values]
+    denomination_options = [
+        {
+            "value": str(denom),
+            "label": f"{denom} (difficulty {_compute_generation_difficulty(denom)})",
+            "cost": _compute_generation_difficulty(denom),
+        }
+        for denom in denomination_options_values
+    ]
+
+    return render_template(
+        "generate.html",
+        title="Generate",
+        current_user=current_user,
+        generation_tasks=generation_tasks,
+        generation_credits=(current_user.generation_credits or 0),
+        denomination_options=denomination_options,
+        generation_all_cost=_compute_generation_cost(denomination_values),
+        user_uploads=_build_upload_list(current_user.username),
+    )
+
+
+@app.route("/buy-credits", methods=["GET"])
+def buy_credits():
+    current_user = get_current_user()
+    if not current_user:
+        flash("Please log in to buy credits", "error")
+        return redirect(url_for("login"))
+
+    return render_template(
+        "buy_credits.html",
+        title="Buy Credits",
+        current_user=current_user,
+        credit_packs=CREDIT_PACKS,
+        generation_credits=current_user.generation_credits or 0,
+    )
+
+
+@app.post("/buy-credits/create-session")
+def buy_credits_create_session():
+    current_user = get_current_user()
+    if not current_user:
+        flash("Please log in to buy credits", "error")
+        return redirect(url_for("login"))
+
+    stripe_key = _get_stripe_api_key()
+    if not stripe_key:
+        flash("Stripe is not configured.", "error")
+        return redirect(url_for("buy_credits"))
+
+    credits = request.form.get("credits")
+    try:
+        credits = int(credits)
+    except Exception:
+        flash("Invalid credit pack.", "error")
+        return redirect(url_for("buy_credits"))
+
+    amount_cents = CREDIT_PACKS.get(credits)
+    if not amount_cents:
+        flash("Invalid credit pack.", "error")
+        return redirect(url_for("buy_credits"))
+
+    stripe.api_key = stripe_key
+    session = stripe.checkout.Session.create(
+        mode="payment",
+        payment_method_types=["card"],
+        line_items=[
+            {
+                "price_data": {
+                    "currency": "usd",
+                    "unit_amount": amount_cents,
+                    "product_data": {"name": f"{credits} Credits"},
+                },
+                "quantity": 1,
+            }
+        ],
+        metadata={
+            "user_id": str(current_user.id),
+            "credits": str(credits),
+        },
+        success_url=url_for("buy_credits_success", _external=True)
+        + "?session_id={CHECKOUT_SESSION_ID}",
+        cancel_url=url_for("buy_credits", _external=True),
+    )
+    return redirect(session.url, code=303)
+
+
+@app.route("/buy-credits/success", methods=["GET"])
+def buy_credits_success():
+    current_user = get_current_user()
+    if not current_user:
+        flash("Please log in to view your purchase", "error")
+        return redirect(url_for("login"))
+
+    session_id = request.args.get("session_id")
+    if not session_id:
+        flash("Missing Stripe session.", "error")
+        return redirect(url_for("buy_credits"))
+
+    stripe_key = _get_stripe_api_key()
+    if not stripe_key:
+        flash("Stripe is not configured.", "error")
+        return redirect(url_for("buy_credits"))
+
+    stripe.api_key = stripe_key
+    session = stripe.checkout.Session.retrieve(session_id)
+    credits = int(session.get("metadata", {}).get("credits", 0))
+    amount_cents = int(session.get("amount_total") or 0)
+    currency = (session.get("currency") or "usd").upper()
+
+    return render_template(
+        "buy_credits_success.html",
+        title="Purchase Complete",
+        current_user=current_user,
+        credits=credits,
+        amount_cents=amount_cents,
+        currency=currency,
+        session_id=session_id,
+    )
+
+
+@app.post("/stripe/webhook")
+def stripe_webhook():
+    stripe_key = _get_stripe_api_key()
+    webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
+    if not stripe_key or not webhook_secret:
+        return jsonify({"ok": False, "message": "Stripe not configured"}), 400
+
+    payload = request.get_data()
+    sig_header = request.headers.get("Stripe-Signature")
+    try:
+        event = stripe.Webhook.construct_event(payload, sig_header, webhook_secret)
+    except Exception as e:
+        return jsonify({"ok": False, "message": str(e)}), 400
+
+    if event["type"] == "checkout.session.completed":
+        session = event["data"]["object"]
+        if session.get("payment_status") == "paid":
+            user_id = session.get("metadata", {}).get("user_id")
+            credits = session.get("metadata", {}).get("credits")
+            session_id = session.get("id")
+            payment_intent = session.get("payment_intent")
+            amount_total = int(session.get("amount_total") or 0)
+            currency = (session.get("currency") or "usd").lower()
+
+            try:
+                user_id = int(user_id)
+                credits = int(credits)
+            except Exception:
+                return jsonify({"ok": False, "message": "Invalid metadata"}), 400
+
+            existing = CreditsPurchase.query.filter_by(stripe_session_id=session_id).first()
+            if existing:
+                return jsonify({"ok": True})
+
+            user = User.query.get(user_id)
+            if user:
+                user.generation_credits = round((user.generation_credits or 0) + credits, 3)
+                purchase = CreditsPurchase(
+                    user_id=user.id,
+                    credits=credits,
+                    amount_cents=amount_total,
+                    currency=currency,
+                    stripe_session_id=session_id,
+                    stripe_payment_intent=payment_intent,
+                    status="paid",
+                )
+                db.session.add(purchase)
+                db.session.commit()
+
+    return jsonify({"ok": True})
 
 
 def read_prompt_file(filename, default_prompt=""):
@@ -7252,12 +8339,15 @@ def admin_settings():
     # if not current_user.is_authenticated or not current_user.is_admin:
     #     return redirect(url_for('login'))
 
+    _ensure_settings_eisenscript_columns()
+
     # Get or create settings
     settings = Settings.query.first()
     if not settings:
         settings = Settings()
         db.session.add(settings)
         db.session.commit()
+    _ensure_lunamint_settings_defaults(settings)
 
     if request.method == "POST":
         try:
@@ -7310,6 +8400,26 @@ def admin_settings():
             settings.eisenscript_prefix_card_back = sanitize_eisenscript(request.form.get("eisenscript_prefix_card_back", ""))
             settings.eisenscript_suffix_card_back = sanitize_eisenscript(request.form.get("eisenscript_suffix_card_back", ""))
             settings.eisenscript_receipt = sanitize_eisenscript(request.form.get("eisenscript_receipt", ""))
+
+            settings.lunamint_use_custom_server = "lunamint_use_custom_server" in request.form
+            lunamint_url = _get_text("lunamint_server_url", settings.lunamint_server_url or "")
+            if lunamint_url:
+                if not (lunamint_url.startswith("http://") or lunamint_url.startswith("https://")):
+                    lunamint_url = f"https://{lunamint_url}"
+                lunamint_url = lunamint_url.rstrip("/")
+            settings.lunamint_server_url = lunamint_url
+
+            raw_lunamint_urls = _get_text("lunamint_server_urls", settings.lunamint_server_urls or "")
+            url_list = []
+            for entry in re.split(r"[\n,]+", raw_lunamint_urls):
+                cleaned = entry.strip()
+                if not cleaned:
+                    continue
+                if not (cleaned.startswith("http://") or cleaned.startswith("https://")):
+                    cleaned = f"https://{cleaned}"
+                url_list.append(cleaned.rstrip("/"))
+            settings.lunamint_server_urls = ", ".join(dict.fromkeys(url_list))
+            os.environ["LUNAMINT_RENDER_ENDPOINTS"] = settings.lunamint_server_urls or settings.lunamint_server_url or ""
 
             # Retry commit if SQLite is temporarily locked
             max_attempts = 3
@@ -7382,13 +8492,124 @@ def compile_eisenscript():
         }
 
         rendered = render_eisenscript_jinja2(script, context)
-        with tempfile.TemporaryDirectory() as tmpdir:
-            out_path = Path(tmpdir) / "preview.svg"
-            render_script_to_svg_html(rendered, out_path)
+        os.makedirs(app.instance_path, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=app.instance_path) as tmpdir:
+            render_script_to_svg_html(rendered, Path(tmpdir))
 
         return jsonify({"ok": True, "message": f"{name} compiled successfully."})
     except Exception as e:
         return jsonify({"ok": False, "message": str(e)}), 400
+
+
+@app.post("/api/render-eisenscript")
+def api_render_eisenscript():
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        script = (payload.get("script") or "").strip()
+        if not script:
+            return jsonify({"ok": False, "message": "Script is empty."}), 400
+
+        from lunamint.scripting import render_script_to_svg_html
+        from generate import embed_fonts_in_svg_content, resolve_font_dir
+        import tempfile
+        from pathlib import Path
+
+        os.makedirs(app.instance_path, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=app.instance_path) as tmpdir:
+            svg_result = render_script_to_svg_html(script, Path(tmpdir))
+            if isinstance(svg_result, tuple):
+                svg_result = svg_result[0]
+            svg_path = Path(svg_result) if svg_result else None
+            if not svg_path or not svg_path.exists():
+                candidates = list(Path(tmpdir).glob("*.svg"))
+                svg_path = candidates[0] if candidates else None
+            if not svg_path or not svg_path.exists():
+                return jsonify({"ok": False, "message": "SVG output not found."}), 500
+            svg_content = svg_path.read_text(encoding="utf-8")
+
+        font_dir = resolve_font_dir(Settings.query.first())
+        svg_content = embed_fonts_in_svg_content(svg_content, font_dir)
+
+        return jsonify({"ok": True, "svg": svg_content})
+    except Exception as e:
+        return jsonify({"ok": False, "message": str(e)}), 400
+
+
+@app.route("/mint", methods=["GET"])
+def mint():
+    current_user = get_current_user()
+    if not current_user:
+        flash("Please log in to access Mint.", "error")
+        return redirect(url_for("login"))
+
+    settings = Settings.query.first()
+    compile_url = url_for("mint_compile")
+    if settings and settings.lunamint_use_custom_server and settings.lunamint_server_url:
+        compile_url = settings.lunamint_server_url
+    compile_urls = []
+    if settings and settings.lunamint_server_urls:
+        compile_urls = [url.strip() for url in settings.lunamint_server_urls.split(",") if url.strip()]
+
+    return render_template(
+        "mint.html",
+        title="Mint",
+        current_user=current_user,
+        lunamint_compile_url=compile_url,
+        lunamint_compile_urls=compile_urls,
+    )
+
+
+@app.route("/mint/compile", methods=["POST"])
+def mint_compile():
+    current_user = get_current_user()
+    if not current_user:
+        return jsonify({"ok": False, "message": "Login required."}), 401
+
+    try:
+        payload = request.get_json(force=True, silent=True) or {}
+        script = payload.get("script", "")
+        name = payload.get("name", "eisenscript")
+        if not script.strip():
+            return jsonify({"ok": False, "message": "Script is empty."}), 400
+
+        from generate import render_eisenscript_jinja2
+        from generate import embed_fonts_in_svg_content, resolve_font_dir
+        from lunamint.scripting import render_script_to_svg_html
+        import tempfile
+        from pathlib import Path
+
+        context = {
+            "username": current_user.username,
+            "denomination": "1",
+            "denom_exponent": 0,
+            "dendom_exp": 0,
+            "pow_level": 0,
+            "denomination_words": "one",
+            "denomination_compact": "1",
+            "denomination_words_cn": "一",
+            "denomination_compact_cn": "壹",
+            "serial": "SERIAL",
+            "title": "TITLE",
+            "subtitle": "SUBTITLE",
+            "denomination_color": "#000000",
+            "denom_color": "#000000",
+            "width_mm": 160.0,
+            "height_mm": 60.0,
+            "timestamp": 0,
+        }
+
+        rendered = render_eisenscript_jinja2(script, context)
+        os.makedirs(app.instance_path, exist_ok=True)
+        with tempfile.TemporaryDirectory(dir=app.instance_path) as tmpdir:
+            svg_path, _ = render_script_to_svg_html(rendered, Path(tmpdir))
+            svg_content = svg_path.read_text(encoding="utf-8")
+
+        font_dir = resolve_font_dir(Settings.query.first())
+        svg_content = embed_fonts_in_svg_content(svg_content, font_dir)
+
+        return jsonify({"ok": True, "message": f"{name} compiled successfully.", "svg": svg_content})
+    except Exception as e:
+        return jsonify({"ok": False, "message": str(e)}), 500
 
 
 @app.route("/admin/mining/config", methods=["POST"])
@@ -8185,6 +9406,12 @@ def serve_static(filename):
     return send_from_directory(".", filename)
 
 
+@app.route("/static/wallet/")
+@app.route("/static/wallet")
+def serve_wallet_index():
+    return redirect("/static/wallet/index.html")
+
+
 @app.route("/gallery")
 def gallery_index():
     # Get page parameter, default to 1
@@ -8261,7 +9488,7 @@ def show_name(name):
 
 @app.route("/images/<path:filename>")
 def serve_image(filename):
-    return send_from_directory(IMAGES_ROOT, filename)
+    return send_from_directory(_resolve_images_root(), filename)
 
 
 @app.route("/login", methods=["GET", "POST"])
@@ -8400,6 +9627,7 @@ def register():
             )
 
         user = User(username=username, email=email)
+        user.generation_credits = 6.0
         user.set_password(password)
         user.two_factor_secret = pyotp.random_base32()
 
@@ -8411,7 +9639,7 @@ def register():
 
         # Send verification email
         try:
-            app_url = request.url_root.rstrip("/")
+            app_url = _resolve_app_url()
             send_verification_email(email, username, verification_token, app_url)
             flash(
                 "Registration successful! Please check your email to verify your account.",
@@ -8516,6 +9744,74 @@ def account_settings():
         title="Account Settings",
         current_user=current_user,
     )
+
+
+@app.post("/account-settings/export-data")
+def account_settings_export_data():
+    current_user = get_current_user()
+    if not current_user:
+        flash("Please log in to access settings", "error")
+        return redirect(url_for("login"))
+
+    try:
+        token, zip_name = _build_user_export_zip(current_user)
+    except Exception as exc:
+        logger.error(f"[EXPORT] Failed to build data export: {exc}")
+        flash("Failed to prepare your data export. Please try again.", "error")
+        return redirect(url_for("account_settings"))
+
+    export_index = _load_exports_index()
+    export_index[token] = {
+        "user_id": current_user.id,
+        "zip_name": zip_name,
+        "created_at": datetime.utcnow().isoformat(),
+        "expires_at": (datetime.utcnow() + timedelta(hours=24)).isoformat(),
+    }
+    _save_exports_index(export_index)
+
+    try:
+        from email_service import send_data_export_email
+
+        download_url = url_for("account_settings_export_download", token=token, _external=True)
+        send_data_export_email(current_user.email, current_user.username, download_url)
+        flash("We emailed you a download link for your data export.", "success")
+    except Exception as exc:
+        logger.error(f"[EXPORT] Failed to send export email: {exc}")
+        flash("Data export ready, but we could not send the email.", "warning")
+
+    return redirect(url_for("account_settings"))
+
+
+@app.get("/account-settings/export-download/<token>")
+def account_settings_export_download(token):
+    current_user = get_current_user()
+    if not current_user:
+        flash("Please log in to download your data", "error")
+        return redirect(url_for("login"))
+
+    export_index = _load_exports_index()
+    export_entry = export_index.get(token)
+    if not export_entry or export_entry.get("user_id") != current_user.id:
+        flash("Invalid or expired export link.", "error")
+        return redirect(url_for("account_settings"))
+
+    expires_at = export_entry.get("expires_at")
+    if expires_at:
+        try:
+            if datetime.utcnow() > datetime.fromisoformat(expires_at):
+                flash("Export link has expired.", "error")
+                return redirect(url_for("account_settings"))
+        except Exception:
+            pass
+
+    exports_dir = _get_exports_dir()
+    zip_name = export_entry.get("zip_name")
+    zip_path = os.path.join(exports_dir, zip_name or "")
+    if not zip_name or not os.path.exists(zip_path):
+        flash("Export file not found.", "error")
+        return redirect(url_for("account_settings"))
+
+    return send_file(zip_path, as_attachment=True, download_name=zip_name)
 
 
 @app.route("/account-settings/2fa", methods=["POST"])
@@ -8775,6 +10071,7 @@ def webauthn_register_options():
             UserVerificationRequirement,
             _AuthenticatorAttestationResponse,
             AttestationConveyancePreference,
+            _AuthenticatorAssertionResponse,
         ) = _webauthn_imports()
 
         rp_id = _get_webauthn_rp_id()
@@ -8880,9 +10177,10 @@ def webauthn_register_verify():
             _AuthenticationCredential,
             _PublicKeyCredentialDescriptor,
             _AuthenticatorSelectionCriteria,
-            _UserVerificationRequirement,
+            UserVerificationRequirement,
             AuthenticatorAttestationResponse,
             _AttestationConveyancePreference,
+            _AuthenticatorAssertionResponse,
         ) = _webauthn_imports()
 
         expected_challenge = session.get("webauthn_registration_challenge")
@@ -9271,7 +10569,7 @@ def resend_verification():
 
     # Send email
     try:
-        app_url = request.url_root.rstrip("/")
+        app_url = _resolve_app_url()
         send_verification_email(user.email, user.username, verification_token, app_url)
         flash("Verification email sent! Please check your inbox.", "success")
     except Exception as e:
@@ -9324,7 +10622,7 @@ def change_email():
     try:
         from email_service import send_email_change_verification
 
-        app_url = request.url_root.rstrip("/")
+        app_url = _resolve_app_url()
         send_email_change_verification(
             new_email, user.username, verification_token, user.email, app_url
         )
@@ -9430,7 +10728,7 @@ def profile_resend_verification():
             send_email_change_verification,
         )
 
-        app_url = request.url_root.rstrip("/")
+        app_url = _resolve_app_url()
 
         if user.pending_email:
             send_email_change_verification(
@@ -10749,7 +12047,7 @@ def debug_user(username):
     return response
 
 
-@app.route("/member/<username>", methods=["GET", "POST"])
+@app.route("/users/<username>", methods=["GET", "POST"])
 def profile(username):
     user = User.query.filter_by(username=username).first()
     if not user:
@@ -10840,6 +12138,16 @@ def profile(username):
         else:
             banknote.svg_path = None
 
+    denomination_values = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000]
+    denomination_options = [
+        {
+            "value": str(denom),
+            "label": f"{denom} ({_compute_generation_difficulty(denom)} credit(s))",
+            "cost": _compute_generation_difficulty(denom),
+        }
+        for denom in denomination_values
+    ]
+
     return render_template(
         "profile.html",
         user=user,
@@ -10848,7 +12156,17 @@ def profile(username):
         security_keys=security_keys,
         title=f"Profile - {username}",
         current_user=current_user_obj,
+        generation_credits=(user.generation_credits or 0),
+        denomination_options=denomination_options,
+        generation_all_cost=_compute_generation_cost(denomination_values),
     )
+
+
+@app.route("/member/<username>", methods=["GET", "POST"])
+def profile_member_redirect(username):
+    if request.method == "POST":
+        return redirect(url_for("profile", username=username), code=307)
+    return redirect(url_for("profile", username=username), code=301)
 
 
 @app.route("/eisenscript-guide")
@@ -10862,6 +12180,10 @@ def eisenscript_guide():
 
 @app.route("/<username>", methods=["GET", "POST"])
 def profile_legacy(username):
+    if username == "mint":
+        return mint()
+    if username == "generate":
+        return generate_page()
     if request.method == "POST":
         return redirect(url_for("profile", username=username), code=307)
     return redirect(url_for("profile", username=username), code=301)
@@ -11052,7 +12374,15 @@ with app.app_context():
     _ensure_serial_numbers_is_mined_column()
     _ensure_banknotes_verification_columns()
     _ensure_users_custom_eisenscript_column()
+    _ensure_users_credits_columns()
+    _ensure_generation_tasks_quantity_column()
     _ensure_settings_eisenscript_columns()
+    try:
+        settings = Settings.query.first()
+        if settings:
+            os.environ["LUNAMINT_RENDER_ENDPOINTS"] = settings.lunamint_server_urls or settings.lunamint_server_url or ""
+    except Exception:
+        pass
     # Initialize blockchain manager
     start_generation_task_processor()
 
@@ -11103,5 +12433,9 @@ if __name__ == "__main__":
         )
 
     app.run(
-        debug=True, host="0.0.0.0", port=5001, use_reloader=False
+        debug=True,
+        host="0.0.0.0",
+        port=5001,
+        use_reloader=False,
+        threaded=True,
     )  # use_reloader=False to avoid double-start

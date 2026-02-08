@@ -80,30 +80,6 @@
             </div>
         </div>
 
-        <!-- EisenScript Section (only for own profile) -->
-        {% if current_user.is_authenticated and current_user.id == user.id %}
-        <div class="info-card">
-            <div class="card-header">
-                <div class="header-icon"><i data-feather="code"></i></div>
-                <h3 class="header-title">Custom EisenScript</h3>
-            </div>
-            <div class="card-content">
-                <p class="helper-text">This script is applied on top of your banknotes during generation. Use it for stamps or custom graphics.</p>
-                <a href="{{ url_for('eisenscript_guide') }}" class="action-btn secondary small">
-                    <span>Open EisenScript Guide</span>
-                    <div class="btn-icon"><i data-feather="external-link"></i></div>
-                </a>
-                <form method="POST" class="bio-form">
-                    <textarea name="custom_eisenscript" placeholder="Paste EisenScript here..." class="form-textarea">{{ user.custom_eisenscript }}</textarea>
-                    <button type="submit" class="action-btn purple">
-                        <span>Save EisenScript</span>
-                        <div class="btn-icon"><i data-feather="save"></i></div>
-                    </button>
-                </form>
-            </div>
-        </div>
-        {% endif %}
-
         <!-- Email Management Section (only for own profile) -->
         {% if current_user.is_authenticated and current_user.id == user.id %}
         <div class="info-card">
@@ -206,104 +182,6 @@
             </div>
         </div>
         {% endif %}
-
-        <!-- Generation Status -->
-        {% if current_user.is_authenticated and current_user.id == user.id %}
-        <div class="info-card">
-            <div class="card-header">
-                <div class="header-icon"><i data-feather="dollar-sign"></i></div>
-                <h3 class="header-title">Annual Banknote Generation</h3>
-            </div>
-            
-            <div class="card-content">
-                <div class="generation-status" id="generationStatus" data-user-id="{{ current_user.id }}">
-                    <div class="generation-progress" id="generationProgress" hidden>
-                        <div class="progress-header">
-                            <span class="progress-label">Generating banknotes...</span>
-                            <span class="progress-status" id="generationProgressStatus">Starting</span>
-                        </div>
-                        <div class="progress-bar">
-                            <div class="progress-bar-fill indeterminate" id="generationProgressFill"></div>
-                        </div>
-                        <div class="progress-detail" id="generationProgressDetail"></div>
-                    </div>
-                    {% if user.can_generate_money() %}
-                    <div class="status-indicator ready">
-                        <div class="status-icon"><i data-feather="check-circle"></i></div>
-                        <div class="status-text">
-                            <strong>Ready to Generate</strong>
-                            <span>You can create new banknotes now!</span>
-                        </div>
-                    </div>
-                    <form method="POST" action="/generate-money" class="generation-form">
-                        <button type="submit" class="action-btn primary">
-                            <span>Generate New Banknotes</span>
-                            <div class="btn-icon"><i data-feather="star"></i></div>
-                        </button>
-                    </form>
-                    {% else %}
-                    <div class="status-indicator waiting">
-                        <div class="status-icon"><i data-feather="loader"></i></div>
-                        <div class="status-text">
-                            <strong>Generation Cooldown</strong>
-                            <span>You can generate new banknotes again in {{ user.days_until_next_generation() }} days</span>
-                        </div>
-                    </div>
-                    <button class="action-btn secondary" disabled>
-                        <span>Generate New Banknotes</span>
-                        <div class="btn-icon"><i data-feather="loader"></i></div>
-                    </button>
-                    {% endif %}
-                </div>
-            </div>
-        </div>
-
-        <!-- Recent Tasks -->
-        <div class="info-card">
-            <div class="card-header">
-                <div class="header-icon"><i data-feather="clipboard"></i></div>
-                <h3 class="header-title">Recent Generation Tasks</h3>
-                {% if generation_tasks %}<div class="header-badge">{{ generation_tasks|length }}</div>{% endif %}
-            </div>
-            
-            <div class="card-content">
-                {% if generation_tasks %}
-                <div class="tasks-list">
-                    {% for task in generation_tasks %}
-                    <div class="task-item status-{{ task.status }}">
-                        <div class="task-header">
-                            <div class="task-id">Task #{{ task.id }}</div>
-                            <div class="task-status status-{{ task.status }}">{{ task.status|title }}</div>
-                        </div>
-                        <div class="task-details">
-                            <div class="task-date">
-                                <span class="date-icon"><i data-feather="calendar"></i></span>
-                                {{ task.created_at.strftime('%Y-%m-%d %H:%M') }}
-                                {% if task.completed_at %}
-                                <span class="completed-date">
-                                    (Completed: {{ task.completed_at.strftime('%Y-%m-%d %H:%M') }})
-                                </span>
-                                {% endif %}
-                            </div>
-                            {% if task.message %}
-                            <div class="task-message">
-                                <span class="message-icon">💬</span>
-                                {{ task.message }}
-                            </div>
-                            {% endif %}
-                        </div>
-                    </div>
-                    {% endfor %}
-                </div>
-                {% else %}
-                <div class="empty-state">
-                    <div class="empty-icon">📭</div>
-                    <p>No generation tasks yet.</p>
-                </div>
-                {% endif %}
-            </div>
-        </div>
-        {% endif %}
     </div>
 
     <!-- Gallery Tab -->
@@ -314,10 +192,10 @@
                 <div class="gallery-stats">
                     <span class="gallery-count">{{ banknotes|length }} banknotes</span>
                     {% if current_user.is_authenticated and current_user.id == user.id %}
-                    <button class="action-btn cyan small" onclick="openTab('info')">
+                    <a class="action-btn cyan small" href="{{ url_for('generate_page') }}">
                         <span>Generate New</span>
                         <div class="btn-icon"><i data-feather="star"></i></div>
-                    </button>
+                    </a>
                     {% endif %}
                 </div>
             </div>
@@ -355,12 +233,16 @@
                     {% if banknote %}
                         {# FIX: Handle None value for png_path #}
                         {% set clean_path = (banknote.png_path or '')|replace('images/', '')|replace('\\\\', '/')|trim('/') %}
+                        {% set denom_value = banknote.denomination|float if banknote.denomination else 0 %}
+                        {% set is_coin = denom_value < 1 %}
+                        {% set thumb_w = 300 if is_coin else 400 %}
+                        {% set thumb_h = 300 if is_coin else 150 %}
                         <div class="gallery-item">
                             <div class="banknote-preview">
                                 <div class="banknote-side front">FRONT</div>
                                 <div class="banknote-image-container">
                                     {% if banknote.png_path %}
-                                    <img src="{{ url_for('serve_banknote_thumbnail', filename=clean_path, w=400, h=150) }}"
+                                    <img src="{{ url_for('serve_banknote_thumbnail', filename=clean_path, w=thumb_w, h=thumb_h) }}"
                                         alt="{{ banknote.denomination }} Front"
                                         class="banknote-image"
                                         onclick="openBanknoteModal('{{ url_for('serve_banknote_image', filename=clean_path) }}',
@@ -419,12 +301,16 @@
                 {% for banknote in sides.back %}
                     {% if banknote %}
                         {% set clean_path = (banknote.png_path or '')|replace('images/', '')|replace('\\\\', '/')|trim('/') %}
+                        {% set denom_value = banknote.denomination|float if banknote.denomination else 0 %}
+                        {% set is_coin = denom_value < 1 %}
+                        {% set thumb_w = 300 if is_coin else 400 %}
+                        {% set thumb_h = 300 if is_coin else 150 %}
                         <div class="gallery-item">
                             <div class="banknote-preview">
                                 <div class="banknote-side back">BACK</div>
                                 <div class="banknote-image-container">
                                     {% if banknote.png_path %}
-                                    <img src="{{ url_for('serve_banknote_thumbnail', filename=clean_path, w=400, h=150) }}"
+                                    <img src="{{ url_for('serve_banknote_thumbnail', filename=clean_path, w=thumb_w, h=thumb_h) }}"
                                         alt="{{ banknote.denomination }} Back"
                                         class="banknote-image"
                                         onclick="openBanknoteModal('{{ url_for('serve_banknote_image', filename=clean_path) }}',
@@ -577,8 +463,11 @@
 .profile-container {
     max-width: 1100px;
     margin: 0 auto;
-    padding: 1.25rem;
+    padding: 0.9rem;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+    font-size: 0.9rem;
 }
 
 /* Profile Header Card */

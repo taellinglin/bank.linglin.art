@@ -21,14 +21,22 @@ def generate_for_user(*args, **kwargs):
     extra_context = kwargs.get("extra_context")
     progress_callback = kwargs.get("progress_callback")
 
+    is_coin = bool(
+        kwargs.get("is_coin")
+        or (isinstance(extra_context, dict) and extra_context.get("is_coin"))
+    )
+
     if name is None or denomination is None:
         raise TypeError("generate_for_user requires name and denomination")
 
-    denomination = normalize_denomination(denomination)
+    if not is_coin:
+        denomination = normalize_denomination(denomination)
 
     # Merge any unknown kwargs into extra_context
     ctx = dict(extra_context) if extra_context else {}
     ctx.update(kwargs)
+    if is_coin:
+        ctx["is_coin"] = True
 
     return generate_banknote_pair(
         name,
@@ -48,12 +56,17 @@ generate.py - Minimal, robust banknote generator
 - PNG generation, mempool, Banknote DB, SerialNumber DB registration
 """
 import os
+import hashlib
 import sys
 import time
 import math
 import json
 import threading
 import shutil
+import random
+import base64
+import re
+import requests
 from pathlib import Path
 from io import BytesIO
 from datetime import datetime
@@ -62,6 +75,150 @@ from lunamint.scripting import render_script_to_svg_html
 from models import Banknote, SerialNumber, db, User, Settings
 from PIL import Image
 import cairosvg
+try:
+    from fontTools.ttLib import TTFont
+except Exception:
+    TTFont = None
+
+GENERIC_FONT_FAMILIES = {
+    "serif",
+    "sans-serif",
+    "monospace",
+    "cursive",
+    "fantasy",
+    "system-ui",
+}
+
+
+def resolve_font_dir(settings=None) -> str:
+    if settings and getattr(settings, "font_dir", None):
+        return str(settings.font_dir)
+    env_font_dir = os.environ.get("EISENSCRIPT_FONT_DIR") or os.environ.get("FONT_DIR")
+    if env_font_dir:
+        return env_font_dir
+    return "./fonts"
+
+
+def _split_font_families(raw_value: str) -> list[str]:
+    families = []
+    for part in raw_value.split(","):
+        cleaned = part.strip().strip("\"").strip("'").strip()
+        if cleaned:
+            families.append(cleaned)
+    return families
+
+
+def _extract_svg_font_families(svg_content: str) -> set[str]:
+    families = set()
+    for match in re.findall(r"font-family\s*:\s*([^;\"'}]+)", svg_content, flags=re.IGNORECASE):
+        families.update(_split_font_families(match))
+    for match in re.findall(r"font-family=['\"]([^'\"]+)['\"]", svg_content, flags=re.IGNORECASE):
+        families.update(_split_font_families(match))
+    return {family for family in families if family and family.lower() not in GENERIC_FONT_FAMILIES}
+
+
+def _font_family_from_file(font_path: Path) -> str | None:
+    if TTFont is None:
+        return font_path.stem
+    try:
+        font = TTFont(str(font_path), lazy=True)
+        name_table = font["name"].names
+        preferred = None
+        fallback = None
+        for record in name_table:
+            if record.nameID == 16 and not preferred:
+                preferred = record.toUnicode()
+            if record.nameID == 1 and not fallback:
+                fallback = record.toUnicode()
+        font.close()
+        return preferred or fallback or font_path.stem
+    except Exception:
+        return font_path.stem
+
+
+def _font_format_from_suffix(suffix: str) -> tuple[str, str]:
+    suffix = suffix.lower()
+    if suffix == ".woff2":
+        return ("font/woff2", "woff2")
+    if suffix == ".woff":
+        return ("font/woff", "woff")
+    if suffix == ".otf":
+        return ("font/otf", "opentype")
+    return ("font/ttf", "truetype")
+
+
+def _load_font_family_map(font_dir: str) -> dict[str, tuple[Path, str, str]]:
+    font_dir_path = Path(font_dir)
+    if not font_dir_path.exists():
+        return {}
+    font_map = {}
+    for font_path in font_dir_path.rglob("*"):
+        if not font_path.is_file():
+            continue
+        if font_path.suffix.lower() not in (".ttf", ".otf", ".woff", ".woff2"):
+            continue
+        family = _font_family_from_file(font_path)
+        if not family:
+            continue
+        mime, fmt = _font_format_from_suffix(font_path.suffix)
+        font_map[family] = (font_path, mime, fmt)
+        font_map[family.lower()] = (font_path, mime, fmt)
+    return font_map
+
+
+def embed_fonts_in_svg_content(svg_content: str, font_dir: str) -> str:
+    if not svg_content or "data-embedded-fonts=\"1\"" in svg_content:
+        return svg_content
+    families = _extract_svg_font_families(svg_content)
+    if not families:
+        return svg_content
+    font_map = _load_font_family_map(font_dir)
+    if not font_map:
+        return svg_content
+
+    css_rules = []
+    for family in sorted(families):
+        entry = font_map.get(family) or font_map.get(family.lower())
+        if not entry:
+            continue
+        font_path, mime, fmt = entry
+        try:
+            font_bytes = font_path.read_bytes()
+        except Exception:
+            continue
+        encoded = base64.b64encode(font_bytes).decode("ascii")
+        css_rules.append(
+            "@font-face {"
+            f"font-family: '{family}';"
+            f"src: url(data:{mime};base64,{encoded}) format('{fmt}');"
+            "font-weight: normal;"
+            "font-style: normal;"
+            "}"
+        )
+    if not css_rules:
+        return svg_content
+
+    insert_idx = svg_content.find("<svg")
+    if insert_idx == -1:
+        return svg_content
+    start_tag_end = svg_content.find(">", insert_idx)
+    if start_tag_end == -1:
+        return svg_content
+    style_block = "<defs><style data-embedded-fonts=\"1\"><![CDATA[" + "".join(css_rules) + "]]></style></defs>"
+    return svg_content[: start_tag_end + 1] + style_block + svg_content[start_tag_end + 1 :]
+
+
+def embed_fonts_in_svg_file(svg_path: Path, font_dir: str) -> None:
+    try:
+        svg_path = Path(svg_path)
+        if not svg_path.exists():
+            return
+        svg_content = svg_path.read_text(encoding="utf-8")
+        updated = embed_fonts_in_svg_content(svg_content, font_dir)
+        if updated != svg_content:
+            svg_path.write_text(updated, encoding="utf-8")
+    except Exception as exc:
+        print(f"[WARNING] Failed to embed fonts into SVG: {exc}")
 
 # --- Utility ---
 def mm_to_px(mm, dpi=300.0):
@@ -108,6 +265,64 @@ def normalize_denomination(value, default="1"):
     digits = "".join(ch for ch in text if ch.isdigit())
     return digits if digits else default
 
+def format_coin_amount(value) -> str:
+    try:
+        amount = float(str(value).strip())
+    except Exception:
+        amount = 0.0
+    text = f"{amount:.3f}".rstrip("0").rstrip(".")
+    return text or "0"
+
+def _get_render_endpoints() -> list[str]:
+    endpoints_text = os.getenv("LUNAMINT_RENDER_ENDPOINTS", "").strip()
+    if not endpoints_text:
+        try:
+            from app import app
+            with app.app_context():
+                settings = Settings.query.first()
+        except Exception:
+            settings = None
+        if not settings:
+            return []
+        if not (
+            getattr(settings, "lunamint_use_custom_server", False)
+            or getattr(settings, "lunamint_server_url", "")
+            or getattr(settings, "lunamint_server_urls", "")
+        ):
+            return []
+        endpoints_text = settings.lunamint_server_urls or settings.lunamint_server_url or ""
+    endpoints = [endpoint.strip().rstrip("/") for endpoint in endpoints_text.split(",") if endpoint.strip()]
+    return list(dict.fromkeys(endpoints))
+
+def _render_eisenscript_via_remote(script_text: str) -> str | None:
+    endpoints = _get_render_endpoints()
+    if not endpoints:
+        return None
+    for endpoint in endpoints:
+        try:
+            payload = {"script": script_text, "html": False}
+            if endpoint.endswith("/mint/compile"):
+                payload = {"script": script_text, "name": "eisenscript"}
+            response = requests.post(endpoint, json=payload, timeout=20)
+            if not response.ok:
+                continue
+            content_type = response.headers.get("content-type", "")
+            if "application/json" in content_type:
+                payload = response.json()
+                if payload.get("ok") is False:
+                    continue
+                svg_content = payload.get("svg") or payload.get("html")
+                if svg_content:
+                    return svg_content
+            else:
+                text = response.text
+                if text and "<svg" in text:
+                    return text
+        except Exception as exc:
+            print(f"[RENDER REMOTE] Failed at {endpoint}: {exc}")
+            continue
+    return None
+
 def denomination_to_words(value) -> str:
     """Convert a denomination to English words (e.g., 1000 -> One Thousand)."""
     try:
@@ -131,6 +346,15 @@ def denomination_to_words(value) -> str:
             return units[n]
         return tens[n // 10] + (" " + units[n % 10] if n % 10 else "")
 
+    def three_digit(n):
+        if n < 100:
+            return two_digit(n)
+        hundreds = n // 100
+        remainder = n % 100
+        if remainder:
+            return units[hundreds] + " Hundred " + two_digit(remainder)
+        return units[hundreds] + " Hundred"
+
     words = []
     remainder = num
 
@@ -141,10 +365,10 @@ def denomination_to_words(value) -> str:
             if scale_value == 100:
                 words.append(units[chunk] + " " + scale_name)
             else:
-                words.append(two_digit(chunk) + " " + scale_name)
+                words.append(three_digit(chunk) + " " + scale_name)
 
     if remainder:
-        words.append(two_digit(remainder))
+        words.append(three_digit(remainder))
 
     return " ".join(w for w in words if w).strip()
 
@@ -253,6 +477,90 @@ def get_portrait_path(username: str) -> str:
     safe_name = sanitize_username_for_filename(username)
     return os.path.join("portraits", f"portrait_{safe_name}.png")
 
+def read_prompt_file(filepath: str, default: str = "") -> str:
+    try:
+        if os.path.exists(filepath):
+            with open(filepath, "r", encoding="utf-8") as f:
+                return f.read().strip()
+    except Exception:
+        pass
+    return default
+
+def generate_character_portrait(name: str, portrait_prompt: str = None, save_path: str = "./portraits") -> str:
+    """Generate a portrait via Stable Diffusion API; returns file path or empty string."""
+    try:
+        os.makedirs(save_path, exist_ok=True)
+        safe_name = sanitize_username_for_filename(name)
+        output_path = os.path.join(save_path, f"portrait_{safe_name}.png")
+
+        prompt = portrait_prompt or read_prompt_file(
+            "portrait_prompt.txt",
+            "A professional portrait of a person, high quality, detailed face, neutral background"
+        )
+        if "{name}" in prompt:
+            prompt = prompt.format(name=name)
+        negative_prompt = read_prompt_file(
+            "negative_prompt.txt",
+            "text, words, letters, numbers, blurry, low quality, watermark, signature"
+        )
+
+        payload = {
+            "prompt": prompt,
+            "negative_prompt": negative_prompt,
+            "width": 512,
+            "height": 512,
+            "seed": random.randint(0, 2**32 - 1),
+            "steps": 25,
+            "cfg_scale": 7.5,
+            "sampler_name": "DPM++ 2M Karras",
+            "batch_size": 1,
+            "n_iter": 1,
+            "restore_faces": True,
+            "tiling": False,
+        }
+
+        api_url = os.getenv("SD_API_URL", "http://127.0.0.1:7777/sdapi/v1/txt2img")
+        response = requests.post(api_url, json=payload, timeout=120)
+        response.raise_for_status()
+        result = response.json()
+        images = result.get("images", [])
+        if not images:
+            return ""
+        image_data = base64.b64decode(images[0])
+        image = Image.open(BytesIO(image_data))
+        image.save(output_path)
+        print(f"[+] Generated portrait: {output_path}")
+        return output_path
+    except Exception as e:
+        print(f"[WARNING] Portrait generation failed: {e}")
+        return ""
+
+def ensure_portrait_exists(name: str, settings: Settings = None, extra_context: dict = None) -> str:
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    portrait_path = get_portrait_path(name)
+    portrait_abs_path = os.path.join(base_dir, portrait_path)
+    portraits_dir = os.path.join(base_dir, "portraits")
+    if portrait_path and os.path.isfile(portrait_abs_path) and os.path.getsize(portrait_abs_path) > 0:
+        return portrait_path
+
+    portrait_prompt = None
+    if settings and getattr(settings, "portrait_prompt", None):
+        portrait_prompt = settings.portrait_prompt
+    if extra_context and isinstance(extra_context, dict):
+        portrait_prompt = extra_context.get("portrait_prompt") or portrait_prompt
+
+    for attempt in range(1, 4):
+        print(f"[!] Portrait not found for {name}, generating (attempt {attempt}/3)...")
+        generated = generate_character_portrait(
+            name,
+            portrait_prompt=portrait_prompt,
+            save_path=portraits_dir,
+        )
+        generated_path = generated or portrait_abs_path
+        if generated_path and os.path.isfile(generated_path) and os.path.getsize(generated_path) > 0:
+            return generated or portrait_path
+    return ""
+
 def get_user_denom_output_dir(username: str, denomination: str) -> str:
     safe_name = sanitize_username_for_filename(username)
     safe_denom = sanitize_username_for_filename(str(denomination))
@@ -265,6 +573,7 @@ def render_eisenscript_jinja2(script: str, context: dict) -> str:
     safe_context.setdefault("denomination", "1")
     safe_context.setdefault("serial", "")
     env = Environment(undefined=DebugUndefined)
+    env.filters["human_color"] = human_color
     try:
         parsed = env.parse(script or "")
         vars_used = sorted(meta.find_undeclared_variables(parsed))
@@ -276,6 +585,52 @@ def render_eisenscript_jinja2(script: str, context: dict) -> str:
         print(f"[JINJA2 DEBUG] Failed to parse template vars: {e}")
     template = env.from_string(script)
     return template.render(**safe_context)
+
+
+def human_color(value):
+    """Format color strings into a human-readable form."""
+    if value is None:
+        return ""
+
+    text = str(value).strip()
+    if not text:
+        return ""
+
+    lower = text.lower()
+
+    hex_match = re.fullmatch(r"#([0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})", lower)
+    if hex_match:
+        hex_value = hex_match.group(1)
+        if len(hex_value) == 3:
+            r, g, b = [int(c * 2, 16) for c in hex_value]
+            return f"RGB({r}, {g}, {b})"
+        if len(hex_value) == 6:
+            r = int(hex_value[0:2], 16)
+            g = int(hex_value[2:4], 16)
+            b = int(hex_value[4:6], 16)
+            return f"RGB({r}, {g}, {b})"
+        r = int(hex_value[0:2], 16)
+        g = int(hex_value[2:4], 16)
+        b = int(hex_value[4:6], 16)
+        a = int(hex_value[6:8], 16) / 255
+        return f"RGBA({r}, {g}, {b}, {a:.2f})"
+
+    rgb_match = re.fullmatch(
+        r"rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)",
+        lower,
+    )
+    if rgb_match:
+        r, g, b = (int(float(rgb_match.group(i))) for i in range(1, 4))
+        a_raw = rgb_match.group(4)
+        if a_raw is None:
+            return f"RGB({r}, {g}, {b})"
+        try:
+            a = float(a_raw)
+        except ValueError:
+            a = 1.0
+        return f"RGBA({r}, {g}, {b}, {a:.2f})"
+
+    return text
 
 def load_eisenscript_parts(side: str):
     """
@@ -291,10 +646,22 @@ def load_eisenscript_parts(side: str):
             pre = getattr(settings, 'eisenscript_prefix_front', '') or ''
             user = getattr(settings, 'eisenscript_user_front', '') or ''
             suf = getattr(settings, 'eisenscript_suffix_front', '') or ''
-        else:
+        elif side == 'back':
             pre = getattr(settings, 'eisenscript_prefix_back', '') or ''
             user = getattr(settings, 'eisenscript_user_back', '') or ''
             suf = getattr(settings, 'eisenscript_suffix_back', '') or ''
+        elif side == 'coin_front':
+            pre = getattr(settings, 'eisenscript_prefix_coin_front', '') or ''
+            user = getattr(settings, 'eisenscript_user_coin_front', '') or ''
+            suf = getattr(settings, 'eisenscript_suffix_coin_front', '') or ''
+        elif side == 'coin_back':
+            pre = getattr(settings, 'eisenscript_prefix_coin_back', '') or ''
+            user = getattr(settings, 'eisenscript_user_coin_back', '') or ''
+            suf = getattr(settings, 'eisenscript_suffix_coin_back', '') or ''
+        else:
+            pre = ''
+            user = ''
+            suf = ''
         return (pre, user, suf)
 
 def merge_eisenscript_with_vars(pre, user, suf, context):
@@ -308,20 +675,21 @@ def merge_eisenscript_with_vars(pre, user, suf, context):
     ])
 
 def inject_back_denom_background(script: str, color: str, width_px: int = 1600, height_px: int = 600) -> str:
-    """Inject a solid background rect into back EisenScript."""
+    """Inject a denomination background using EisenScript `background` command."""
     if not script:
         return script
-    if "# denom_bg_rect" in script:
-        return script
-    rect_line = f"rect 0 0 {width_px} {height_px} {color}"
     lines = script.splitlines()
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("background ") or stripped == "# denom_bg":
+            return script
     insert_at = 0
     for idx, line in enumerate(lines):
         if line.strip().startswith("size "):
             insert_at = idx + 1
             break
-    lines.insert(insert_at, "# denom_bg_rect")
-    lines.insert(insert_at + 1, rect_line)
+    lines.insert(insert_at, "# denom_bg")
+    lines.insert(insert_at + 1, f"background {color}")
     return "\n".join(lines)
 
 def generate_png_from_svg(svg_path, png_path, size=(1600, 600)):
@@ -465,29 +833,55 @@ def generate_banknote_pair(name, denom, output_dir, width_mm=160.0, height_mm=60
     timestamp = int(time.time()*1000)
     from app import app
     with app.app_context():
-        user = User.query.first()
+        user = None
+        user_id = None
+        if extra_context and isinstance(extra_context, dict):
+            user_id = extra_context.get("user_id") or extra_context.get("userId")
+        if user_id:
+            user = User.query.get(user_id)
+        if not user and name:
+            user = User.query.filter_by(username=name).first()
         if not user:
-            print('[!] No user found')
+            user = User.query.first()
+        if not user:
+            print("[!] No user found")
             return
         settings = Settings.query.first()
+    font_dir = resolve_font_dir(settings)
+    ensure_portrait_exists(name, settings, extra_context)
     serial_front = create_serial_id()
     serial_back = create_serial_id()
-    denom = normalize_denomination(denom)
+    is_coin = bool(extra_context and isinstance(extra_context, dict) and extra_context.get("is_coin"))
+    if not is_coin:
+        denom = normalize_denomination(denom)
     if not output_dir:
         output_dir = get_user_denom_output_dir(name, denom)
-    denom_color = denomination_color(denom)
-    denom_exponent = denomination_to_exponent(denom)
-    denom_words = denomination_to_words(denom)
-    denom_compact = denomination_to_compact_lkc(denom)
-    denom_words_cn = denomination_to_chinese(denom)
-    denom_compact_cn = denomination_to_chinese_lkc(denom)
+    if is_coin:
+        denom_text = str(denom).strip()
+        denom_color = denomination_color(1)
+        denom_exponent = 0
+        denom_words = denom_text
+        denom_compact = denom_text
+        denom_words_cn = denom_text
+        denom_compact_cn = denom_text
+        coin_amount_text = format_coin_amount(denom_text)
+        render_size = (512, 512)
+    else:
+        denom_color = denomination_color(denom)
+        denom_exponent = denomination_to_exponent(denom)
+        denom_words = denomination_to_words(denom)
+        denom_compact = denomination_to_compact_lkc(denom)
+        denom_words_cn = denomination_to_chinese(denom)
+        denom_compact_cn = denomination_to_chinese_lkc(denom)
+        coin_amount_text = ""
+        render_size = (1600, 600)
     title = (settings.bill_title if settings else "") or ""
     subtitle = (settings.bill_subtitle if settings else "") or ""
     context_base = {
         "username": name,
         "denomination": denom,
         "denom_exponent": denom_exponent,
-        "dendom_exp": denom_exponent,
+        "denom_exp": denom_exponent,
         "pow_level": denom_exponent,
         "denomination_words": denom_words,
         "denomination_compact": denom_compact,
@@ -496,12 +890,17 @@ def generate_banknote_pair(name, denom, output_dir, width_mm=160.0, height_mm=60
         "serial": serial_front,
         "title": title,
         "subtitle": subtitle,
+        "portrait_path": get_portrait_path(name),
+        "input_image_path": get_portrait_path(name),
         "denomination_color": denom_color,
         "denom_color": denom_color,
         "width_mm": width_mm,
         "height_mm": height_mm,
         "timestamp": timestamp
     }
+    if is_coin:
+        context_base["coin_amount"] = denom
+        context_base["coin_amount_text"] = coin_amount_text
     if extra_context:
         context_base.update(extra_context)
     context_front = dict(context_base)
@@ -509,8 +908,16 @@ def generate_banknote_pair(name, denom, output_dir, width_mm=160.0, height_mm=60
     context_back["serial"] = serial_back
 
     # EisenScript parts from DB
-    front_pre, front_user, front_suf = load_eisenscript_parts('front')
-    back_pre, back_user, back_suf = load_eisenscript_parts('back')
+    if is_coin:
+        front_pre, front_user, front_suf = load_eisenscript_parts('coin_front')
+        back_pre, back_user, back_suf = load_eisenscript_parts('coin_back')
+        if not (front_pre or front_user or front_suf):
+            front_pre, front_user, front_suf = load_eisenscript_parts('front')
+        if not (back_pre or back_user or back_suf):
+            back_pre, back_user, back_suf = load_eisenscript_parts('back')
+    else:
+        front_pre, front_user, front_suf = load_eisenscript_parts('front')
+        back_pre, back_user, back_suf = load_eisenscript_parts('back')
 
     # Apply per-user custom EisenScript (from profile)
     custom_eisenscript = ""
@@ -521,7 +928,13 @@ def generate_banknote_pair(name, denom, output_dir, width_mm=160.0, height_mm=60
         back_user = f"{back_user}\n{custom_eisenscript}" if back_user else custom_eisenscript
     eisenscript_front = merge_eisenscript_with_vars(front_pre, front_user, front_suf, context_front)
     eisenscript_back = merge_eisenscript_with_vars(back_pre, back_user, back_suf, context_back)
-    eisenscript_back = inject_back_denom_background(eisenscript_back, denom_color)
+    if not is_coin:
+        eisenscript_back = inject_back_denom_background(
+            eisenscript_back,
+            denom_color,
+            width_px=render_size[0],
+            height_px=render_size[1],
+        )
 
     front_filename = create_filename(name, denom, timestamp, "FRONT")
     back_filename = create_filename(name, denom, timestamp, "BACK")
@@ -550,34 +963,58 @@ def generate_banknote_pair(name, denom, output_dir, width_mm=160.0, height_mm=60
     def on_front_svg_saved(svg_path):
         svg_file = resolve_svg_file(Path(svg_path))
         if wait_for_svg_ready(svg_file):
-            status["front_png"] = generate_png_from_svg(svg_file, png_front)
+            status["front_png"] = generate_png_from_svg(svg_file, png_front, size=render_size)
         else:
             print(f"[WARNING] SVG not ready for PNG (front): {svg_file}")
 
     def on_back_svg_saved(svg_path):
         svg_file = resolve_svg_file(Path(svg_path))
         if wait_for_svg_ready(svg_file):
-            status["back_png"] = generate_png_from_svg(svg_file, png_back)
+            status["back_png"] = generate_png_from_svg(svg_file, png_back, size=render_size)
         else:
             print(f"[WARNING] SVG not ready for PNG (back): {svg_file}")
 
     def render_front():
-        svg_result = render_script_to_svg_html(eisenscript_front, front_dir)
-        if isinstance(svg_result, tuple):
-            svg_result = svg_result[0]
-        svg_path = Path(svg_result) if svg_result else svg_front
-        svg_file = resolve_svg_file(normalize_svg_output(svg_path, svg_front))
+        if progress_callback:
+            progress_callback("Rendering front EisenScript...")
+        svg_content = _render_eisenscript_via_remote(eisenscript_front)
+        if svg_content:
+            svg_front.write_text(embed_fonts_in_svg_content(svg_content, font_dir), encoding="utf-8")
+            svg_file = resolve_svg_file(svg_front)
+        else:
+            if progress_callback:
+                progress_callback("Rendering front locally...")
+            svg_result = render_script_to_svg_html(eisenscript_front, front_dir)
+            if isinstance(svg_result, tuple):
+                svg_result = svg_result[0]
+            svg_path = Path(svg_result) if svg_result else svg_front
+            svg_file = resolve_svg_file(normalize_svg_output(svg_path, svg_front))
+        embed_fonts_in_svg_file(svg_file, font_dir)
         print(f"[+] Saved FRONT SVG: {svg_file}")
+        if progress_callback:
+            progress_callback("Front SVG ready.")
         on_front_svg_saved(svg_file)
         status["front_db"] = save_to_database(user, serial_front, denom, "front", str(svg_front), str(png_front))
 
     def render_back():
-        svg_result = render_script_to_svg_html(eisenscript_back, back_dir)
-        if isinstance(svg_result, tuple):
-            svg_result = svg_result[0]
-        svg_path = Path(svg_result) if svg_result else svg_back
-        svg_file = resolve_svg_file(normalize_svg_output(svg_path, svg_back))
+        if progress_callback:
+            progress_callback("Rendering back EisenScript...")
+        svg_content = _render_eisenscript_via_remote(eisenscript_back)
+        if svg_content:
+            svg_back.write_text(embed_fonts_in_svg_content(svg_content, font_dir), encoding="utf-8")
+            svg_file = resolve_svg_file(svg_back)
+        else:
+            if progress_callback:
+                progress_callback("Rendering back locally...")
+            svg_result = render_script_to_svg_html(eisenscript_back, back_dir)
+            if isinstance(svg_result, tuple):
+                svg_result = svg_result[0]
+            svg_path = Path(svg_result) if svg_result else svg_back
+            svg_file = resolve_svg_file(normalize_svg_output(svg_path, svg_back))
+        embed_fonts_in_svg_file(svg_file, font_dir)
         print(f"[+] Saved BACK SVG: {svg_file}")
+        if progress_callback:
+            progress_callback("Back SVG ready.")
         apply_svg_background_color(svg_file, denom_color)
         on_back_svg_saved(svg_file)
         status["back_db"] = save_to_database(user, serial_back, denom, "back", str(svg_back), str(png_back))
@@ -594,16 +1031,32 @@ def generate_banknote_pair(name, denom, output_dir, width_mm=160.0, height_mm=60
         try:
             from app import blockchain_daemon_instance
             if blockchain_daemon_instance:
-                blockchain_daemon_instance.add_genesis_transaction(
-                    serial_number=serial_front,
-                    denomination=float(denom),
-                    issued_to=name,
-                )
-                blockchain_daemon_instance.add_genesis_transaction(
-                    serial_number=serial_back,
-                    denomination=float(denom),
-                    issued_to=name,
-                )
+                if is_coin:
+                    blockchain_daemon_instance.add_genesis_transaction(
+                        serial_number=serial_front,
+                        denomination=float(denom),
+                        issued_to=name,
+                        bill_type="coin",
+                        is_coin=True,
+                    )
+                    blockchain_daemon_instance.add_genesis_transaction(
+                        serial_number=serial_back,
+                        denomination=float(denom),
+                        issued_to=name,
+                        bill_type="coin",
+                        is_coin=True,
+                    )
+                else:
+                    blockchain_daemon_instance.add_genesis_transaction(
+                        serial_number=serial_front,
+                        denomination=float(denom),
+                        issued_to=name,
+                    )
+                    blockchain_daemon_instance.add_genesis_transaction(
+                        serial_number=serial_back,
+                        denomination=float(denom),
+                        issued_to=name,
+                    )
                 print("[+] Added GTX_Genesis transactions to mempool")
                 try:
                     from app import app
@@ -625,7 +1078,11 @@ def generate_banknote_pair(name, denom, output_dir, width_mm=160.0, height_mm=60
         except Exception:
             pass
 
-    return 1 if success else 0
+    if success:
+        return 1
+    if is_coin and (status["front_png"] or status["back_png"] or status["front_db"] or status["back_db"]):
+        return 1
+    return 0
 
 if __name__ == "__main__":
     import argparse

@@ -7,7 +7,7 @@
             <div class="compact-stat-value">{{ total_transactions|default(0)|int|format_number }}</div>
             <div class="compact-stat-label">Pending TXs</div>
             <div class="compact-stat-trend">
-                <span class="trend-indicator up">↗</span>
+                <span class="trend-indicator up"><i data-feather="trending-up"></i></span>
                 <span class="trend-value">Active</span>
             </div>
         </div>
@@ -129,11 +129,13 @@
                         <td class="compact-type-cell">
                             <div class="compact-type-indicator type-{{ tx.type }}" title="{{ tx.type|title }}">
                                 {% if tx.type == 'transfer' %}
-                                    <span class="compact-type-icon">↻</span>
+                                    <i data-feather="repeat" class="compact-type-icon"></i>
                                 {% elif tx.type in ['genesis', 'GTX_Genesis'] %}
-                                    <span class="compact-type-icon">$</span>
+                                    <i data-feather="dollar-sign" class="compact-type-icon"></i>
+                                {% elif tx.type == 'reward' %}
+                                    <i data-feather="zap" class="compact-type-icon"></i>
                                 {% else %}
-                                    <span class="compact-type-icon">?</span>
+                                    <i data-feather="help-circle" class="compact-type-icon"></i>
                                 {% endif %}
                             </div>
                         </td>
@@ -187,6 +189,19 @@
                                         <code class="party-serial mono" title="{{ tx.back_serial }}">
                                             {{ tx.back_serial[:10] }}...
                                         </code>
+                                    </div>
+                                    {% endif %}
+                                    {% if tx.front_thumbnail or tx.back_thumbnail %}
+                                    <div class="party-row">
+                                        <span class="party-label">Preview:</span>
+                                        <div class="party-thumbnails">
+                                            {% if tx.front_thumbnail %}
+                                            <img class="party-thumb" src="{{ url_for('serve_banknote_thumbnail', filename=tx.front_thumbnail, w=160, h=60) }}" alt="Front thumbnail">
+                                            {% endif %}
+                                            {% if tx.back_thumbnail %}
+                                            <img class="party-thumb" src="{{ url_for('serve_banknote_thumbnail', filename=tx.back_thumbnail, w=160, h=60) }}" alt="Back thumbnail">
+                                            {% endif %}
+                                        </div>
                                     </div>
                                     {% endif %}
                                     <div class="party-row">
@@ -349,15 +364,15 @@
                                 
                                 <div class="details-actions">
                                     <button class="action-btn" onclick="viewInExplorer('{{ tx.hash }}')">
-                                        <span class="action-icon">🔍</span>
+                                        <span class="action-icon"><i data-feather="search"></i></span>
                                         View in Explorer
                                     </button>
                                     <button class="action-btn" onclick="copyToClipboard('{{ tx.hash }}')">
-                                        <span class="action-icon">📋</span>
+                                        <span class="action-icon"><i data-feather="copy"></i></span>
                                         Copy Hash
                                     </button>
                                     <button class="action-btn" onclick="validateTransaction('{{ tx.hash }}')">
-                                        <span class="action-icon">✓</span>
+                                        <span class="action-icon"><i data-feather="check"></i></span>
                                         Validate
                                     </button>
                                 </div>
@@ -369,7 +384,7 @@
                     <tr>
                         <td colspan="7" class="empty-state">
                             <div class="empty-content">
-                                <span class="empty-icon">⏳</span>
+                                <span class="empty-icon"><i data-feather="clock"></i></span>
                                 <span class="empty-title">No Pending Transactions</span>
                                 <span class="empty-subtitle">The mempool is currently empty</span>
                             </div>
@@ -415,7 +430,7 @@
     </div>
 
     <div class="refresh-note">
-        <span class="note-icon">↻</span>
+        <span class="note-icon"><i data-feather="refresh-ccw"></i></span>
         <span>Auto-refresh in <span id="countdown">30</span>s</span>
         <button onclick="refreshNow()" class="refresh-btn">Refresh Now</button>
         <div class="refresh-stats">
@@ -511,6 +526,12 @@
 .trend-indicator.up {
     color: var(--success);
     font-size: 0.875rem;
+}
+
+.trend-indicator.up svg {
+    width: 12px;
+    height: 12px;
+    vertical-align: -2px;
 }
 
 .trend-value {
@@ -775,6 +796,11 @@
     border: 1px solid transparent;
 }
 
+.compact-type-icon {
+    width: 14px;
+    height: 14px;
+}
+
 .compact-type-indicator:hover {
     transform: scale(1.05);
     border-color: currentColor;
@@ -863,6 +889,20 @@
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
+}
+
+.party-thumbnails {
+    display: flex;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+}
+
+.party-thumb {
+    width: 120px;
+    height: auto;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-secondary);
 }
 
 .party-description {
@@ -1132,6 +1172,12 @@
     font-size: 1rem;
 }
 
+.action-icon svg {
+    width: 14px;
+    height: 14px;
+    vertical-align: -2px;
+}
+
 /* Empty State */
 .empty-state {
     text-align: center;
@@ -1150,6 +1196,11 @@
     font-size: 3rem;
     opacity: 0.3;
     margin-bottom: 0.5rem;
+}
+
+.empty-icon svg {
+    width: 40px;
+    height: 40px;
 }
 
 .empty-title {
@@ -1263,6 +1314,12 @@
 .note-icon {
     color: var(--info);
     animation: spin 2s linear infinite;
+}
+
+.note-icon svg {
+    width: 14px;
+    height: 14px;
+    vertical-align: -2px;
 }
 
 @keyframes spin {

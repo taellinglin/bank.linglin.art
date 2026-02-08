@@ -47,6 +47,81 @@ def _call_generate_for_user(generate_for_user, **kwargs):
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
+BILL_DENOMINATIONS = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000]
+COIN_DENOMINATIONS = [0.001, 0.01, 0.1]
+
+
+def _parse_denomination_value(value):
+    try:
+        return float(str(value).strip())
+    except Exception:
+        return None
+
+
+def _format_denomination_value(value):
+    if value is None:
+        return None
+    try:
+        if isinstance(value, (int,)) or (isinstance(value, float) and value.is_integer()):
+            return str(int(value))
+        return f"{float(value):.6f}".rstrip("0").rstrip(".")
+    except Exception:
+        return str(value)
+
+
+def get_next_generation_denomination(user, is_coin: bool = False):
+    from models import Banknote
+
+    default_value = COIN_DENOMINATIONS[0] if is_coin else BILL_DENOMINATIONS[0]
+    if not user:
+        return _format_denomination_value(default_value)
+
+    recent_notes = (
+        Banknote.query.filter_by(user_id=user.id, side="front")
+        .order_by(Banknote.created_at.desc())
+        .limit(50)
+        .all()
+    )
+
+    last_value = None
+    for note in recent_notes:
+        denom_value = _parse_denomination_value(note.denomination)
+        if denom_value is None:
+            continue
+        if is_coin:
+            if 0 < denom_value < 1:
+                last_value = denom_value
+                break
+        else:
+            if denom_value >= 1:
+                last_value = denom_value
+                break
+
+    if is_coin:
+        if last_value is None:
+            return _format_denomination_value(default_value)
+        for denom in COIN_DENOMINATIONS:
+            if denom > last_value + 1e-9:
+                return _format_denomination_value(denom)
+        return _format_denomination_value(default_value)
+
+    if last_value is None:
+        return _format_denomination_value(default_value)
+    try:
+        last_int = int(round(last_value))
+    except Exception:
+        return _format_denomination_value(default_value)
+    if last_int in BILL_DENOMINATIONS:
+        idx = BILL_DENOMINATIONS.index(last_int)
+        next_idx = idx + 1
+        if next_idx >= len(BILL_DENOMINATIONS):
+            next_idx = 0
+        return _format_denomination_value(BILL_DENOMINATIONS[next_idx])
+    for denom in BILL_DENOMINATIONS:
+        if denom > last_int:
+            return _format_denomination_value(denom)
+    return _format_denomination_value(default_value)
+
 
 class Colors:
     BLACK = "\033[30m"
@@ -128,7 +203,11 @@ def enable_generation_console_colors() -> None:
         sep = kwargs.get("sep", " ")
         text = sep.join(str(arg) for arg in args)
         colored = _colorize_generation_line(text)
-        return original_print(colored, **kwargs)
+        try:
+            return original_print(colored, **kwargs)
+        except OSError:
+            # WSGI環境やパイプ切断時のprint失敗を無視
+            pass
 
     builtins.print = _colored_print
     _generation_print_enabled = True
@@ -137,7 +216,7 @@ def enable_generation_console_colors() -> None:
 IMAGES_ROOT = "./images"
 GENERATION_LOCK = threading.Lock()
 GENERATION_THREADS = {}
-MAX_GENERATION_THREADS = 2
+MAX_GENERATION_THREADS = 1
 
 # Initialize the advanced QR reader
 
@@ -234,7 +313,10 @@ class GenerationQueue:
                                 )
                             )
 
-                    denominations = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000]
+                    if task.requested_denomination:
+                        denominations = [str(task.requested_denomination)]
+                    else:
+                        denominations = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000]
                     results = []
                     total_pairs = 0
 
@@ -433,8 +515,9 @@ def execute_generation_task(task_id: int):
     This function is designed to be run in a separate thread.
     """
     from app import app
-    from models import db, GenerationTask, User, Banknote
-    from generate import generate_for_user
+    from models import db, GenerationTask, User, Banknote, Settings
+    from generate import generate_for_user, normalize_denomination
+    from generate import ensure_portrait_exists
     from email_service import (
         send_banknote_generation_started_notification,
         send_generation_completed_notification,
@@ -459,6 +542,12 @@ def execute_generation_task(task_id: int):
 
             print(f"[WORKER] Starting generation for task {task_id} for user {user.username}")
 
+            try:
+                settings = Settings.query.first()
+                ensure_portrait_exists(user.username, settings=settings)
+            except Exception as portrait_err:
+                print(f"[WORKER WARNING] Portrait check failed for {user.username}: {portrait_err}")
+
             # Send email notification that generation has started
             if user.email and user.email_verified:
                 try:
@@ -470,52 +559,133 @@ def execute_generation_task(task_id: int):
                 except Exception as email_error:
                     print(f"[EMAIL ERROR] Could not send start notification for task {task_id}: {email_error}")
 
-            denominations = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000]
+            if not task.requested_denomination or str(task.requested_denomination).strip().lower() in {"", "all"}:
+                task.requested_denomination = get_next_generation_denomination(user, is_coin=False)
+                task.requested_quantity = 1
+                try:
+                    db.session.commit()
+                except Exception:
+                    db.session.rollback()
+
+            if task.requested_denomination:
+                raw_denom = str(task.requested_denomination).strip()
+                try:
+                    denom_value = float(raw_denom)
+                except Exception:
+                    denom_value = None
+                if denom_value is not None and denom_value < 1:
+                    denominations = [denom_value]
+                else:
+                    requested = normalize_denomination(raw_denom)
+                    try:
+                        denominations = [int(requested)]
+                    except Exception:
+                        denominations = [1]
+            else:
+                denominations = [1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000]
             results = []
             total_pairs = 0
+            total_requests = 0
+            stop_generation = False
+
+            quantity = 1
+            if task.requested_denomination:
+                try:
+                    quantity = int(task.requested_quantity or 1)
+                except Exception:
+                    quantity = 1
+                quantity = max(1, min(100, quantity))
+
+            def _credit_cost(denom_value) -> float:
+                try:
+                    value = float(str(denom_value))
+                except Exception:
+                    value = 1.0
+                if value < 1:
+                    return 1
+                return max(1, min(9, len(str(int(value)))))
 
             def progress_callback(message: str):
-                if not task:
+                if not message:
                     return
                 if not message or message == base_message:
                     combined_message = base_message
                 else:
                     combined_message = f"{base_message} | {message}"
-                if task.message == combined_message:
-                    return
-                task.message = combined_message
-                db.session.commit()
+
+                try:
+                    from app import app
+                    with app.app_context():
+                        current_task = GenerationTask.query.get(task_id)
+                        if not current_task:
+                            return
+                        if current_task.message == combined_message:
+                            return
+                        current_task.message = combined_message
+                        db.session.commit()
+                except Exception as e:
+                    print(f"[WORKER WARNING] Failed to update progress message: {e}")
 
             for i, denom in enumerate(denominations):
-                try:
-                    base_message = f"Generating denomination {denom} ({i+1}/{len(denominations)})..."
-                    progress_callback(base_message)
+                repeats = quantity if task.requested_denomination else 1
+                for n in range(repeats):
+                    try:
+                        if task.requested_denomination and repeats > 1:
+                            base_message = f"Generating denomination {denom} ({n+1}/{repeats})..."
+                        else:
+                            base_message = f"Generating denomination {denom} ({i+1}/{len(denominations)})..."
+                        progress_callback(base_message)
 
-                    pairs_created = _call_generate_for_user(
-                        generate_for_user,
-                        username=user.username,
-                        user_id=user.id,
-                        force_regenerate=False,
-                        specific_denom=denom,
-                        single_denom=True,
-                        max_threads=1,
-                        custom_eisenscript=user.custom_eisenscript,
-                        progress_callback=progress_callback,
-                    )
-                    pairs_created = pairs_created or 0
-                    results.append({'denom': denom, 'success': True, 'pairs_created': pairs_created})
-                    total_pairs += pairs_created
-                    print(f"[WORKER] Task {task_id}: Denomination {denom} created {pairs_created} pairs.")
+                        total_requests += 1
+                        cost = _credit_cost(denom)
+                        if (user.generation_credits or 0) < cost:
+                            results.append({
+                                'denom': denom,
+                                'success': False,
+                                'error': 'Insufficient credits'
+                            })
+                            progress_callback("Insufficient credits. Stopping generation.")
+                            stop_generation = True
+                            break
 
-                except Exception as e:
-                    error_msg = f"Error generating denomination {denom}: {str(e)}"
-                    print(f"[WORKER ERROR] Task {task_id}: {error_msg}")
-                    results.append({'denom': denom, 'success': False, 'error': error_msg})
-                    # Continue to next denomination
+                        is_coin = False
+                        try:
+                            is_coin = float(str(denom)) < 1
+                        except Exception:
+                            is_coin = False
+
+                        pairs_created = _call_generate_for_user(
+                            generate_for_user,
+                            username=user.username,
+                            user_id=user.id,
+                            force_regenerate=False,
+                            specific_denom=denom,
+                            single_denom=True,
+                            max_threads=1,
+                            custom_eisenscript=user.custom_eisenscript,
+                            is_coin=is_coin,
+                            progress_callback=progress_callback,
+                        )
+                        pairs_created = pairs_created or 0
+                        results.append({'denom': denom, 'success': True, 'pairs_created': pairs_created})
+                        total_pairs += pairs_created
+                        if pairs_created > 0:
+                            user.generation_credits = round((user.generation_credits or 0) - cost, 3)
+                            db.session.commit()
+                        print(f"[WORKER] Task {task_id}: Denomination {denom} created {pairs_created} pairs.")
+
+                    except Exception as e:
+                        error_msg = f"Error generating denomination {denom}: {str(e)}"
+                        print(f"[WORKER ERROR] Task {task_id}: {error_msg}")
+                        results.append({'denom': denom, 'success': False, 'error': error_msg})
+                    if stop_generation:
+                        break
+                if stop_generation:
+                    break
 
             # Finalize task status
             successful = [r for r in results if r['success']]
-            expected_count = len(denominations)
+            expected_count = total_requests or len(denominations)
             if len(successful) == expected_count:
                 task.status = 'completed'
                 task.message = f"All {expected_count} denominations generated! {total_pairs} pairs created."
@@ -575,6 +745,10 @@ def execute_generation_task(task_id: int):
             if task_id in GENERATION_THREADS:
                 del GENERATION_THREADS[task_id]
                 print(f"[WORKER] Cleaned up thread for task {task_id}. Total active: {len(GENERATION_THREADS)}")
+        try:
+            db.session.remove()
+        except Exception:
+            pass
 
 
 
@@ -959,9 +1133,66 @@ def generate_qr_code(uri: str) -> str:
     img.save(buffered, format="PNG")
     return base64.b64encode(buffered.getvalue()).decode()
 
-def generate_thumbnail(svg_path: str, png_path: str, size: Tuple[int, int] = (600, 300)) -> bool:
+def _generate_thumbnail_with_edge(svg_path: str, png_path: str, size: Tuple[int, int]) -> bool:
+    try:
+        from playwright.sync_api import sync_playwright
+    except Exception as e:
+        print(f"[EDGE RENDERER] Playwright not available: {e}")
+        return False
+
+    try:
+        with open(svg_path, "r", encoding="utf-8") as svg_file:
+            svg_content = svg_file.read()
+
+        html = f"""
+        <!doctype html>
+        <html>
+            <head>
+                <meta charset="utf-8" />
+                <style>
+                    html, body {{ margin: 0; padding: 0; background: transparent; }}
+                    svg {{ width: 100vw; height: 100vh; display: block; }}
+                </style>
+            </head>
+            <body>{svg_content}</body>
+        </html>
+        """
+
+        with sync_playwright() as p:
+            browser = p.chromium.launch(channel="msedge", headless=True)
+            page = browser.new_page(viewport={"width": size[0], "height": size[1]})
+            page.set_content(html, wait_until="load")
+            page.wait_for_timeout(200)
+
+            locator = page.locator("svg").first
+            if locator.count() > 0:
+                bbox = locator.bounding_box()
+                if bbox:
+                    page.screenshot(path=png_path, clip=bbox, omit_background=True)
+                else:
+                    page.screenshot(path=png_path, full_page=True, omit_background=True)
+            else:
+                page.screenshot(path=png_path, full_page=True, omit_background=True)
+
+            browser.close()
+        return True
+    except Exception as e:
+        print(f"[EDGE RENDERER ERROR] {svg_path}: {e}")
+        return False
+
+
+def generate_thumbnail(
+    svg_path: str,
+    png_path: str,
+    size: Tuple[int, int] = (600, 300),
+    renderer: str = "auto",
+) -> bool:
     """Generate PNG thumbnail from SVG file"""
     try:
+        if renderer in {"auto", "edge"}:
+            if _generate_thumbnail_with_edge(svg_path, png_path, size):
+                return True
+
         svg_url = f"file:{pathname2url(os.path.abspath(svg_path))}"
         cairosvg.svg2png(url=svg_url, write_to=png_path, output_width=size[0], output_height=size[1])
         return True

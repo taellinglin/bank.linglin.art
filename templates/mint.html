@@ -1,0 +1,854 @@
+{% extends "base.html" %}
+
+{% block content %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/theme/material-darker.min.css">
+
+<div class="profile-container">
+    <div class="info-card">
+        <div class="card-header">
+            <div class="header-icon">🧾</div>
+            <h3 class="header-title">Mint</h3>
+        </div>
+        <div class="card-content mint-layout">
+            <div class="mint-editor">
+                <div class="mint-drawer">
+                    <div class="mint-drawer-header">
+                        <span>Library</span>
+                        <button type="button" id="mint-drawer-toggle" class="btn btn-sm btn-outline">Toggle</button>
+                    </div>
+                    <div class="mint-drawer-body" id="mint-drawer-body">
+                        <div class="mint-drawer-section">
+                            <div class="mint-drawer-title">Elements</div>
+                            <div class="mint-drawer-actions" id="mint-element-buttons"></div>
+                        </div>
+                        <div class="mint-drawer-section">
+                            <div class="mint-drawer-title">Parameters</div>
+                            <div class="mint-drawer-actions" id="mint-parameter-buttons"></div>
+                        </div>
+                        <div class="mint-drawer-section">
+                            <div class="mint-drawer-title">Filters / Jinja2</div>
+                            <div class="mint-drawer-actions" id="mint-filter-buttons"></div>
+                        </div>
+                        <div class="mint-drawer-hint">Click a chip to insert a starter snippet or token.</div>
+                    </div>
+                </div>
+                <label class="small">EisenScript</label>
+                <textarea id="mint-script" class="vscode-textarea" rows="18" placeholder="# EisenScript
+size 1600 600
+background #0f111a
+rect 40 40 1520 520 #1b2233
+text 80 120 32 #e6e6e6 \"LunaMint Preview\"
+"></textarea>
+                <div class="mint-autocomplete" id="mint-autocomplete"></div>
+                <div class="mint-actions">
+                    <button type="button" id="mint-compile" class="btn btn-sm btn-primary">
+                        <i class="fas fa-bolt"></i>
+                        Compile
+                    </button>
+                </div>
+                <pre id="mint-console" class="mint-console">Ready.</pre>
+            </div>
+            <div class="mint-preview">
+                <div class="mint-preview-header">
+                    <span>Preview</span>
+                </div>
+                <div id="mint-output" class="mint-output">Your preview will appear here.</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<style>
+.mint-layout {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr;
+    gap: 16px;
+}
+
+.mint-editor {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mint-drawer {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 10px;
+}
+
+.mint-drawer-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+}
+
+.mint-drawer-body {
+    margin-top: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.mint-drawer-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.mint-drawer-section {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.mint-drawer-title {
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-tertiary);
+}
+
+.mint-icon-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.mint-icon-btn svg {
+    width: 14px;
+    height: 14px;
+    stroke-width: 2;
+}
+
+.mint-element-btn {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 11px;
+    cursor: pointer;
+}
+
+.mint-element-btn:hover {
+    border-color: #3794ff;
+    color: #e6f1ff;
+}
+
+.mint-drawer-hint {
+    font-size: 11px;
+    color: var(--text-tertiary);
+}
+
+.mint-autocomplete {
+    position: relative;
+}
+
+.mint-autocomplete-list {
+    position: absolute;
+    z-index: 20;
+    background: #101418;
+    border: 1px solid #2a2a2a;
+    border-radius: 8px;
+    padding: 6px;
+    width: 100%;
+    max-height: 180px;
+    overflow-y: auto;
+    box-shadow: 0 8px 18px rgba(0,0,0,0.35);
+}
+
+.mint-autocomplete-item {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    padding: 6px;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.mint-autocomplete-item:hover {
+    background: rgba(55,148,255,0.12);
+}
+
+.mint-autocomplete-item strong {
+    color: #e6f1ff;
+    font-size: 12px;
+}
+
+.mint-autocomplete-item span {
+    font-size: 11px;
+    color: var(--text-tertiary);
+}
+
+.mint-actions {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 6px;
+}
+
+.mint-console {
+    margin: 0;
+    background: #121212;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px;
+    color: #d4d4d4;
+    white-space: pre-wrap;
+    font-size: 12px;
+}
+
+.mint-preview {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.mint-preview-header {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 12px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    background: rgba(0,0,0,0.2);
+}
+
+.mint-output {
+    min-height: 360px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    background: #0f111a;
+    padding: 12px;
+}
+
+.mint-output svg {
+    width: 100%;
+    height: auto;
+    max-height: 520px;
+}
+
+.CodeMirror {
+    background: #1e1e1e;
+    color: #d4d4d4;
+    border: 1px solid #2a2a2a;
+    border-radius: 6px;
+    font-family: 'JetBrains Mono', 'Fira Code', Consolas, 'Courier New', monospace;
+    font-size: 12.5px;
+    min-height: 300px;
+}
+
+.CodeMirror-gutters {
+    background: #1a1a1a;
+    border-right: 1px solid #2a2a2a;
+    color: #6b6f76;
+}
+
+.CodeMirror-cursor {
+    border-left: 1px solid #d4d4d4;
+}
+
+@media (max-width: 960px) {
+    .mint-layout {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+
+<script>
+    window.MINT_COMPILE_URL = "{{ lunamint_compile_url or url_for('mint_compile') }}";
+    window.MINT_COMPILE_URLS = {{ (lunamint_compile_urls or [])|tojson }};
+</script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/codemirror.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/mode/simple.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/matchbrackets.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.16/addon/edit/closebrackets.min.js"></script>
+<script>
+{% raw %}
+(function () {
+    const textarea = document.getElementById('mint-script');
+    const output = document.getElementById('mint-output');
+    const consoleEl = document.getElementById('mint-console');
+    const button = document.getElementById('mint-compile');
+    const drawerToggle = document.getElementById('mint-drawer-toggle');
+    const drawerBody = document.getElementById('mint-drawer-body');
+    const elementButtons = document.getElementById('mint-element-buttons');
+    const parameterButtons = document.getElementById('mint-parameter-buttons');
+    const filterButtons = document.getElementById('mint-filter-buttons');
+    const autocompleteHost = document.getElementById('mint-autocomplete');
+
+    if (!textarea || !button || !output || !consoleEl) {
+        return;
+    }
+
+    const ELEMENT_NAMES = [
+        'size',
+        'background',
+        'rect',
+        'circle',
+        'line',
+        'text',
+        'text_dial',
+        'text_grid',
+        'letter_border',
+        'hash_mandala',
+        'hash_mandala_rect',
+        'daemon_security',
+        'front_color_qr',
+        'qr_code',
+        'front_banknote',
+        'back_banknote',
+        'front_center_text',
+        'back_center_text',
+        'front_center_seal',
+        'front_microprint_seal',
+        'front_qr_border',
+        'back_qr_border',
+        'front_corner_denoms',
+        'back_corner_denoms',
+        'front_corner_decorations',
+        'back_corner_decorations',
+        'back_verification_text',
+        'back_security_background',
+        'back_vectorized_background',
+        'back_holographic_seals',
+        'back_circular_qr',
+        'front_aztec',
+        'back_aztec',
+        'chinese_microprint',
+        'rainbow_microseal',
+        'pixel_art',
+        'pix',
+        'polygon',
+        'dot',
+        'group',
+        'sd_background',
+        'midi_dial'
+    ];
+
+    const ELEMENT_HINTS = {
+        size: 'Canvas size (px)',
+        background: 'Canvas background',
+        rect: 'Rectangle',
+        circle: 'Circle',
+        line: 'Line',
+        text: 'Text',
+        text_dial: 'Warped dial text',
+        text_grid: 'Warped grid text',
+        letter_border: 'Letter border mask',
+        hash_mandala: 'Hash-driven mandala',
+        hash_mandala_rect: 'Mandala rect variant',
+        daemon_security: 'Security text mesh',
+        front_color_qr: 'QR stamp',
+        qr_code: 'QR code block',
+        front_banknote: 'Front banknote scaffold',
+        back_banknote: 'Back banknote scaffold',
+        front_center_text: 'Center title block',
+        back_center_text: 'Back center block',
+        front_center_seal: 'Center seal',
+        front_microprint_seal: 'Microprint seal',
+        front_qr_border: 'QR border',
+        back_qr_border: 'Back QR border',
+        front_corner_denoms: 'Corner denominations',
+        back_corner_denoms: 'Back corner denominations',
+        front_corner_decorations: 'Corner decorations',
+        back_corner_decorations: 'Back corner decorations',
+        back_verification_text: 'Verification label',
+        back_security_background: 'Security background',
+        back_vectorized_background: 'Vectorized background',
+        back_holographic_seals: 'Holographic seals',
+        back_circular_qr: 'Circular QR',
+        front_aztec: 'Aztec stamp',
+        back_aztec: 'Back Aztec stamp',
+        chinese_microprint: 'Chinese microprint',
+        rainbow_microseal: 'Rainbow microseal',
+        pixel_art: 'Pixel art',
+        pix: 'Pixel tile',
+        polygon: 'Polygon shape',
+        dot: 'Dot primitive',
+        group: 'Grouped elements',
+        sd_background: 'StableDiffusion background',
+        midi_dial: 'MIDI dial pattern'
+    };
+
+    const ELEMENT_ICONS = {
+        size: 'maximize-2',
+        background: 'layers',
+        rect: 'square',
+        circle: 'circle',
+        line: 'minus',
+        text: 'type',
+        text_dial: 'rotate-cw',
+        text_grid: 'grid',
+        letter_border: 'credit-card',
+        hash_mandala: 'aperture',
+        hash_mandala_rect: 'aperture',
+        daemon_security: 'shield',
+        front_color_qr: 'qr-code',
+        qr_code: 'qr-code',
+        front_banknote: 'dollar-sign',
+        back_banknote: 'dollar-sign',
+        front_center_text: 'align-center',
+        back_center_text: 'align-center',
+        front_center_seal: 'award',
+        front_microprint_seal: 'feather',
+        front_qr_border: 'crop',
+        back_qr_border: 'crop',
+        front_corner_denoms: 'corner-up-right',
+        back_corner_denoms: 'corner-up-right',
+        front_corner_decorations: 'sparkles',
+        back_corner_decorations: 'sparkles',
+        back_verification_text: 'check-circle',
+        back_security_background: 'shield',
+        back_vectorized_background: 'image',
+        back_holographic_seals: 'sun',
+        back_circular_qr: 'disc',
+        front_aztec: 'square',
+        back_aztec: 'square',
+        chinese_microprint: 'hash',
+        rainbow_microseal: 'droplet',
+        pixel_art: 'grid',
+        pix: 'grid',
+        polygon: 'triangle',
+        dot: 'disc',
+        group: 'layers',
+        sd_background: 'image',
+        midi_dial: 'sliders'
+    };
+
+    const ELEMENT_PARAM_DEFAULTS = {
+        size: { width: 1600, height: 600 },
+        background: { color: '#ffffff' },
+        rect: { x: 0, y: 0, w: 1600, h: 600, fill: '#000000' },
+        circle: { x: 100, y: 100, r: 40, fill: '#000000' },
+        line: { x1: 0, y1: 0, x2: 100, y2: 0, stroke: '#000000', width: 1 },
+        text: { x: 80, y: 120, size: 32, fill: '#e6e6e6', text: 'LUNAMINT' },
+        polygon: { points: '20,20 200,40 180,160', fill: '#000000', stroke: '', stroke_width: '' },
+        dot: { x: 0, y: 0, fill: '#000000' },
+        pix: { x: 0, y: 0, fill: '#000000' },
+        group: { boolean: '', children: '[]' },
+        text_dial: {
+            cx_mm: 80, cy_mm: 45, radius_mm: 30, text: 'LUNAMINT', rings: 6,
+            font: 'Daemon Full Working', font_dir: './fonts', font_size_mm: 1.2,
+            spacing_mm: 0.2, ring_gap_mm: 0.6, rotation_seed: '', snap_grid_px: 16,
+            clip_radius_mm: 0, case: 'upper', inner_radius_mm: 0
+        },
+        text_grid: {
+            x_mm: 10, y_mm: 10, width_mm: 60, height_mm: 60, text: 'LUNAMINT',
+            font: 'Daemon Full Working', font_dir: './fonts', font_size_mm: 1.2,
+            spacing_mm: 0.0, snap_grid_px: 16
+        },
+        letter_border: {
+            x_mm: 0, y_mm: 0, width_mm: 160, height_mm: 60, border_thickness_mm: 3.0,
+            text: 'LUNAMINT', font: 'Daemon Full Working', font_dir: './fonts', font_size_mm: 1.2,
+            spacing_mm: 0.2, inset_mm: 0.0, outset_mm: 0.0, offset_x_mm: 0.0, offset_y_mm: 0.0,
+            layout: 'band', palette: '', cycle_mode: 'sequential', cycle_seed: '', encoding_algo: 'sha3_256',
+            packed_spacing_x_mm: '', packed_spacing_y_mm: '', packed_glyph_scale: 1.0, fill_color: '#111111',
+            opacity: 1.0, case: 'upper', base_fill: '', pattern: 'stripes', pattern_color: '#222222', pattern_opacity: 0.35
+        },
+        hash_mandala: {
+            cx_mm: 80, cy_mm: 30, radius_mm: 22, data: 'LUNAMINT', data_path: '', data_type: '',
+            font: 'Daemon Full Working', font_dir: './fonts', font_size_mm: 1.2, charset: 'LUNAMINT',
+            rings: 7, sectors: 12, opacity: 0.85, stroke_width_mm: 0.08, colorize: 'true',
+            grid_density: 10, inset_scale: 0.85, outset_scale: 1.15, snap_grid_px: 8.0, ring_rows: 3,
+            sector_density: 1.5, fill_empty: 'true', background_color: '#0f1114', background_opacity: 0.25,
+            border_color: '#111111', border_width_mm: 0.12, radial_lines: 24, tick_major: 16, tick_minor: 32,
+            core_rings: 4, core_radials: 24, core_letter_every: 2, cardinal_markers: 'true', stroke_only: 'false',
+            stroke_color: '#1a1a1a', stroke_color_secondary: '#1a1a1a', flat_glyphs: 'false', glyph_fill: '#e6e6e6',
+            glyph_stroke: '#1a1a1a', glyph_stroke_width_scale: 1.0, min_cols_per_sector: 3, taper_outer_strength: 0.35,
+            taper_radial_strength: 0.55, ring_label_every: 0, ring_label_alternate: 'true', ring_label_text: '123456789',
+            ring_label_size_scale: 0.9, sector_padding_deg: 0.0, ring_padding_mm: 0.0, sector_outline: 'false',
+            sector_outline_color: '#1a1a1a', sector_outline_width_mm: 0.08, ring_pattern_mode: 'false', sm2_row_variance: 0,
+            use_roygbiv: 'true', label_every: 4, label_radius_ratio: 0.86, label_font_size_mm: 1.0,
+            label_stroke_width_mm: 0.06, sector_boxes: 'true', sector_box_size_mm: 1.4, center_digit: 0,
+            center_digit_size_mm: 6.0, center_digit_fill_background: 'true'
+        },
+        hash_mandala_rect: {
+            x_mm: 10, y_mm: 10, width_mm: 60, height_mm: 60, data: 'LUNAMINT', data_path: '', data_type: '',
+            font: 'Daemon Full Working', font_dir: './fonts', font_size_mm: 1.2, charset: 'LUNAMINT',
+            rings: 7, sectors: 12, opacity: 0.85, stroke_width_mm: 0.08, colorize: 'true',
+            grid_density: 10, inset_scale: 0.85, outset_scale: 1.15, snap_grid_px: 8.0, ring_rows: 3,
+            sector_density: 1.5, fill_empty: 'true', background_color: '#0f1114', background_opacity: 0.25,
+            border_color: '#111111', border_width_mm: 0.12, radial_lines: 24, tick_major: 16, tick_minor: 32,
+            core_rings: 4, core_radials: 24, core_letter_every: 2, cardinal_markers: 'true', stroke_only: 'false',
+            stroke_color: '#1a1a1a', stroke_color_secondary: '#1a1a1a', flat_glyphs: 'false', glyph_fill: '#e6e6e6',
+            glyph_stroke: '#1a1a1a', glyph_stroke_width_scale: 1.0, min_cols_per_sector: 3, taper_outer_strength: 0.35,
+            taper_radial_strength: 0.55, ring_label_every: 0, ring_label_alternate: 'true', ring_label_text: '123456789',
+            ring_label_size_scale: 0.9, sector_padding_deg: 0.0, ring_padding_mm: 0.0, sector_outline: 'false',
+            sector_outline_color: '#1a1a1a', sector_outline_width_mm: 0.08, ring_pattern_mode: 'false', sm2_row_variance: 0,
+            use_roygbiv: 'true', label_every: 4, label_radius_ratio: 0.86, label_font_size_mm: 1.0,
+            label_stroke_width_mm: 0.06, sector_boxes: 'true', sector_box_size_mm: 1.4, center_digit: 0,
+            center_digit_size_mm: 6.0, center_digit_fill_background: 'true'
+        },
+        daemon_security: {
+            x_mm: 0, y_mm: 0, width_mm: 160, height_mm: 60, text: 'LUNAMINT', font: 'Daemon Full Working',
+            font_size_mm: 1.2, spacing_mm: 0.6, row_spacing_mm: '', angle_deg: 0.0, opacity: 0.35, color_seed: '',
+            stagger: 'true', density: 1.0, letter_scale: 1.0, hash_algo: 'sha256', sm2_private_key: '',
+            sm2_public_key: '', sm4_key: ''
+        },
+        front_color_qr: { url: '', stamp_width: 60, stamp_height: 60, rows: 6, side: 'both' },
+        qr_code: { data: '', x: 0, y: 0, size: 120, border: 2, error: 'M', invert: 'false', foreground: '#000000', background: '#ffffff' },
+        pixel_art: { x_mm: 0.0, y_mm: 0.0, image: '', path: '', image_path: '', pixel_size_mm: 0.5, alpha_threshold: 0.05, compress: 'true' },
+        sd_background: {
+            filter: 'vectorize', seed_text: '', bg_dir: './backgrounds', margin: 60, background_prompt: '',
+            background_segments: 1024, background_clear: 'false', background_clear_color: '#ffffff', background_clear_opacity: '',
+            glyph_font: 'Daemon Full Working', glyph_font_dir: './fonts', glyph_font_size_mm: 1.2, glyph_charset: 'LUNAMINT',
+            glyph_invert: 'false', glyph_snap_grid_px: 16, glyph_opacity: 0.9, glyph_fill_dark: '#111111',
+            glyph_fill_light: '#f7f2eb', glyph_stroke_dark: '#0b0b0b', glyph_stroke_light: '#999999', glyph_stroke_width_mm: 0.12,
+            glyph_inset_scale: 0.8, glyph_outset_scale: 1.1, glyph_threshold: 140, glyph_colorize: 'false', glyph_cell_padding_mm: 0.0,
+            glyph_dpi: 300.0, sm2_private_key: '', sm2_public_key: '', crosshatch_spacing: 6.0, crosshatch_stroke_width: 0.5,
+            crosshatch_opacity: 0.45, crosshatch_alpha: '', crosshatch_h: '', crosshatch_s: 0.9, crosshatch_l: 0.65,
+            crosshatch_v: 1.0, crosshatch_hue_range: 0.28
+        },
+        midi_dial: {
+            file: '', path: '', data_path: '', cx_mm: 80, cy_mm: 45, radius_mm: 22, font: 'Daemon Full Working',
+            font_dir: './fonts', font_size_mm: 2.2, note_charset: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz',
+            cc_charset: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789', note_opacity: 0.95, cc_opacity: 0.9,
+            background_color: '#000000', background_opacity: 0.35, outer_stroke: '#111111', outer_stroke_width_mm: 0.5,
+            note_stroke: '#111111', note_stroke_width_mm: 0.12, cc_mark_length_mm: 1.0, cc_mark_width_mm: 0.08,
+            cc_ring_offset_mm: 1.2, inner_radius_ratio: 0.12
+        },
+        front_banknote: {
+            seed_text: 'LunaMint', input_image: '', width_mm: 160, height_mm: 60, title: '灵国国库', subtitle: '天圆地方',
+            denomination: '100 卢纳币', specimen: 'true', bg_dir: './backgrounds', background_prompt: '', border_inset_mm: 0.5,
+            border_thickness_mm: 3, enable_qr_border: 'true', enable_background: 'true', background_filter: 'vectorize',
+            background_margin: 60, background_segments: 1024, mosaic_font: 'Daemon Full Working', mosaic_font_dir: './fonts',
+            mosaic_font_size_mm: 1.1, mosaic_charset: 'LUNAMINT', mosaic_invert: 'false', mosaic_snap_grid_px: 16,
+            mosaic_opacity: 1.0, glyph_font: 'Daemon Full Working', glyph_font_dir: './fonts', glyph_font_size_mm: 1.2,
+            glyph_charset: 'LUNAMINT', glyph_invert: 'false', glyph_snap_grid_px: 16, glyph_opacity: 0.9,
+            glyph_fill_dark: '#111111', glyph_fill_light: '#f7f2eb', glyph_stroke_dark: '#0b0b0b', glyph_stroke_light: '#999999',
+            glyph_stroke_width_mm: 0.12, glyph_inset_scale: 0.8, glyph_outset_scale: 1.1, glyph_threshold: 140,
+            glyph_colorize: 'false', glyph_cell_padding_mm: 0, enable_microgrid: 'true', enable_decorative_border: 'true',
+            enable_center_seal: 'true', enable_center_text: 'true', enable_corner_decorations: 'true', enable_corner_denoms: 'true',
+            enable_microprint: 'true', microprint_repetitions: 16, center_radius_scale: 0.32, small_radius_scale: 0.25,
+            text_seal_scale: 0.65, secondary_ring_scale: 0.88, center_seal_scale: 1.2, title_font: 'FengGuangMingRui',
+            subtitle_font: 'FengGuangMingRui', corner_font: 'Daemon Full Working', seal_chinese_font: 'FengGuangMingRui',
+            seal_english_font: 'Daemon Full Working', showcase_widgets: 'false', showcase_labels: 'false', label_font: 'Daemon Full Working',
+            label_size_mm: 2.6, require_signed_qr: 'false', validity_days: 365, pow_difficulty: 12, sm4_enable: 'false',
+            qr_stamp_width: 60, qr_stamp_height: 60, qr_rows: 6, qr_side: 'both', qr_stamp: 'true', aztec: 'true',
+            aztec_scale: 3, aztec_border: 12, aztec_rotation_base: 0, aztec_offset_x: 360, aztec_offset_y: 0, aztec_border_opacity: 0.5
+        },
+        back_banknote: {
+            seed_text: 'LunaMint', denomination: '100 卢纳币', title: '灵国国库', phrase: '灵之意志，天下共识',
+            width_mm: 160, height_mm: 60, timestamp_ms: 0
+        },
+        front_center_text: {
+            title: '灵国国库', subtitle: '天圆地方', denomination: '100', title_font: 'FengGuangMingRui',
+            subtitle_font: 'FengGuangMingRui', denom_color: 'denomination_to_color(denom_exponent)'
+        },
+        back_center_text: {
+            title: '灵国国库', phrase: '灵之意志，天下共识', denomination: 100, denom_color: 'denomination_to_color(denom_exp)'
+        },
+        front_center_seal: {
+            seed_text: 'LUNAMINT', serial_id: '', denomination: '100', center_radius_scale: 0.32, small_radius_scale: 0.25,
+            text_seal_scale: 0.65, secondary_ring_scale: 0.88, center_seal_scale: 1.2, chinese_font: 'FengGuangMingRui',
+            english_font: 'Daemon Full Working', input_image_path: ''
+        },
+        front_microprint_seal: { cx: 'canvas_w/2', cy: 'canvas_h/2', radius: '', repetitions: 16, text: 'LUNAMINT' },
+        front_qr_border: { seed_text: '', serial_id: '', timestamp_ms: '', inset_mm: 0.5, border_thickness_mm: 3.0 },
+        back_qr_border: { seed: '', serial_id: '', timestamp_ms: '' },
+        front_corner_denoms: { denomination: '100', font_family: 'Daemon Full Working' },
+        back_corner_denoms: { denomination: '100', big_scale: 1.0, small_scale: 1.0 },
+        front_corner_decorations: { denomination: '100', timestamp_ms: '', serial_id: '', size: 100, padding: 75, stroke_width: 1 },
+        back_corner_decorations: { denomination: '100', timestamp_ms: '', serial_id: '', size: 100, padding: 75, stroke_width: 1 },
+        back_verification_text: { serial_id: '', timestamp_ms: '' },
+        back_security_background: { denomination: 100, serial_id: '', seed_text: '', timestamp_ms: '', sm2_private_key: '', sm2_public_key: '', margin: 60, base_triangle_size: 16, hierarchy_levels: 2 },
+        back_vectorized_background: { seed_text: '', bg_dir: './backgrounds', margin: 60, n_segments: 1024, background_prompt: '', denomination: '' },
+        back_holographic_seals: { serial_id: '', denomination: 100, radius: 'min(canvas_w, canvas_h)' },
+        back_circular_qr: { data: '', cx: 'canvas_w/2', cy: 'canvas_h/2', inner_radius: 0, outer_radius: 'min(canvas_w, canvas_h)', segments: 4, opacity: 0.5, colors: '' },
+        front_aztec: { url: '', denomination: '100', cx: 'canvas_w/2', cy: 'canvas_h/2', scale: 3, border: 12, rotation: 0, border_opacity: 0.5 },
+        back_aztec: { url: '', cx: 'canvas_w/2', cy: 'canvas_h/2', scale: 3, rotation: 0, border: 12, border_opacity: 0.5, denomination: 100 },
+        chinese_microprint: { cx: 'canvas_w/2', cy: 'canvas_h/2', radius: 'min(canvas_w, canvas_h)', text: '壹佰 卢纳币', repetitions: 1, font_family: 'FengGuangMingRui', font_size: 8 },
+        rainbow_microseal: { cx: 'canvas_w/2', cy: 'canvas_h/2', radius: 'min(canvas_w, canvas_h)', symbol: '', repetitions: 64, font_family: 'Daemon Full Working', font_size: 8 }
+    };
+
+    const NO_QUOTE_KEYS = new Set([
+        'font', 'font_dir', 'title_font', 'subtitle_font', 'corner_font', 'seal_chinese_font', 'seal_english_font',
+        'chinese_font', 'english_font', 'label_font', 'font_family', 'mosaic_font', 'mosaic_font_dir', 'glyph_font',
+        'glyph_font_dir', 'bg_dir', 'input_image', 'input_image_path', 'image', 'image_path', 'path', 'file', 'data_path'
+    ]);
+
+    const normalizeDefaultValue = (key, value) => {
+        if (value === null || value === undefined) {
+            return '';
+        }
+        let text = String(value).trim();
+        if (!text) {
+            return '';
+        }
+        if (text.startsWith('args.get')) {
+            const match = text.match(/"([^"]+)"\s*\)?$/);
+            if (match) {
+                text = match[1];
+            }
+        }
+        if ((text.startsWith('"') && text.endsWith('"')) || (text.startsWith("'") && text.endsWith("'"))) {
+            text = text.slice(1, -1);
+        }
+        if (NO_QUOTE_KEYS.has(key)) {
+            return text.replace(/\s+/g, '_');
+        }
+        return text;
+    };
+
+    const buildSnippetForElement = (name) => {
+        const params = ELEMENT_PARAM_DEFAULTS[name];
+        if (!params) {
+            return name;
+        }
+        const parts = [name];
+        Object.keys(params).forEach(key => {
+            const value = normalizeDefaultValue(key, params[key]);
+            parts.push(`${key}=${value}`);
+        });
+        return parts.join(' ');
+    };
+
+    const ELEMENTS = ELEMENT_NAMES.map(name => ({
+        name,
+        hint: ELEMENT_HINTS[name] || 'Element',
+        snippet: buildSnippetForElement(name),
+        icon: ELEMENT_ICONS[name] || 'code'
+    }));
+
+    const PARAMETERS = [
+        { name: 'x_mm', hint: 'X position (mm)', snippet: 'x_mm=10' },
+        { name: 'y_mm', hint: 'Y position (mm)', snippet: 'y_mm=10' },
+        { name: 'width_mm', hint: 'Width (mm)', snippet: 'width_mm=160' },
+        { name: 'height_mm', hint: 'Height (mm)', snippet: 'height_mm=60' },
+        { name: 'radius_mm', hint: 'Radius (mm)', snippet: 'radius_mm=24' },
+        { name: 'font', hint: 'Font name', snippet: 'font=Daemon_Full_Working' },
+        { name: 'font_dir', hint: 'Font directory', snippet: 'font_dir=./fonts' },
+        { name: 'font_size_mm', hint: 'Font size (mm)', snippet: 'font_size_mm=1.2' },
+        { name: 'spacing_mm', hint: 'Letter spacing (mm)', snippet: 'spacing_mm=0.1' },
+        { name: 'row_spacing_mm', hint: 'Row spacing (mm)', snippet: 'row_spacing_mm=0.1' },
+        { name: 'opacity', hint: 'Opacity 0..1', snippet: 'opacity=0.6' },
+        { name: 'color', hint: 'Color / fill', snippet: 'color=#ffffff' },
+        { name: 'stroke', hint: 'Stroke color', snippet: 'stroke=#ffffff' },
+        { name: 'stroke_width_mm', hint: 'Stroke width (mm)', snippet: 'stroke_width_mm=0.2' },
+        { name: 'rings', hint: 'Ring count', snippet: 'rings=6' },
+        { name: 'sectors', hint: 'Sector count', snippet: 'sectors=12' },
+        { name: 'text', hint: 'Text value', snippet: 'text="LUNAMINT"' }
+    ];
+
+    const FILTERS = [
+        { name: 'human_color', hint: 'Human-readable color', snippet: '{{ color|human_color }}' },
+        { name: 'format_number', hint: 'Comma separators', snippet: '{{ value|format_number }}' },
+        { name: 'format_lkc', hint: 'LKC formatting', snippet: '{{ value|format_lkc }}' },
+        { name: 'safe_max', hint: 'Safe max filter', snippet: '{{ a|safe_max(b) }}' }
+    ];
+
+    if (typeof CodeMirror !== 'undefined' && CodeMirror.fromTextArea) {
+        if (!CodeMirror.modes || !CodeMirror.modes.eisenscript) {
+            CodeMirror.defineSimpleMode('eisenscript', {
+                start: [
+                    { regex: /#.*/, token: 'comment' },
+                    { regex: /\{\{.*?\}\}/, token: 'variable-2' },
+                    { regex: /\{%-?.*?-?%\}/, token: 'def' },
+                    { regex: /"(?:[^\\]|\\.)*?"/, token: 'string' },
+                    { regex: /'(?:[^\\]|\\.)*?'/, token: 'string' },
+                    { regex: /\b(?:size|background|rect|circle|line|text|text_dial|text_grid|letter_border|hash_mandala|daemon_security|front_color_qr|qr|image|polygon|polyline|ellipse|gradient|pattern|mask|clip)\b/i, token: 'keyword' },
+                    { regex: /\b(?:x_mm|y_mm|width_mm|height_mm|radius_mm|font_size_mm|spacing_mm|row_spacing_mm|opacity|angle_deg|density|rows|cols|rotation|stroke_width_mm|stroke|fill|color|font|font_dir|snap_grid_px|rings|sectors|text|case)\b/i, token: 'atom' },
+                    { regex: /#[0-9a-fA-F]{3,8}/, token: 'number' },
+                    { regex: /-?\d+(?:\.\d+)?/, token: 'number' }
+                ]
+            });
+        }
+
+        const editor = CodeMirror.fromTextArea(textarea, {
+            mode: 'eisenscript',
+            theme: 'material-darker',
+            lineNumbers: true,
+            lineWrapping: true,
+            indentUnit: 4,
+            tabSize: 4,
+            indentWithTabs: false,
+            matchBrackets: true,
+            autoCloseBrackets: true
+        });
+        textarea._cm = editor;
+    }
+
+    const buildButtons = (items, target) => {
+        if (!target) {
+            return;
+        }
+        items.forEach(item => {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = item.icon ? 'mint-element-btn mint-icon-btn' : 'mint-element-btn';
+            if (item.icon && window.feather && window.feather.icons && window.feather.icons[item.icon]) {
+                const svg = window.feather.icons[item.icon].toSvg({ width: 14, height: 14 });
+                btn.innerHTML = `${svg}<span>${item.name}</span>`;
+            } else {
+                btn.textContent = item.name;
+            }
+            btn.title = item.hint;
+            btn.addEventListener('click', () => {
+                insertSnippet(item.snippet);
+            });
+            target.appendChild(btn);
+        });
+    };
+
+    buildButtons(ELEMENTS, elementButtons);
+    buildButtons(PARAMETERS, parameterButtons);
+    buildButtons(FILTERS, filterButtons);
+
+
+    if (drawerToggle && drawerBody) {
+        drawerToggle.addEventListener('click', () => {
+            drawerBody.style.display = drawerBody.style.display === 'none' ? 'flex' : 'none';
+        });
+    }
+
+    const getScript = () => {
+        if (textarea._cm) {
+            return textarea._cm.getValue();
+        }
+        return textarea.value || '';
+    };
+
+    const insertSnippet = (snippet) => {
+        if (textarea._cm) {
+            textarea._cm.replaceSelection(snippet + '\n', 'around');
+            textarea._cm.focus();
+            return;
+        }
+        const start = textarea.selectionStart || 0;
+        const end = textarea.selectionEnd || 0;
+        const value = textarea.value || '';
+        textarea.value = value.slice(0, start) + snippet + '\n' + value.slice(end);
+        const nextPos = start + snippet.length + 1;
+        textarea.setSelectionRange(nextPos, nextPos);
+        textarea.focus();
+    };
+
+    const renderAutocomplete = (matches) => {
+        if (!autocompleteHost) {
+            return;
+        }
+        autocompleteHost.innerHTML = '';
+        if (!matches.length) {
+            return;
+        }
+        const list = document.createElement('div');
+        list.className = 'mint-autocomplete-list';
+        matches.forEach(match => {
+            const item = document.createElement('div');
+            item.className = 'mint-autocomplete-item';
+            item.innerHTML = `<strong>${match.name}</strong><span>${match.hint}</span>`;
+            item.addEventListener('click', () => {
+                insertSnippet(match.snippet);
+                autocompleteHost.innerHTML = '';
+            });
+            list.appendChild(item);
+        });
+        autocompleteHost.appendChild(list);
+    };
+
+    const handleAutocomplete = (text) => {
+        const lastLine = text.split('\n').pop() || '';
+        const token = lastLine.trim().toLowerCase();
+        if (!token) {
+            renderAutocomplete([]);
+            return;
+        }
+        const matches = ELEMENTS.filter(el => el.name.startsWith(token)).slice(0, 6);
+        renderAutocomplete(matches);
+    };
+
+    if (textarea._cm) {
+        textarea._cm.on('change', () => {
+            handleAutocomplete(textarea._cm.getValue());
+        });
+        textarea._cm.on('cursorActivity', () => {
+            handleAutocomplete(textarea._cm.getValue());
+        });
+    } else {
+        textarea.addEventListener('input', () => {
+            handleAutocomplete(textarea.value || '');
+        });
+        textarea.addEventListener('click', () => {
+            handleAutocomplete(textarea.value || '');
+        });
+    }
+
+    const buildEndpointList = () => {
+        const list = Array.isArray(window.MINT_COMPILE_URLS) ? window.MINT_COMPILE_URLS.slice() : [];
+        const fallback = window.MINT_COMPILE_URL;
+        if (fallback && !list.includes(fallback)) {
+            list.push(fallback);
+        }
+        return list;
+    };
+
+    const fetchWithTimeout = async (url, options, timeoutMs) => {
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+        try {
+            return await fetch(url, { ...options, signal: controller.signal });
+        } finally {
+            clearTimeout(timeoutId);
+        }
+    };
+
+    const compileWithFallback = async (payload) => {
+        const endpoints = buildEndpointList();
+        let lastError = null;
+        for (const endpoint of endpoints) {
+            try {
+                const response = await fetchWithTimeout(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                }, 8000);
+                const data = await response.json();
+                if (response.ok && data.ok) {
+                    return { ok: true, data, endpoint };
+                }
+                lastError = data?.message || `Compile failed at ${endpoint}`;
+            } catch (error) {
+                lastError = error?.message || `Compile failed at ${endpoint}`;
+            }
+        }
+        return { ok: false, error: lastError || 'All LunaMint servers failed.' };
+    };
+
+    button.addEventListener('click', async () => {
+        const script = getScript();
+        if (!script.trim()) {
+            consoleEl.textContent = 'Script is empty.';
+            return;
+        }
+        consoleEl.textContent = 'Compiling...';
+        output.textContent = 'Rendering preview...';
+        try {
+            const result = await compileWithFallback({ script, name: 'mint' });
+            if (!result.ok) {
+                consoleEl.textContent = `ERROR: ${result.error || 'Compile failed.'}`;
+                output.textContent = 'Preview failed.';
+                return;
+            }
+            consoleEl.textContent = `OK: ${result.data.message || 'Compile succeeded.'}`;
+            output.innerHTML = result.data.svg || '';
+        } catch (error) {
+            consoleEl.textContent = `ERROR: ${error.message}`;
+            output.textContent = 'Preview failed.';
+        }
+    });
+})();
+{% endraw %}
+</script>
+{% endblock %}

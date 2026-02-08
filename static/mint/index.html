@@ -1,0 +1,968 @@
+<!doctype html>
+<html lang="ja">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>Vinyl + Mandala Sync</title>
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "https://cdn.jsdelivr.net/npm/three@0.161.0/build/three.module.js"
+				}
+			}
+		</script>
+		<style>
+			:root {
+				color-scheme: dark;
+				--text: #e6e7ee;
+				--accent: #8aa2ff;
+			}
+			* { box-sizing: border-box; }
+			body {
+				margin: 0;
+				background: #000;
+				color: var(--text);
+				font: 14px/1.4 system-ui, -apple-system, "Segoe UI", sans-serif;
+				min-height: 100vh;
+				display: grid;
+				place-items: center;
+				overflow: hidden;
+			}
+			.wrap {
+				width: 100vw;
+				height: 100vh;
+				display: grid;
+			}
+			.panel {
+				position: relative;
+				width: 100%;
+				height: 100%;
+			}
+			#threeRoot {
+				width: 100%;
+				height: 100%;
+				position: relative;
+			}
+			#threeRoot canvas {
+				width: 100%;
+				height: 100%;
+				display: block;
+			}
+			.play-overlay {
+				position: absolute;
+				inset: 0;
+				display: grid;
+				place-items: center;
+				pointer-events: none;
+				transition: opacity 200ms ease;
+				opacity: 1;
+			}
+			.play-overlay.hidden { opacity: 0; }
+			.play-button {
+				pointer-events: auto;
+				width: 84px;
+				height: 84px;
+				border-radius: 999px;
+				border: 1px solid rgba(138, 162, 255, 0.7);
+				background: rgba(10, 12, 18, 0.6);
+				color: var(--text);
+				cursor: pointer;
+				display: grid;
+				place-items: center;
+			}
+			.play-button::before {
+				content: '';
+				display: block;
+				width: 0;
+				height: 0;
+				border-top: 12px solid transparent;
+				border-bottom: 12px solid transparent;
+				border-left: 20px solid var(--accent);
+				margin-left: 4px;
+			}
+			.controls {
+				position: absolute;
+				left: 16px;
+				bottom: 16px;
+				display: grid;
+				gap: 8px;
+				font-size: 12px;
+				transition: opacity 250ms ease;
+			}
+			.controls.hidden {
+				opacity: 0;
+				pointer-events: none;
+			}
+			.controls input { color: var(--text); }
+			.status { opacity: 0.7; }
+		</style>
+	</head>
+	<body>
+		<div class="wrap">
+			<div class="panel">
+				<div id="threeRoot" aria-label="Mandala"></div>
+				<div class="play-overlay" id="playOverlay" aria-hidden="false">
+					<button class="play-button" id="playOverlayBtn" aria-label="Play"></button>
+				</div>
+				<div class="controls">
+					<label>Select mandala</label>
+					<input id="mandalaInput" type="file" accept="image/*,.svg" />
+					<label>Select audio</label>
+					<input id="fileInput" type="file" accept="audio/*" />
+					<div class="row">
+						<button id="playBtn">Play</button>
+						<button id="stopBtn">Stop</button>
+					</div>
+					<div class="row">
+						<button id="fftHashBtn">Audio FFT Hash</button>
+					</div>
+					<div class="status" id="fftHashOutput">FFT hash not generated</div>
+					<div class="row">
+						<button id="hashBtn">Generate Hash</button>
+					</div>
+					<div class="status" id="hashOutput">Hash not generated</div>
+					<label>Gyro intensity</label>
+					<input id="gyroInput" type="range" min="0" max="2" step="0.01" value="0.6" />
+					<label>Spin speed</label>
+					<input id="spinInput" type="range" min="0" max="2" step="0.01" value="0.4" />
+					<label>Hue speed</label>
+					<input id="hueInput" type="range" min="0" max="2" step="0.01" value="0.5" />
+					<label>Orbit speed</label>
+					<input id="orbitInput" type="range" min="0" max="2" step="0.01" value="0.4" />
+					<label>Zoom</label>
+					<input id="zoomInput" type="range" min="0.5" max="2" step="0.01" value="1.2" />
+					<div class="status" id="status">Idle</div>
+				</div>
+			</div>
+		</div>
+
+		<script type="module">
+			import * as THREE from 'three';
+			import { SVGLoader } from 'https://cdn.jsdelivr.net/npm/three@0.161.0/examples/jsm/loaders/SVGLoader.js';
+
+			const threeRoot = document.getElementById('threeRoot');
+			const statusEl = document.getElementById('status');
+			const playBtn = document.getElementById('playBtn');
+			const stopBtn = document.getElementById('stopBtn');
+			const mandalaInput = document.getElementById('mandalaInput');
+			const fileInput = document.getElementById('fileInput');
+			const playOverlay = document.getElementById('playOverlay');
+			const playOverlayBtn = document.getElementById('playOverlayBtn');
+			const hashBtn = document.getElementById('hashBtn');
+			const hashOutput = document.getElementById('hashOutput');
+			const fftHashBtn = document.getElementById('fftHashBtn');
+			const fftHashOutput = document.getElementById('fftHashOutput');
+			const gyroInput = document.getElementById('gyroInput');
+			const spinInput = document.getElementById('spinInput');
+			const hueInput = document.getElementById('hueInput');
+			const orbitInput = document.getElementById('orbitInput');
+			const zoomInput = document.getElementById('zoomInput');
+			const controlsEl = document.querySelector('.controls');
+			const apiBase = 'http://localhost:8080';
+
+			const layerCount = 16;
+			const outerRadius = 2.2;
+			const ringThickness = outerRadius / layerCount;
+			const bandThreshold = 0.01;
+			const trailFade = 1.0;
+			const fftBands = 4096;
+			const pieSections = Math.round(4069 / 16);
+			const pieAmplitude = 0.0;
+			const pieSpeed = 0.006;
+			const cameraFov = 135;
+			const cameraRadius = 1.5;
+			const cameraHeight = 0.0;
+			const cameraOrbitSpeed = 0.001;
+
+			let renderer;
+			let scene;
+			let camera;
+			let rootGroup;
+			const ringGyros = [];
+			const ringDisks = [];
+			const ringMaterials = [];
+			const ringColorAttributes = [];
+			const ringBaseHsl = [];
+			const ringBandAttributes = [];
+			const ringSliceAttributes = [];
+			const ringBasePositions = [];
+			const ringData = [];
+			let flashBandPool = [];
+			let flashBandIndex = -1;
+			let flashLevel = 0;
+			let flashPhase = 'idle';
+			let flashNextAt = 0;
+			let svgReady = false;
+			let animId;
+			let startTime = 0;
+			let lastFrame = 0;
+			let beatKick = 0;
+			const bandEnergiesRings = new Array(layerCount).fill(0);
+			const bandEnergiesGlyph = new Array(fftBands).fill(0);
+
+			let audioCtx;
+			let source;
+			let analyser;
+			let dataArray;
+			let mediaEl;
+			let mediaSource;
+			let usingMedia = false;
+			let pausedAt = 0;
+
+			const rpm = 33.333;
+			const radiansPerSecond = (rpm / 60) * Math.PI * 2;
+
+			function setStatus(text) {
+				statusEl.textContent = text;
+			}
+
+			let controlsTimer;
+			function showControls() {
+				controlsEl.classList.remove('hidden');
+				if (controlsTimer) window.clearTimeout(controlsTimer);
+				controlsTimer = window.setTimeout(() => {
+					controlsEl.classList.add('hidden');
+				}, 5000);
+			}
+
+			function resetRings() {
+				ringGyros.forEach((gyro) => gyro.parent && gyro.parent.remove(gyro));
+				ringGyros.length = 0;
+				ringDisks.length = 0;
+				ringMaterials.length = 0;
+				ringColorAttributes.length = 0;
+				ringBaseHsl.length = 0;
+				ringBandAttributes.length = 0;
+				ringSliceAttributes.length = 0;
+				ringBasePositions.length = 0;
+				ringData.length = 0;
+			}
+
+			const svgLoader = new SVGLoader();
+			const svgUrls = ['eisen(53).svg', 'eisen%2853%29.svg', 'eisen(54).svg', 'eisen%2854%29.svg'];
+			async function loadSvg() {
+				let lastError;
+				const loadWithLoader = (url) => new Promise((resolve, reject) => {
+					svgLoader.load(url, resolve, undefined, reject);
+				});
+				for (const url of svgUrls) {
+					try {
+						const data = await loadWithLoader(url);
+						if (data && data.paths && data.paths.length > 0) return data;
+					} catch (err) {
+						lastError = err;
+					}
+				}
+				for (const url of svgUrls) {
+					try {
+						const response = await fetch(url, { cache: 'no-cache' });
+						if (!response.ok) throw new Error(`HTTP ${response.status}`);
+						const svgText = await response.text();
+						const data = svgLoader.parse(svgText);
+						if (data && data.paths && data.paths.length > 0) return data;
+					} catch (err) {
+						lastError = err;
+					}
+				}
+				throw lastError || new Error('SVG load failed');
+			}
+
+			function initThree() {
+				renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+				renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+				renderer.outputColorSpace = THREE.SRGBColorSpace;
+				renderer.setClearColor(0x000000, 0);
+				renderer.autoClear = true;
+				threeRoot.appendChild(renderer.domElement);
+
+				scene = new THREE.Scene();
+				camera = new THREE.PerspectiveCamera(cameraFov, 1, 0.02, 100);
+				camera.position.set(cameraRadius, 0, cameraHeight);
+				camera.up.set(0, -1, 0);
+				camera.lookAt(0, 0, 0);
+				scene.add(camera);
+
+				rootGroup = new THREE.Group();
+				scene.add(rootGroup);
+
+				// Unlit: no scene lights
+
+				loadSvg().then((data) => {
+					resetRings();
+					const baseGroup = new THREE.Group();
+					data.paths.forEach((path) => {
+						const style = path.userData.style || {};
+						const fill = style.fill && style.fill !== 'none'
+							? style.fill
+							: (style.stroke && style.stroke !== 'none' ? style.stroke : '#ffffff');
+						const fillOpacity = style.fillOpacity !== undefined
+							? parseFloat(style.fillOpacity)
+							: (style.strokeOpacity !== undefined ? parseFloat(style.strokeOpacity) : 1);
+						const shapes = SVGLoader.createShapes(path);
+						shapes.forEach((shape) => {
+							const geometry = new THREE.ShapeGeometry(shape);
+							const material = new THREE.MeshBasicMaterial({
+								color: new THREE.Color(fill),
+								transparent: true,
+								opacity: Math.max(0, Math.min(1, fillOpacity)),
+								depthWrite: false,
+								side: THREE.DoubleSide
+							});
+							const mesh = new THREE.Mesh(geometry, material);
+							baseGroup.add(mesh);
+						});
+					});
+
+					const box = new THREE.Box3().setFromObject(baseGroup);
+					const size = new THREE.Vector3();
+					const center = new THREE.Vector3();
+					box.getSize(size);
+					box.getCenter(center);
+					const maxDim = Math.max(size.x, size.y) || 1;
+					const targetSize = outerRadius * 1.4;
+					const baseScale = targetSize / maxDim;
+
+					const ringPositions = Array.from({ length: layerCount }, () => []);
+					const ringColors = Array.from({ length: layerCount }, () => []);
+					const ringHsl = Array.from({ length: layerCount }, () => []);
+					const ringBands = Array.from({ length: layerCount }, () => []);
+					const ringLinePositions = Array.from({ length: layerCount }, () => []);
+					const ringLineColors = Array.from({ length: layerCount }, () => []);
+					const ringLineHsl = Array.from({ length: layerCount }, () => []);
+					const ringLineBands = Array.from({ length: layerCount }, () => []);
+					let shapeIndex = 0;
+					const shapeBandIndices = [];
+					data.paths.forEach((path) => {
+						const shapes = SVGLoader.createShapes(path);
+						const style = path.userData.style || {};
+						const fill = style.fill && style.fill !== 'none'
+							? style.fill
+							: (style.stroke && style.stroke !== 'none' ? style.stroke : '#ffffff');
+						const stroke = style.stroke && style.stroke !== 'none'
+							? style.stroke
+							: fill;
+						const baseColor = new THREE.Color(fill);
+						const baseHsl = {};
+						baseColor.getHSL(baseHsl);
+						const strokeColor = new THREE.Color(stroke);
+						const strokeHsl = {};
+						strokeColor.getHSL(strokeHsl);
+						const isBlackFill = baseColor.r < 0.05 && baseColor.g < 0.05 && baseColor.b < 0.05;
+						shapes.forEach((shape) => {
+							const bandIndex = shapeIndex % fftBands;
+							shapeBandIndices.push(bandIndex);
+							shapeIndex += 1;
+							if (isBlackFill) {
+								const geometry = new THREE.ShapeGeometry(shape);
+								const edges = new THREE.EdgesGeometry(geometry);
+								const positions = edges.attributes.position.array;
+								for (let p = 0; p < positions.length; p += 6) {
+									const x1 = (positions[p] - center.x) * baseScale;
+									const y1 = (positions[p + 1] - center.y) * baseScale;
+									const x2 = (positions[p + 3] - center.x) * baseScale;
+									const y2 = (positions[p + 4] - center.y) * baseScale;
+									const mx = (x1 + x2) * 0.5;
+									const my = (y1 + y2) * 0.5;
+									const radius = Math.hypot(mx, my);
+									if (radius > outerRadius) continue;
+									const ringIndex = Math.min(
+										layerCount - 1,
+										Math.floor((outerRadius - radius) / ringThickness)
+									);
+									ringLinePositions[ringIndex].push(x1, y1, 0, x2, y2, 0);
+									ringLineColors[ringIndex].push(
+										strokeColor.r, strokeColor.g, strokeColor.b,
+										strokeColor.r, strokeColor.g, strokeColor.b
+									);
+									ringLineHsl[ringIndex].push(
+										strokeHsl.h, strokeHsl.s, strokeHsl.l,
+										strokeHsl.h, strokeHsl.s, strokeHsl.l
+									);
+									ringLineBands[ringIndex].push(bandIndex, bandIndex);
+								}
+								return;
+							}
+
+							const geometry = new THREE.ShapeGeometry(shape).toNonIndexed();
+							const positions = geometry.attributes.position.array;
+							for (let p = 0; p < positions.length; p += 9) {
+								const x1 = (positions[p] - center.x) * baseScale;
+								const y1 = (positions[p + 1] - center.y) * baseScale;
+								const x2 = (positions[p + 3] - center.x) * baseScale;
+								const y2 = (positions[p + 4] - center.y) * baseScale;
+								const x3 = (positions[p + 6] - center.x) * baseScale;
+								const y3 = (positions[p + 7] - center.y) * baseScale;
+								const mx = (x1 + x2 + x3) / 3;
+								const my = (y1 + y2 + y3) / 3;
+								const radius = Math.hypot(mx, my);
+								if (radius > outerRadius) continue;
+								const ringIndex = Math.min(
+									layerCount - 1,
+									Math.floor((outerRadius - radius) / ringThickness)
+								);
+								ringPositions[ringIndex].push(
+									x1, y1, 0,
+									x2, y2, 0,
+									x3, y3, 0
+								);
+								ringColors[ringIndex].push(
+									baseColor.r, baseColor.g, baseColor.b,
+									baseColor.r, baseColor.g, baseColor.b,
+									baseColor.r, baseColor.g, baseColor.b
+								);
+								ringHsl[ringIndex].push(
+									baseHsl.h, baseHsl.s, baseHsl.l,
+									baseHsl.h, baseHsl.s, baseHsl.l,
+									baseHsl.h, baseHsl.s, baseHsl.l
+								);
+								ringBands[ringIndex].push(bandIndex, bandIndex, bandIndex);
+							}
+						});
+					});
+
+					const tailStart = Math.floor(shapeBandIndices.length * 0.8);
+					flashBandPool = Array.from(new Set(shapeBandIndices.slice(tailStart)));
+					flashBandIndex = flashBandPool.length
+						? flashBandPool[Math.floor(Math.random() * flashBandPool.length)]
+						: -1;
+					flashLevel = 0;
+					flashPhase = 'idle';
+					flashNextAt = 0;
+
+					for (let i = 0; i < layerCount; i++) {
+						const t = layerCount > 1 ? i / (layerCount - 1) : 0;
+						const disk = new THREE.Group();
+						const materials = [];
+						const colorAttrs = [];
+						const baseHslList = [];
+						const bandAttrs = [];
+						const sliceAttrs = [];
+						const basePosList = [];
+						if (ringPositions[i].length > 0) {
+							const geometry = new THREE.BufferGeometry();
+							geometry.setAttribute(
+								'position',
+								new THREE.Float32BufferAttribute(ringPositions[i], 3)
+							);
+							geometry.setAttribute(
+								'color',
+								new THREE.Float32BufferAttribute(ringColors[i], 3)
+							);
+							const bandAttr = new THREE.Float32BufferAttribute(ringBands[i], 1);
+							const posArray = geometry.getAttribute('position').array;
+							const basePos = new Float32Array(posArray.length);
+							basePos.set(posArray);
+							const sliceAttr = new Float32Array(posArray.length / 3);
+							for (let v = 0; v < posArray.length; v += 3) {
+								const angle = Math.atan2(posArray[v + 1], posArray[v]);
+								const t = (angle + Math.PI) / (Math.PI * 2);
+								sliceAttr[v / 3] = Math.floor(t * pieSections);
+							}
+							const material = new THREE.MeshBasicMaterial({
+								color: 0xFFFFFF,
+								vertexColors: true,
+								transparent: true,
+								opacity: 0.2,
+								depthWrite: false,
+								depthTest: false,
+								side: THREE.DoubleSide,
+								blending: THREE.AdditiveBlending
+							});
+							const mesh = new THREE.Mesh(geometry, material);
+							disk.add(mesh);
+							materials.push(material);
+							colorAttrs.push(geometry.getAttribute('color'));
+							baseHslList.push(ringHsl[i]);
+							bandAttrs.push(bandAttr.array);
+							sliceAttrs.push(sliceAttr);
+							basePosList.push(basePos);
+						}
+						if (ringLinePositions[i].length > 0) {
+							const lineGeometry = new THREE.BufferGeometry();
+							lineGeometry.setAttribute(
+								'position',
+								new THREE.Float32BufferAttribute(ringLinePositions[i], 3)
+							);
+							lineGeometry.setAttribute(
+								'color',
+								new THREE.Float32BufferAttribute(ringLineColors[i], 3)
+							);
+							const lineBandAttr = new THREE.Float32BufferAttribute(ringLineBands[i], 1);
+							const linePosArray = lineGeometry.getAttribute('position').array;
+							const lineBasePos = new Float32Array(linePosArray.length);
+							lineBasePos.set(linePosArray);
+							const lineSliceAttr = new Float32Array(linePosArray.length / 3);
+							for (let v = 0; v < linePosArray.length; v += 3) {
+								const angle = Math.atan2(linePosArray[v + 1], linePosArray[v]);
+								const t = (angle + Math.PI) / (Math.PI * 2);
+								lineSliceAttr[v / 3] = Math.floor(t * pieSections);
+							}
+							const lineMaterial = new THREE.LineBasicMaterial({
+								color: 0xFFFFFF,
+								vertexColors: true,
+								transparent: true,
+								opacity: 1.0,
+								depthWrite: false,
+								depthTest: false,
+								blending: THREE.AdditiveBlending
+							});
+							const lines = new THREE.LineSegments(lineGeometry, lineMaterial);
+							disk.add(lines);
+							materials.push(lineMaterial);
+							colorAttrs.push(lineGeometry.getAttribute('color'));
+							baseHslList.push(ringLineHsl[i]);
+							bandAttrs.push(lineBandAttr.array);
+							sliceAttrs.push(lineSliceAttr);
+							basePosList.push(lineBasePos);
+						}
+						const gyro = new THREE.Group();
+						gyro.add(disk);
+						rootGroup.add(gyro);
+
+						const mid = (layerCount - 1) / 2;
+						const dist = layerCount > 1 ? Math.abs(i - mid) / mid : 0;
+						const hueSpeed = 40 + dist * 180;
+						const baseSpeed = (0.02 + Math.pow(1 - t, 0.3) * 0.05 + Math.pow(t, 2.2) * 0.9) * 0.4;
+						const jitter = (Math.random() - 0.5) * 0.15;
+
+						const data = {
+							hueSpeed,
+							baseOpacity: 0.2,
+							rotSpeed: Math.max(0.01, baseSpeed + jitter),
+							rotX: 0.2 + Math.random() * 0.8,
+							rotY: 0.2 + Math.random() * 0.8,
+							rotZ: 0.4 + Math.random() * 1.2,
+							dirX: Math.sin(Math.random() * Math.PI * 2),
+							dirY: Math.cos(Math.random() * Math.PI * 2),
+							phaseX: Math.random() * Math.PI * 2,
+							phaseY: Math.random() * Math.PI * 2,
+							phaseZ: Math.random() * Math.PI * 2,
+							hue: 0
+						};
+
+						ringGyros.push(gyro);
+						ringDisks.push(disk);
+						ringMaterials.push(materials);
+						ringColorAttributes.push(colorAttrs);
+						ringBaseHsl.push(baseHslList);
+						ringBandAttributes.push(bandAttrs);
+						ringSliceAttributes.push(sliceAttrs);
+						ringBasePositions.push(basePosList);
+						ringData.push(data);
+					}
+					svgReady = true;
+					setStatus('SVG読み込み完了');
+				}).catch(() => {
+					svgReady = false;
+					setStatus('SVG読み込み失敗');
+				});
+
+				resize();
+				window.addEventListener('resize', resize);
+			}
+
+			function resize() {
+				const rect = threeRoot.getBoundingClientRect();
+				const width = Math.max(1, rect.width);
+				const height = Math.max(1, rect.height);
+				renderer.setSize(width, height, false);
+				camera.aspect = width / height;
+				camera.updateProjectionMatrix();
+			}
+
+			function teardownSources() {
+				if (source) {
+					try { source.disconnect(); } catch (_) {}
+					try { source.stop(); } catch (_) {}
+				}
+				if (mediaEl) {
+					mediaEl.pause();
+				}
+				if (mediaSource) {
+					try { mediaSource.disconnect(); } catch (_) {}
+				}
+				source = null;
+				mediaSource = null;
+				usingMedia = false;
+			}
+
+			function setupAudio(buffer) {
+				if (!audioCtx) {
+					audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+				}
+				teardownSources();
+				source = audioCtx.createBufferSource();
+				source.buffer = buffer;
+				analyser = audioCtx.createAnalyser();
+				analyser.fftSize = fftBands * 2;
+				dataArray = new Uint8Array(analyser.frequencyBinCount);
+				source.connect(analyser);
+				analyser.connect(audioCtx.destination);
+				source.onended = () => {
+					cancelAnimationFrame(animId);
+					setStatus('再生終了');
+					playOverlay.classList.remove('hidden');
+				};
+			}
+
+			function setupMedia(srcUrl) {
+				if (!audioCtx) {
+					audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+				}
+				teardownSources();
+				usingMedia = true;
+				if (!mediaEl) {
+					mediaEl = new Audio();
+					mediaEl.preload = 'auto';
+				}
+				mediaEl.src = srcUrl;
+				mediaEl.load();
+				analyser = audioCtx.createAnalyser();
+				analyser.fftSize = fftBands * 2;
+				dataArray = new Uint8Array(analyser.frequencyBinCount);
+				mediaSource = audioCtx.createMediaElementSource(mediaEl);
+				mediaSource.connect(analyser);
+				analyser.connect(audioCtx.destination);
+				mediaEl.onended = () => {
+					cancelAnimationFrame(animId);
+					setStatus('再生終了');
+					playOverlay.classList.remove('hidden');
+				};
+			}
+
+			async function loadBuffer(file) {
+				const arrayBuffer = await file.arrayBuffer();
+				if (!audioCtx) {
+					audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+				}
+				return await audioCtx.decodeAudioData(arrayBuffer);
+			}
+
+			async function loadBufferFromUrl(url) {
+				const response = await fetch(url);
+				if (!response.ok) throw new Error(`Failed to load ${url}`);
+				const arrayBuffer = await response.arrayBuffer();
+				if (!audioCtx) {
+					audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+				}
+				return await audioCtx.decodeAudioData(arrayBuffer);
+			}
+
+			function hslToRgb(h, s, l) {
+				const hue2rgb = (p, q, t) => {
+					if (t < 0) t += 1;
+					if (t > 1) t -= 1;
+					if (t < 1 / 6) return p + (q - p) * 6 * t;
+					if (t < 1 / 2) return q;
+					if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+					return p;
+				};
+				if (s === 0) return { r: l, g: l, b: l };
+				const q = l < 0.5 ? l * (1 + s) : l + s - l * s;
+				const p = 2 * l - q;
+				return {
+					r: hue2rgb(p, q, h + 1 / 3),
+					g: hue2rgb(p, q, h),
+					b: hue2rgb(p, q, h - 1 / 3)
+				};
+			}
+
+			async function hashAudioFft(file) {
+				const arrayBuffer = await file.arrayBuffer();
+				if (!audioCtx) {
+					audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+				}
+				if (audioCtx.state === 'suspended') await audioCtx.resume();
+				const buffer = await audioCtx.decodeAudioData(arrayBuffer.slice(0));
+				const analyserNode = audioCtx.createAnalyser();
+				analyserNode.fftSize = fftBands * 2;
+				const gain = audioCtx.createGain();
+				gain.gain.value = 0;
+				const sourceNode = audioCtx.createBufferSource();
+				sourceNode.buffer = buffer;
+				sourceNode.connect(analyserNode);
+				analyserNode.connect(gain);
+				gain.connect(audioCtx.destination);
+				const bins = analyserNode.frequencyBinCount;
+				const frames = 24;
+				const accum = new Float32Array(bins);
+
+				return await new Promise((resolve, reject) => {
+					let count = 0;
+					const data = new Uint8Array(bins);
+					const step = async () => {
+						analyserNode.getByteFrequencyData(data);
+						for (let i = 0; i < bins; i++) accum[i] += data[i];
+						count += 1;
+						if (count < frames) {
+							requestAnimationFrame(step);
+							return;
+						}
+						sourceNode.stop();
+						const avg = new Uint8Array(bins);
+						for (let i = 0; i < bins; i++) avg[i] = Math.round(accum[i] / frames);
+						resolve(avg);
+					};
+					sourceNode.start();
+					requestAnimationFrame(step);
+				});
+			}
+
+			function renderFrame(nowMs) {
+				const now = audioCtx && audioCtx.state !== 'closed'
+					? audioCtx.currentTime
+					: nowMs / 1000;
+				const elapsed = now - startTime;
+				const dt = lastFrame ? Math.min(0.05, now - lastFrame) : 0;
+				lastFrame = now;
+				const angle = elapsed * radiansPerSecond;
+
+				if (!svgReady || ringDisks.length === 0) {
+					renderer.render(scene, camera);
+					animId = requestAnimationFrame(renderFrame);
+					return;
+				}
+
+				if (analyser) {
+					analyser.getByteFrequencyData(dataArray);
+					for (let i = 0; i < dataArray.length; i++) {
+						bandEnergiesGlyph[i] = dataArray[i] / 255;
+					}
+					const binsPerBand = Math.floor(dataArray.length / layerCount) || 1;
+					for (let b = 0; b < layerCount; b++) {
+						let bandSum = 0;
+						const start = b * binsPerBand;
+						const end = b === layerCount - 1 ? dataArray.length : start + binsPerBand;
+						for (let i = start; i < end; i++) bandSum += dataArray[i];
+						bandEnergiesRings[b] = (bandSum / (end - start)) / 255;
+					}
+					beatKick = Math.max(0, beatKick - dt * 2.5);
+				}
+
+				const gyroScale = parseFloat(gyroInput.value || '1');
+				const spinScale = parseFloat(spinInput.value || '1');
+				const hueScale = parseFloat(hueInput.value || '1');
+				const orbitScale = parseFloat(orbitInput.value || '1');
+				const zoomScale = parseFloat(zoomInput.value || '1');
+				const flashAttack = 0.05;
+				const flashRelease = 1.5;
+				if (flashBandPool.length && flashPhase === 'idle' && elapsed >= flashNextAt) {
+					flashBandIndex = flashBandPool[Math.floor(Math.random() * flashBandPool.length)];
+					flashPhase = 'attack';
+				}
+				if (flashPhase === 'attack') {
+					flashLevel = Math.min(1, flashLevel + dt / flashAttack);
+					if (flashLevel >= 1) {
+						flashPhase = 'release';
+						flashNextAt = elapsed + 1.5 + Math.random() * 2.5;
+					}
+				} else if (flashPhase === 'release') {
+					flashLevel = Math.max(0, flashLevel - dt / flashRelease);
+					if (flashLevel <= 0) {
+						flashPhase = 'idle';
+					}
+				}
+
+				const camAngle = elapsed * cameraOrbitSpeed * orbitScale;
+				camera.position.set(
+					Math.cos(camAngle) * cameraRadius * zoomScale,
+					Math.sin(camAngle) * cameraRadius * zoomScale,
+					cameraHeight
+				);
+				camera.lookAt(0, 0, 0);
+
+				renderer.setClearColor(0x000000, trailFade);
+				renderer.clearColor();
+				renderer.clearDepth();
+
+				for (let index = 0; index < ringDisks.length; index++) {
+					const disk = ringDisks[index];
+					const gyro = ringGyros[index];
+					const data = ringData[index];
+					const band = bandEnergiesRings[index] || 0;
+					const energy = Math.max(0, band - bandThreshold) / (1 - bandThreshold);
+					const speed = data.rotSpeed * spinScale * (1 + band * 0.35 + beatKick * 0.2);
+					const layerAngle = angle * speed;
+					const hueSpeed = data.hueSpeed * hueScale * (1 + band * 1.5);
+					data.hue = (elapsed * hueSpeed) % 360;
+
+					const gx = Math.sin(elapsed * 0.22 + data.phaseX) * 0.1 * gyroScale;
+					const gy = Math.cos(elapsed * 0.18 + data.phaseY) * 0.12 * gyroScale;
+					const gz = Math.sin(elapsed * 0.14 + data.phaseZ) * 0.05 * gyroScale;
+					gyro.rotation.set(gx, gy, gz);
+
+					const spinX = elapsed * data.rotX;
+					const spinY = elapsed * data.rotY;
+					const spinZ = elapsed * data.rotZ;
+					disk.rotation.set(spinX, spinY, layerAngle + spinZ);
+
+					const baseHue = (elapsed * data.hueSpeed * hueScale) % 360;
+					const colorAttrs = ringColorAttributes[index] || [];
+					const baseHslList = ringBaseHsl[index] || [];
+					const bandAttrs = ringBandAttributes[index] || [];
+					const sliceAttrs = ringSliceAttributes[index] || [];
+					const basePosList = ringBasePositions[index] || [];
+					for (let a = 0; a < colorAttrs.length; a++) {
+						const colorAttr = colorAttrs[a];
+						const baseHsl = baseHslList[a];
+						const bandAttr = bandAttrs[a];
+						const sliceAttr = sliceAttrs[a];
+						const basePos = basePosList[a];
+						if (!colorAttr || !baseHsl) continue;
+						const colors = colorAttr.array;
+						for (let c = 0; c < colors.length; c += 3) {
+							const v = c / 3;
+							const bandIndex = bandAttr ? bandAttr[v] : 0;
+							const bandEnergy = bandEnergiesGlyph[bandIndex] || 0;
+							const flashBoost = bandIndex === flashBandIndex ? flashLevel : 0;
+							const hue = ((baseHue * (1 + bandEnergy * 2)) / 360) % 1;
+							const h = (baseHsl[c] + hue) % 1;
+							const s = Math.min(1, Math.max(0, baseHsl[c + 1] * (0.6 + bandEnergy * 1.2)));
+							const l = Math.min(1, baseHsl[c + 2] + flashBoost * 0.6);
+							const rgb = hslToRgb(h, s, l);
+							colors[c] = rgb.r;
+							colors[c + 1] = rgb.g;
+							colors[c + 2] = rgb.b;
+						}
+						colorAttr.needsUpdate = true;
+						if (sliceAttr && basePos) {
+							const geometry = disk.children[a]?.geometry;
+							if (geometry && geometry.attributes && geometry.attributes.position) {
+								const pos = geometry.attributes.position.array;
+								for (let v = 0; v < sliceAttr.length; v++) {
+									const sliceIndex = sliceAttr[v];
+									const bandIndex = bandAttr ? bandAttr[v] : 0;
+									const bandEnergy = bandEnergiesGlyph[bandIndex] || 0;
+									const modSpeed = pieSpeed * (1 + bandEnergy * 1.5);
+									const modAmp = pieAmplitude * (0.3 + bandEnergy * 1.4);
+									const offset = Math.sin(elapsed * modSpeed + sliceIndex * 0.08) * modAmp;
+									pos[v * 3 + 2] = basePos[v * 3 + 2] + offset;
+								}
+								geometry.attributes.position.needsUpdate = true;
+							}
+						}
+					}
+					const materials = ringMaterials[index] || [];
+					for (let m = 0; m < materials.length; m++) {
+						materials[m].opacity = Math.min(1, data.baseOpacity + energy * 0.5);
+					}
+				}
+
+				renderer.render(scene, camera);
+				animId = requestAnimationFrame(renderFrame);
+			}
+
+			playBtn.addEventListener('click', async () => {
+				try {
+					const file = fileInput.files[0];
+					let buffer;
+					if (file) {
+						buffer = await loadBuffer(file);
+						setupAudio(buffer);
+					} else {
+						try {
+							buffer = await loadBufferFromUrl('LIN4.ogg');
+							setupAudio(buffer);
+						} catch (err) {
+							setupMedia('LIN4.ogg');
+						}
+					}
+					if (audioCtx.state === 'suspended') await audioCtx.resume();
+					startTime = (audioCtx ? audioCtx.currentTime : 0) - pausedAt;
+					if (usingMedia && mediaEl) {
+						mediaEl.currentTime = pausedAt;
+						await mediaEl.play();
+					} else if (source) {
+						source.start(0, pausedAt);
+					}
+					setStatus('再生中');
+					cancelAnimationFrame(animId);
+					renderFrame(performance.now());
+					pausedAt = 0;
+					playOverlay.classList.add('hidden');
+				} catch (_) {
+					setStatus('再生に失敗しました');
+					playOverlay.classList.remove('hidden');
+				}
+			});
+
+			playOverlayBtn.addEventListener('click', () => {
+				playBtn.click();
+			});
+
+			hashBtn.addEventListener('click', async () => {
+				const file = mandalaInput.files[0];
+				if (!file) {
+					hashOutput.textContent = 'Mandala not selected';
+					return;
+				}
+				hashOutput.textContent = 'Hashing...';
+				try {
+					const form = new FormData();
+					form.append('file', file);
+					form.append('name', 'mandala');
+					form.append('denom', '1');
+					const response = await fetch(`${apiBase}/hash`, {
+						method: 'POST',
+						body: form
+					});
+					if (!response.ok) throw new Error(`HTTP ${response.status}`);
+					const payload = await response.json();
+					hashOutput.textContent = `sha256: ${payload.sha256}`;
+				} catch (_) {
+					hashOutput.textContent = 'Failed to generate hash';
+				}
+			});
+
+			fftHashBtn.addEventListener('click', async () => {
+				const file = fileInput.files[0];
+				if (!file) {
+					fftHashOutput.textContent = 'Audio not selected';
+					return;
+				}
+				fftHashOutput.textContent = 'Hashing FFT...';
+				try {
+					const avg = await hashAudioFft(file);
+					const response = await fetch(`${apiBase}/hash-fft`, {
+						method: 'POST',
+						headers: { 'Content-Type': 'application/json' },
+						body: JSON.stringify({
+							fft: Array.from(avg),
+							name: 'mandala',
+							denom: '1'
+						})
+					});
+					if (!response.ok) throw new Error(`HTTP ${response.status}`);
+					const payload = await response.json();
+					fftHashOutput.textContent = `fft sha256: ${payload.sha256}`;
+				} catch (_) {
+					fftHashOutput.textContent = 'Failed to generate FFT hash';
+				}
+			});
+
+			window.addEventListener('load', () => {
+				initThree();
+				setStatus('Ready');
+				renderFrame(performance.now());
+				showControls();
+			});
+
+			['mousemove', 'mousedown', 'keydown', 'touchstart'].forEach((evt) => {
+				window.addEventListener(evt, showControls, { passive: true });
+			});
+
+			stopBtn.addEventListener('click', () => {
+				if (!audioCtx) return;
+				const now = audioCtx.currentTime;
+				pausedAt = now - startTime;
+				if (usingMedia && mediaEl) {
+					mediaEl.pause();
+				} else if (source) {
+					try { source.stop(); } catch (_) {}
+				}
+				setStatus('Stopped');
+				playOverlay.classList.remove('hidden');
+			});
+		</script>
+	</body>
+</html>

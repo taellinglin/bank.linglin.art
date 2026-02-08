@@ -18,7 +18,7 @@ import argparse
 import hashlib
 from typing import Tuple, List
 import binascii
-from PIL import Image, ImageOps
+from PIL import Image, ImageOps, ImageEnhance, ImageFilter
 import numpy as np
 from sklearn.cluster import KMeans
 import requests
@@ -2451,38 +2451,84 @@ def generate_security_pattern():
     bg = Image.open(bg_path).convert("RGBA")
     return bg
 
-def vectorize_image_by_color(img_path, max_colors=64):
+def vectorize_image_by_color(
+    img_path,
+    max_colors=64,
+    max_size=720,
+    anime_boost=True,
+    simplify_tolerance=1.2,
+):
     """
     Vectorize image by color clustering (like Inkscape Trace Bitmap).
+    Preserves sharp edges by contour tracing and light polygon simplification.
     Returns a list of (color, polygon_points) groups.
     """
     img = Image.open(img_path).convert("RGB")
+    w, h = img.size
+    if max(w, h) > max_size:
+        scale = max_size / max(w, h)
+        new_size = (max(1, int(w * scale)), max(1, int(h * scale)))
+        try:
+            resample = Image.Resampling.LANCZOS
+        except Exception:
+            resample = Image.LANCZOS
+        img = img.resize(new_size, resample=resample)
+
+    if anime_boost:
+        img = img.filter(ImageFilter.MedianFilter(size=3))
+        img = ImageEnhance.Color(img).enhance(1.45)
+        img = ImageEnhance.Contrast(img).enhance(1.2)
+        img = ImageEnhance.Sharpness(img).enhance(1.25)
+        try:
+            img = ImageOps.posterize(img, bits=5)
+        except Exception:
+            pass
+
     arr = np.array(img)
     h, w, _ = arr.shape
-    flat = arr.reshape(-1, 3)
+    lab = color.rgb2lab(arr / 255.0)
+    flat = lab.reshape(-1, 3)
 
-    # KMeans clustering to reduce color complexity
-    kmeans = KMeans(n_clusters=max_colors, random_state=42)
+    # KMeans clustering in perceptual LAB space
+    kmeans = KMeans(n_clusters=max_colors, random_state=42, n_init=4)
     labels = kmeans.fit_predict(flat)
-    palette = kmeans.cluster_centers_.astype(int)
+    palette_lab = kmeans.cluster_centers_
+    palette_rgb = color.lab2rgb(palette_lab.reshape(1, -1, 3)).reshape(-1, 3)
+    palette_rgb = np.clip(palette_rgb * 255, 0, 255).astype(int)
 
     traced_polys = []
     label_img = labels.reshape(h, w)
+    min_area = max(30, int(0.00008 * h * w))
 
-    for idx, color in enumerate(palette):
-        mask = (label_img == idx).astype(np.uint8) * 255
-        pil_mask = Image.fromarray(mask)
-        contours = pil_mask.getbbox()
+    def _polygon_area(points):
+        if len(points) < 3:
+            return 0
+        area = 0.0
+        for i in range(len(points)):
+            x1, y1 = points[i]
+            x2, y2 = points[(i + 1) % len(points)]
+            area += (x1 * y2) - (x2 * y1)
+        return abs(area) * 0.5
+
+    for idx, color_rgb in enumerate(palette_rgb):
+        mask = (label_img == idx).astype(np.uint8)
+        if mask.sum() < min_area:
+            continue
+
+        contours = measure.find_contours(mask, 0.5)
         if not contours:
             continue
 
-        # Approx polygon by grid (simplified)
-        ys, xs = np.where(label_img == idx)
-        pts = list(zip(xs.tolist(), ys.tolist()))
-        if len(pts) > 50:  # reduce density
-            pts = pts[::len(pts)//50]
-
-        traced_polys.append(((color[0], color[1], color[2]), pts))
+        for contour in contours:
+            approx = measure.approximate_polygon(contour, tolerance=simplify_tolerance)
+            if len(approx) < 3:
+                continue
+            pts = [(float(p[1]), float(p[0])) for p in approx]
+            if len(pts) > 1 and pts[0] == pts[-1]:
+                pts = pts[:-1]
+            if _polygon_area(pts) < min_area:
+                continue
+            traced_polys.append(((int(color_rgb[0]), int(color_rgb[1]), int(color_rgb[2])), pts))
 
     return traced_polys, (w, h)
 
@@ -2792,13 +2838,19 @@ def add_random_background_vectorized(dwg, W:int, H:int, margin:int=60, max_color
     scale_y = (H - 2*margin) / h
     scale = min(scale_x, scale_y)
 
-    group = dwg.g(opacity=0.6)  # semi-transparent overlay
+    group = dwg.g(opacity=0.65, shape_rendering="crispEdges")  # semi-transparent overlay
     for color, pts in polys:
         if len(pts) < 3:
             continue
         scaled_pts = [(x*scale+margin, y*scale+margin) for (x,y) in pts]
         fill = svgwrite.rgb(color[0], color[1], color[2])
-        group.add(dwg.polygon(points=scaled_pts, fill=fill, stroke="none"))
+        group.add(dwg.polygon(
+            points=scaled_pts,
+            fill=fill,
+            stroke="#1A1A1A",
+            stroke_width=0.4,
+            stroke_opacity=0.25,
+        ))
 
     dwg.add(group)
     return group

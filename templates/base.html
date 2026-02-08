@@ -8,6 +8,21 @@
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <script src="https://unpkg.com/feather-icons"></script>
     <style>
+        svg.feather {
+            width: 1em;
+            height: 1em;
+            vertical-align: -0.125em;
+        }
+
+        .profile-container,
+        .blockchain-container,
+        .members-container,
+        .search-results {
+            max-width: 1100px !important;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
         .navbar {
             display: flex;
             align-items: center;
@@ -265,6 +280,52 @@
             height: 1em;
             stroke-width: 2;
         }
+
+        .nav-credits {
+            position: relative;
+            margin-left: 6px;
+        }
+
+        .nav-credits summary {
+            cursor: pointer;
+            list-style: none;
+        }
+
+        .nav-credits summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .nav-credits-menu {
+            position: absolute;
+            right: 0;
+            top: 28px;
+            background: #121212;
+            border: 1px solid #333;
+            border-radius: 8px;
+            padding: 10px 12px;
+            min-width: 220px;
+            display: grid;
+            gap: 6px;
+            z-index: 1000;
+        }
+
+        .nav-credits-menu a {
+            color: #7cc4ff;
+        }
+
+        .nav-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+        }
+
+
+        .nav-icon {
+            display: inline-flex;
+            align-items: center;
+            color: #7cc4ff;
+            font-size: 0.95rem;
+        }
     </style>
 </head>
 <body>
@@ -278,24 +339,78 @@
         </a>
         <div class="nav-links">
             {% if current_user.is_authenticated %}
-                <a href="{{ url_for('verify_serial') }}">Verify</a>
-                <a href="{{ url_for('mempool_viewer')}}">Mempool</a>
-                <a href="{{ url_for('blockchain_viewer')}}">Blockchain</a>
-                <a href="{{ url_for('my_wallet') }}">Wallet</a>
-                <a href="{{ url_for('gallery_index') }}">Members</a>
-                <a href="{{ url_for('profile', username=current_user.username) }}">Profile</a>
-                <a href="{{ url_for('account_settings') }}">Settings</a>
+                <a class="nav-link" href="{{ url_for('verify_serial') }}" title="Verify Serial">
+                    <span>VR</span>
+                    <span class="nav-icon"><i data-feather="check-circle"></i></span>
+                </a>
+                <a class="nav-link" href="{{ url_for('mempool_viewer')}}" title="Mempool">
+                    <span>MP</span>
+                    <span class="nav-icon"><i data-feather="inbox"></i></span>
+                </a>
+                <a class="nav-link" href="{{ url_for('blockchain_viewer')}}" title="Blockchain">
+                    <span>BC</span>
+                    <span class="nav-icon"><i data-feather="link"></i></span>
+                </a>
+                <a class="nav-link" href="{{ url_for('gallery_index') }}" title="Members">
+                    <span>MB</span>
+                    <span class="nav-icon"><i data-feather="users"></i></span>
+                </a>
+                <a class="nav-link" href="{{ url_for('profile', username=current_user.username) }}" title="Profile">
+                    <span>PR</span>
+                    <span class="nav-icon"><i data-feather="user"></i></span>
+                </a>
+                <a class="nav-link" href="{{ url_for('account_settings') }}" title="Settings">
+                    <span>ST</span>
+                    <span class="nav-icon"><i data-feather="settings"></i></span>
+                </a>
                 {% if current_user.is_authenticated and current_user.is_admin %}
-                    <a href="{{ url_for('admin_panel') }}">Admin</a>
+                    <a class="nav-link" href="{{ url_for('admin_panel') }}" title="Admin">
+                        <span>AD</span>
+                        <span class="nav-icon"><i data-feather="shield"></i></span>
+                    </a>
                 {% endif %}
-                <a href="{{ url_for('logout') }}">Logout</a>
+                <a class="nav-link" href="{{ url_for('generate_page') }}" title="Generate">
+                    <span>GN</span>
+                    <span class="nav-icon"><i data-feather="zap"></i></span>
+                </a>
+                <details class="nav-credits">
+                    <summary>Credits: {{ '%.3f'|format(current_user.generation_credits or 0) }}</summary>
+                    <div class="nav-credits-menu">
+                        <div>Balance: {{ '%.3f'|format(current_user.generation_credits or 0) }} credits</div>
+                        <div>All denominations: 45 credits</div>
+                        <div>Single bill cost = difficulty (1–9)</div>
+                        <a href="/buy-credits">Buy credits</a>
+                    </div>
+                </details>
+                <a class="nav-link" href="{{ url_for('logout') }}" title="Logout">
+                    <span>LG</span>
+                    <span class="nav-icon"><i data-feather="log-out"></i></span>
+                </a>
             {% else %}
-                <a href="{{ url_for('verify_serial') }}">Verify</a>
-                <a href="{{ url_for('mempool_viewer')}}">Mempool</a>
-                <a href="{{ url_for('blockchain_viewer')}}">Blockchain</a>
-                <a href="{{ url_for('gallery_index') }}">Members</a>
-                <a href="{{ url_for('login') }}">Login</a>
-                <a href="{{ url_for('register') }}">Register</a>
+                <a class="nav-link" href="{{ url_for('verify_serial') }}" title="Verify Serial">
+                    <span>VR</span>
+                    <span class="nav-icon"><i data-feather="check-circle"></i></span>
+                </a>
+                <a class="nav-link" href="{{ url_for('mempool_viewer')}}" title="Mempool">
+                    <span>MP</span>
+                    <span class="nav-icon"><i data-feather="inbox"></i></span>
+                </a>
+                <a class="nav-link" href="{{ url_for('blockchain_viewer')}}" title="Blockchain">
+                    <span>BC</span>
+                    <span class="nav-icon"><i data-feather="link"></i></span>
+                </a>
+                <a class="nav-link" href="{{ url_for('gallery_index') }}" title="Members">
+                    <span>MB</span>
+                    <span class="nav-icon"><i data-feather="users"></i></span>
+                </a>
+                <a class="nav-link" href="{{ url_for('login') }}" title="Login">
+                    <span>LI</span>
+                    <span class="nav-icon"><i data-feather="log-in"></i></span>
+                </a>
+                <a class="nav-link" href="{{ url_for('register') }}" title="Register">
+                    <span>RG</span>
+                    <span class="nav-icon"><i data-feather="user-plus"></i></span>
+                </a>
             {% endif %}
         </div>
     </div>
@@ -325,6 +440,130 @@
         })();
 
         (function () {
+            const iconMap = {
+                "🔍": "search",
+                "📈": "trending-up",
+                "💰": "dollar-sign",
+                "💵": "credit-card",
+                "👤": "user",
+                "👥": "users",
+                "📊": "bar-chart-2",
+                "⏱️": "clock",
+                "⏱": "clock",
+                "⏳": "clock",
+                "⌛": "clock",
+                "📋": "clipboard",
+                "📄": "file-text",
+                "📤": "upload",
+                "📥": "inbox",
+                "📦": "package",
+                "🔗": "link",
+                "🔑": "key",
+                "🔄": "repeat",
+                "⛏️": "tool",
+                "⛓️": "link-2",
+                "⚠️": "alert-triangle",
+                "⚠": "alert-triangle",
+                "✅": "check",
+                "❌": "x",
+                "✓": "check",
+                "✗": "x",
+                "✕": "x",
+                "→": "arrow-right",
+                "←": "arrow-left",
+                "↑": "arrow-up",
+                "↓": "arrow-down",
+                "↗": "arrow-up-right",
+                "🕒": "clock",
+                "📅": "calendar",
+                "🧾": "file-text",
+                "🧩": "puzzle",
+                "🎨": "palette",
+                "📌": "paperclip",
+                "💎": "award",
+                "🏆": "award",
+                "⭐": "star",
+                "🎖️": "flag",
+                "🎖": "flag",
+                "📍": "map-pin",
+                "🎯": "target",
+                "🔢": "hash",
+                "🖼️": "image",
+                "🧭": "compass",
+                "⏮️": "skip-back",
+                "⏭️": "skip-forward",
+                "🏦": "home",
+                "💸": "send",
+                "📭": "inbox",
+                "📝": "edit-3",
+                "ℹ️": "info"
+            };
+
+            const excludedTags = new Set(["SCRIPT", "STYLE", "CODE", "PRE"]);
+            const symbols = Object.keys(iconMap);
+
+            const replaceIconsInNode = (root) => {
+                if (!root) {
+                    return;
+                }
+                const walker = document.createTreeWalker(
+                    root,
+                    NodeFilter.SHOW_TEXT,
+                    {
+                        acceptNode(node) {
+                            if (!node || !node.nodeValue) {
+                                return NodeFilter.FILTER_REJECT;
+                            }
+                            const parent = node.parentNode;
+                            if (parent && excludedTags.has(parent.nodeName)) {
+                                return NodeFilter.FILTER_REJECT;
+                            }
+                            return symbols.some((symbol) => node.nodeValue.includes(symbol))
+                                ? NodeFilter.FILTER_ACCEPT
+                                : NodeFilter.FILTER_REJECT;
+                        },
+                    }
+                );
+
+                const nodes = [];
+                while (walker.nextNode()) {
+                    nodes.push(walker.currentNode);
+                }
+
+                nodes.forEach((node) => {
+                    let html = node.nodeValue;
+                    Object.entries(iconMap).forEach(([symbol, icon]) => {
+                        if (html.includes(symbol)) {
+                            html = html.split(symbol).join(`<i data-feather="${icon}"></i>`);
+                        }
+                    });
+                    if (html !== node.nodeValue) {
+                        const span = document.createElement("span");
+                        span.innerHTML = html;
+                        node.parentNode.replaceChild(span, node);
+                    }
+                });
+            };
+
+            replaceIconsInNode(document.body);
+
+            const observer = new MutationObserver((mutations) => {
+                mutations.forEach((mutation) => {
+                    mutation.addedNodes.forEach((node) => {
+                        if (node.nodeType === Node.ELEMENT_NODE) {
+                            replaceIconsInNode(node);
+                        } else if (node.nodeType === Node.TEXT_NODE) {
+                            replaceIconsInNode(node.parentNode);
+                        }
+                    });
+                });
+                if (window.feather) {
+                    window.feather.replace();
+                }
+            });
+
+            observer.observe(document.body, { childList: true, subtree: true });
+
             if (window.feather) {
                 window.feather.replace();
                 window.replaceFeatherIcons = () => window.feather.replace();

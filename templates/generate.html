@@ -1,0 +1,874 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+:root {
+    --bg-primary: #0f0f0f;
+    --bg-secondary: #151515;
+    --bg-tertiary: #1e1e1e;
+    --border: #2d2d2d;
+    --border-light: #3a3a3a;
+    --text-primary: #ffffff;
+    --text-secondary: #b0b0b0;
+    --text-tertiary: #888888;
+    --primary: #007aff;
+    --primary-light: #409cff;
+    --success: #30d158;
+    --warning: #ffd60a;
+    --danger: #ff453a;
+    --info: #32d7ee;
+    --purple: #bf5af2;
+    --cyan: #5ac8fa;
+    --pink: #ff2d55;
+}
+
+.generate-container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 1rem;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg-primary);
+    color: var(--text-primary);
+}
+
+.generate-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+}
+
+.generate-title {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.generate-title h1 {
+    font-size: 1.5rem;
+    margin: 0;
+}
+
+.generate-title p {
+    margin: 0.25rem 0 0;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.generate-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 360px);
+    gap: 1rem;
+}
+
+.generate-card {
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 8px 20px rgba(0, 0, 0, 0.15);
+}
+
+.card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    padding: 0.9rem 1.1rem;
+    border-bottom: 1px solid var(--border-light);
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.header-icon {
+    font-size: 1.2rem;
+    color: var(--info);
+}
+
+.header-title {
+    font-size: 1rem;
+    font-weight: 700;
+    margin: 0;
+}
+
+.header-badge {
+    background: var(--info);
+    color: var(--bg-primary);
+    padding: 0.2rem 0.6rem;
+    border-radius: 10px;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+
+.card-content {
+    padding: 1.1rem;
+}
+
+.empty-state {
+    text-align: center;
+    color: var(--text-secondary);
+    display: grid;
+    gap: 0.4rem;
+    justify-items: center;
+    padding: 1rem 0;
+}
+
+.generate-sidebar {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.summary-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.6rem 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.9rem;
+}
+
+.summary-item:last-child {
+    border-bottom: none;
+}
+
+.summary-label {
+    color: var(--text-secondary);
+}
+
+.summary-value {
+    font-weight: 700;
+}
+
+.generation-status {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.status-indicator {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    padding: 1rem;
+    border-radius: 10px;
+    border: 1px solid;
+}
+
+.status-indicator.ready {
+    background: rgba(48, 209, 88, 0.1);
+    border-color: var(--success);
+}
+
+.status-indicator.waiting {
+    background: rgba(255, 213, 10, 0.1);
+    border-color: var(--warning);
+}
+
+.status-text strong {
+    display: block;
+    margin-bottom: 0.25rem;
+}
+
+.status-text span {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+}
+
+.generation-progress {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    padding: 0.9rem;
+    border-radius: 10px;
+    border: 1px dashed var(--border);
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.preview-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 0.8rem;
+    margin-top: 1rem;
+}
+
+.preview-card {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.6rem;
+    display: grid;
+    gap: 0.4rem;
+    text-align: center;
+}
+
+.preview-card img {
+    width: 100%;
+    height: auto;
+    border-radius: 8px;
+    border: 1px solid var(--border-light);
+    background: rgba(0, 0, 0, 0.2);
+}
+
+.preview-label {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+}
+
+.progress-header {
+    display: flex;
+    justify-content: space-between;
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+}
+
+.progress-label {
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.progress-bar {
+    position: relative;
+    height: 10px;
+    background: rgba(255, 255, 255, 0.08);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.progress-bar-fill {
+    position: absolute;
+    height: 100%;
+    background: linear-gradient(90deg, rgba(50, 215, 238, 0.2), rgba(50, 215, 238, 0.9));
+    border-radius: 999px;
+}
+
+.progress-bar-fill.indeterminate {
+    width: 40%;
+    animation: progress-slide 1.4s ease-in-out infinite;
+}
+
+.progress-detail {
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    min-height: 1rem;
+}
+
+.current-task {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    padding: 0.8rem 1rem;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: rgba(0, 0, 0, 0.2);
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.current-task strong {
+    color: var(--text-primary);
+}
+
+@keyframes progress-slide {
+    0% { left: -40%; }
+    50% { left: 30%; }
+    100% { left: 100%; }
+}
+
+.form-control {
+    width: 100%;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text-primary);
+    padding: 0.65rem 0.75rem;
+    margin-bottom: 0.8rem;
+    font-size: 0.9rem;
+}
+
+.form-control:focus {
+    outline: none;
+    border-color: var(--info);
+    box-shadow: 0 0 0 2px rgba(50, 215, 238, 0.2);
+}
+
+.form-control-sm {
+    font-size: 0.85rem;
+    padding: 0.55rem 0.7rem;
+}
+
+.form-textarea {
+    width: 100%;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem;
+    color: var(--text-primary);
+    font-family: inherit;
+    font-size: 0.85rem;
+    resize: vertical;
+    min-height: 120px;
+    margin-bottom: 0.75rem;
+}
+
+.helper-text {
+    color: var(--text-secondary);
+    font-size: 0.85rem;
+    margin-bottom: 0.6rem;
+}
+
+.small {
+    display: block;
+    margin-bottom: 0.4rem;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.7rem 1.2rem;
+    border-radius: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    transition: all 0.3s ease;
+    border: none;
+    cursor: pointer;
+    font-size: 0.9rem;
+}
+
+.action-btn.primary {
+    background: var(--info);
+    color: var(--bg-primary);
+    border: 1px solid var(--info);
+}
+
+.action-btn.primary:hover {
+    filter: brightness(1.1);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(50, 215, 238, 0.3);
+}
+
+.action-btn.secondary {
+    background: rgba(255, 255, 255, 0.1);
+    color: var(--text-primary);
+    border: 1px solid var(--border);
+}
+
+.action-btn.secondary:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.action-btn.cyan {
+    background: rgba(50, 215, 238, 0.1);
+    color: var(--info);
+    border: 1px solid var(--info);
+}
+
+.action-btn.cyan:hover {
+    background: var(--info);
+    color: var(--bg-primary);
+}
+
+.action-btn.purple {
+    background: rgba(191, 90, 242, 0.1);
+    color: var(--purple);
+    border: 1px solid var(--purple);
+}
+
+.action-btn.purple:hover {
+    background: var(--purple);
+    color: var(--bg-primary);
+}
+
+.action-btn.small {
+    padding: 0.5rem 0.9rem;
+    font-size: 0.8rem;
+}
+
+.tasks-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.task-item {
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.9rem;
+}
+
+.task-header {
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 0.4rem;
+}
+
+.task-id {
+    font-weight: 600;
+}
+
+.task-status {
+    padding: 0.2rem 0.6rem;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-secondary);
+}
+
+.task-status.completed {
+    background: rgba(48, 209, 88, 0.2);
+    color: var(--success);
+}
+
+.task-status.failed {
+    background: rgba(255, 69, 58, 0.2);
+    color: var(--danger);
+}
+
+.task-status.pending,
+.task-status.queued,
+.task-status.processing {
+    background: rgba(50, 215, 238, 0.2);
+    color: var(--info);
+}
+
+.task-date {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.task-message {
+    margin-top: 0.4rem;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.task-actions {
+    margin-top: 0.6rem;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.credits-details {
+    margin-top: 0.6rem;
+    padding: 0.6rem;
+    border-radius: 8px;
+    background: rgba(0, 0, 0, 0.2);
+    border: 1px solid var(--border);
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+    display: grid;
+    gap: 0.4rem;
+}
+
+@media (max-width: 900px) {
+    .generate-grid {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+
+<div class="generate-container">
+    <div class="generate-header">
+        <div class="generate-title">
+            <div class="header-icon"><i data-feather="zap"></i></div>
+            <div>
+                <h1>Generate</h1>
+                <p>Issue new banknotes or coins with your current credits.</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="generate-grid">
+        <div class="generate-main">
+            <div class="generate-card">
+                <div class="card-header">
+                    <div class="header-icon"><i data-feather="activity"></i></div>
+                    <h3 class="header-title">Generation Status</h3>
+                </div>
+                <div class="card-content">
+                    <div class="generation-status" id="generationStatus" data-user-id="{{ current_user.id }}">
+                        <div class="generation-progress" id="generationProgress" hidden>
+                            <div class="progress-header">
+                                <span class="progress-label">Generating banknotes...</span>
+                                <span class="progress-status" id="generationProgressStatus">Starting</span>
+                            </div>
+                            <div class="progress-bar">
+                                <div class="progress-bar-fill indeterminate" id="generationProgressFill"></div>
+                            </div>
+                            <div class="progress-detail" id="generationProgressDetail"></div>
+                        </div>
+                        <div class="current-task" id="currentTask" hidden>
+                            <div><strong>Current Task:</strong> <span id="currentTaskId">—</span></div>
+                            <div><strong>Status:</strong> <span id="currentTaskStatus">—</span></div>
+                            <div><strong>Progress:</strong> <span id="currentTaskProgress">—</span></div>
+                        </div>
+                        {% if current_user.can_generate_money() %}
+                        <div class="status-indicator ready">
+                            <div class="status-icon"><i data-feather="check-circle"></i></div>
+                            <div class="status-text">
+                                <strong>Ready to Generate</strong>
+                                <span>You can create new banknotes now.</span>
+                            </div>
+                        </div>
+                        {% else %}
+                        <div class="status-indicator waiting">
+                            <div class="status-icon"><i data-feather="alert-triangle"></i></div>
+                            <div class="status-text">
+                                <strong>Insufficient Credits</strong>
+                                <span>Purchase credits to continue generating.</span>
+                            </div>
+                        </div>
+                        {% endif %}
+                        <form method="POST" action="/generate-money" class="generation-form">
+                            <label class="small" for="generation-denomination">Denomination</label>
+                            <select id="generation-denomination" name="generation_denomination" class="form-control form-control-sm">
+                                <option value="all">All denominations ({{ generation_all_cost }} credits)</option>
+                                {% for option in denomination_options %}
+                                <option value="{{ option.value }}">{{ option.label }}</option>
+                                {% endfor %}
+                            </select>
+                            <label class="small" for="custom-denomination">Custom denomination (for coins)</label>
+                            <input id="custom-denomination" name="custom_denomination" type="number" step="0.001" min="0.001" max="0.999" class="form-control form-control-sm" placeholder="0.001">
+                            <label class="small" for="generation-kind">Generate type</label>
+                            <select id="generation-kind" name="generation_kind" class="form-control form-control-sm">
+                                <option value="bill">Bill</option>
+                                <option value="coin">Coin (decimal &lt; 1)</option>
+                            </select>
+                            <label class="small" for="generation-quantity">Quantity (bills only)</label>
+                            <input id="generation-quantity" name="generation_quantity" type="number" min="1" max="100" step="1" value="1" class="form-control form-control-sm" data-bills-only>
+                            <button type="submit" class="action-btn primary">
+                                <span>Generate New Banknotes</span>
+                                <div class="btn-icon"><i data-feather="star"></i></div>
+                            </button>
+                        </form>
+                        <div class="preview-grid" id="generationPreview" hidden>
+                            <div class="preview-card">
+                                <img id="previewFront" alt="Front preview">
+                                <div class="preview-label">Front</div>
+                            </div>
+                            <div class="preview-card">
+                                <img id="previewBack" alt="Back preview">
+                                <div class="preview-label">Back</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="generate-card">
+                <div class="card-header">
+                    <div class="header-icon"><i data-feather="code"></i></div>
+                    <h3 class="header-title">Custom EisenScript</h3>
+                    <a href="{{ url_for('eisenscript_guide') }}" class="action-btn secondary small">
+                        <span>Guide</span>
+                        <div class="btn-icon"><i data-feather="external-link"></i></div>
+                    </a>
+                </div>
+                <div class="card-content">
+                    <p class="helper-text">This script is applied on top of your banknotes during generation. Use it for stamps or custom graphics.</p>
+                    <form method="POST" class="bio-form">
+                        <textarea name="custom_eisenscript" placeholder="Paste EisenScript here..." class="form-textarea">{{ current_user.custom_eisenscript }}</textarea>
+                        <button type="submit" class="action-btn purple">
+                            <span>Save EisenScript</span>
+                            <div class="btn-icon"><i data-feather="save"></i></div>
+                        </button>
+                    </form>
+                </div>
+            </div>
+
+            <div class="generate-card">
+                <div class="card-header">
+                    <div class="header-icon"><i data-feather="upload"></i></div>
+                    <h3 class="header-title">Upload Files</h3>
+                </div>
+                <div class="card-content">
+                    <p class="helper-text">Upload MIDI, images, or OGG/MP3 files to your user folder.</p>
+                    <form method="POST" action="/generate" enctype="multipart/form-data">
+                        <label class="small" for="user-upload">Select files</label>
+                        <input id="user-upload" name="user_upload" type="file" class="form-control form-control-sm"
+                               accept=".mid,.midi,.png,.jpg,.jpeg,.gif,.webp,.ogg,.mp3" multiple>
+                        <button type="submit" class="action-btn cyan">
+                            <span>Upload Files</span>
+                            <div class="btn-icon"><i data-feather="upload-cloud"></i></div>
+                        </button>
+                    </form>
+                    {% if user_uploads %}
+                    <div class="helper-text" style="margin-top: 0.8rem;">Your uploaded files</div>
+                    <div class="tasks-list" style="gap: 0.6rem;">
+                        {% for upload in user_uploads %}
+                        <div class="task-item" style="display:flex; align-items:center; justify-content:space-between; gap:0.6rem;">
+                            <div style="min-width: 0;">
+                                <div class="task-id" style="font-size:0.85rem;">{{ upload.name }}</div>
+                                <div class="task-message" style="margin-top:0; font-size:0.75rem;">{{ upload.ext|upper }}</div>
+                            </div>
+                            <button type="button" class="action-btn secondary small insert-upload"
+                                    data-url="{{ url_for('serve_image', filename=upload.rel_path) }}">
+                                <span>Insert URL</span>
+                                <div class="btn-icon"><i data-feather="corner-down-left"></i></div>
+                            </button>
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="empty-state" style="padding: 0.6rem 0 0;">
+                        <p>No uploads yet.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+
+            <div class="generate-card">
+                <div class="card-header">
+                    <div class="header-icon"><i data-feather="clipboard"></i></div>
+                    <h3 class="header-title">Recent Generation Tasks</h3>
+                    {% if generation_tasks %}<div class="header-badge">{{ generation_tasks|length }}</div>{% endif %}
+                </div>
+                <div class="card-content">
+                    {% if generation_tasks %}
+                    <div class="tasks-list">
+                        {% for task in generation_tasks %}
+                        <div class="task-item status-{{ task.status }}">
+                            <div class="task-header">
+                                <div class="task-id">Task #{{ task.id }}</div>
+                                <div class="task-status status-{{ task.status }}">{{ task.status|title }}</div>
+                            </div>
+                            <div class="task-date">
+                                <span class="date-icon"><i data-feather="calendar"></i></span>
+                                {{ task.created_at.strftime('%Y-%m-%d %H:%M') }}
+                                {% if task.completed_at %}
+                                <span class="completed-date">
+                                    (Completed: {{ task.completed_at.strftime('%Y-%m-%d %H:%M') }})
+                                </span>
+                                {% endif %}
+                            </div>
+                            {% if task.message %}
+                            <div class="task-message">
+                                {{ task.message }}
+                            </div>
+                            {% endif %}
+                            {% if task.status in ['queued', 'pending', 'processing', 'failed', 'partial'] %}
+                            <div class="task-actions">
+                                <form method="POST" action="/generation-tasks/{{ task.id }}/resume">
+                                    <button type="submit" class="action-btn secondary small">
+                                        <span>Resume</span>
+                                        <div class="btn-icon"><i data-feather="play"></i></div>
+                                    </button>
+                                </form>
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% else %}
+                    <div class="empty-state">
+                        <div class="empty-icon"><i data-feather="inbox"></i></div>
+                        <p>No generation tasks yet.</p>
+                    </div>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="generate-sidebar">
+            <div class="generate-card">
+                <div class="card-header">
+                    <div class="header-icon"><i data-feather="credit-card"></i></div>
+                    <h3 class="header-title">Credits</h3>
+                </div>
+                <div class="card-content">
+                    <div class="summary-item">
+                        <span class="summary-label">Balance</span>
+                        <span class="summary-value">{{ '%.3f'|format(generation_credits or 0) }} credits</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">All denominations</span>
+                        <span class="summary-value">{{ generation_all_cost }} credits</span>
+                    </div>
+                    <div class="summary-item">
+                        <span class="summary-label">Single bill cost</span>
+                        <span class="summary-value">1–9 credits</span>
+                    </div>
+                    <div class="credits-details">
+                        <div>Costs scale with denomination difficulty.</div>
+                        <div>Coins cost the decimal value entered.</div>
+                    </div>
+                    <a class="action-btn cyan" href="/buy-credits">
+                        <span>Buy Credits</span>
+                        <div class="btn-icon"><i data-feather="shopping-cart"></i></div>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function updateGenerationStatus(data) {
+    const progress = document.getElementById('generationProgress');
+    const progressStatus = document.getElementById('generationProgressStatus');
+    const progressDetail = document.getElementById('generationProgressDetail');
+    const currentTask = document.getElementById('currentTask');
+    const currentTaskId = document.getElementById('currentTaskId');
+    const currentTaskStatus = document.getElementById('currentTaskStatus');
+    const currentTaskProgress = document.getElementById('currentTaskProgress');
+    const previewGrid = document.getElementById('generationPreview');
+    const previewFront = document.getElementById('previewFront');
+    const previewBack = document.getElementById('previewBack');
+
+    const dbStatus = data.db_status || data.status || '';
+    const message = data.message || '';
+    const activeStatuses = ['queued', 'pending', 'processing'];
+    const parts = message.split('|').map(part => part.trim()).filter(Boolean);
+    const summary = parts[0] || message || '';
+    const detail = parts.length > 1 ? parts.slice(1).join(' | ') : '';
+    const progressMatch = summary.match(/\((\d+)\s*\/\s*(\d+)\)/);
+    const progressText = progressMatch ? `[${progressMatch[1]}/${progressMatch[2]}]` : '—';
+
+    if (activeStatuses.includes(String(dbStatus).toLowerCase())) {
+        if (progress) {
+            progress.hidden = false;
+        }
+        if (progressStatus) {
+            progressStatus.textContent = summary || dbStatus || 'Processing';
+        }
+        if (progressDetail) {
+            progressDetail.textContent = detail || '';
+        }
+        if (currentTask) {
+            currentTask.hidden = false;
+        }
+        if (currentTaskId) {
+            currentTaskId.textContent = data.task_id ? `#${data.task_id}` : '—';
+        }
+        if (currentTaskStatus) {
+            currentTaskStatus.textContent = dbStatus || 'processing';
+        }
+        if (currentTaskProgress) {
+            currentTaskProgress.textContent = progressText;
+        }
+    } else if (progress) {
+        progress.hidden = true;
+        if (progressDetail) {
+            progressDetail.textContent = '';
+        }
+        if (currentTask) {
+            currentTask.hidden = true;
+        }
+    }
+
+    if (previewGrid && data.preview) {
+        const frontUrl = data.preview.front_url;
+        const backUrl = data.preview.back_url;
+        if (frontUrl && previewFront) {
+            previewFront.src = frontUrl;
+        }
+        if (backUrl && previewBack) {
+            previewBack.src = backUrl;
+        }
+        previewGrid.hidden = !(frontUrl || backUrl);
+    }
+}
+
+async function pollGenerationStatus() {
+    const container = document.getElementById('generationStatus');
+    if (!container) {
+        return;
+    }
+
+    const userId = container.dataset.userId;
+    if (!userId) {
+        return;
+    }
+
+    try {
+        const res = await fetch(`/generation-status/${userId}`, { credentials: 'same-origin' });
+        if (!res.ok) {
+            return;
+        }
+        const data = await res.json();
+        updateGenerationStatus(data);
+    } catch (err) {
+        // Ignore polling errors
+    }
+}
+
+function startGenerationStream() {
+    const container = document.getElementById('generationStatus');
+    if (!container || !('EventSource' in window)) {
+        return false;
+    }
+    const userId = container.dataset.userId;
+    if (!userId) {
+        return false;
+    }
+
+    const source = new EventSource(`/generation-status-stream/${userId}`);
+    source.onmessage = (event) => {
+        try {
+            const data = JSON.parse(event.data);
+            updateGenerationStatus(data);
+        } catch (err) {
+            // Ignore parse errors
+        }
+    };
+    source.onerror = () => {
+        source.close();
+        pollGenerationStatus();
+        setInterval(pollGenerationStatus, 5000);
+    };
+    return true;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const started = startGenerationStream();
+    if (!started) {
+        pollGenerationStatus();
+        setInterval(pollGenerationStatus, 5000);
+    }
+
+    const kindSelect = document.getElementById('generation-kind');
+    const quantityInput = document.getElementById('generation-quantity');
+    const updateQuantityState = () => {
+        if (!kindSelect || !quantityInput) {
+            return;
+        }
+        const isCoin = kindSelect.value === 'coin';
+        quantityInput.disabled = isCoin;
+        if (isCoin) {
+            quantityInput.value = '1';
+        }
+    };
+    if (kindSelect && quantityInput) {
+        updateQuantityState();
+        kindSelect.addEventListener('change', updateQuantityState);
+    }
+
+    const insertButtons = document.querySelectorAll('.insert-upload');
+    insertButtons.forEach(button => {
+        button.addEventListener('click', () => {
+            const url = button.getAttribute('data-url');
+            if (!url) {
+                return;
+            }
+            const textarea = document.querySelector('textarea[name="custom_eisenscript"]');
+            if (!textarea) {
+                return;
+            }
+            const insertText = url;
+            const start = textarea.selectionStart || 0;
+            const end = textarea.selectionEnd || 0;
+            const currentValue = textarea.value || '';
+            textarea.value = currentValue.slice(0, start) + insertText + currentValue.slice(end);
+            const nextPos = start + insertText.length;
+            textarea.setSelectionRange(nextPos, nextPos);
+            textarea.focus();
+        });
+    });
+});
+</script>
+{% endblock %}

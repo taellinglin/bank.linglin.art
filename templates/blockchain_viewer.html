@@ -5,20 +5,20 @@
     <div class="compact-stats-grid">
         <div class="compact-stat-card">
             <div class="stat-header">
-                <div class="stat-icon">⛓️</div>
+                <div class="stat-icon"><i data-feather="link-2"></i></div>
                 <h4 class="stat-title">Chain Length</h4>
             </div>
             <div class="compact-stat-value">{{ total_blocks|default(0)|int|format_number }}</div>
             <div class="compact-stat-label">Total Blocks</div>
             <div class="stat-trend">
-                <span class="trend-indicator up">↗</span>
+                <span class="trend-indicator up"><i data-feather="trending-up"></i></span>
                 <span class="trend-value">Growing</span>
             </div>
         </div>
 
         <div class="compact-stat-card">
             <div class="stat-header">
-                <div class="stat-icon">📊</div>
+                <div class="stat-icon"><i data-feather="bar-chart-2"></i></div>
                 <h4 class="stat-title">Transactions</h4>
             </div>
             <div class="compact-stat-value">{{ total_transactions|default(0)|int|format_number }}</div>
@@ -31,7 +31,7 @@
 
         <div class="compact-stat-card">
             <div class="stat-header">
-                <div class="stat-icon">💵</div>
+                <div class="stat-icon"><i data-feather="dollar-sign"></i></div>
                 <h4 class="stat-title">Banknotes</h4>
             </div>
             <div class="compact-stat-value">{{ genesis_count|default(0)|int|format_number }}</div>
@@ -44,7 +44,7 @@
 
         <div class="compact-stat-card">
             <div class="stat-header">
-                <div class="stat-icon">🔄</div>
+                <div class="stat-icon"><i data-feather="repeat"></i></div>
                 <h4 class="stat-title">Transfers</h4>
             </div>
             <div class="compact-stat-value">{{ transfer_count|default(0)|int|format_number }}</div>
@@ -57,7 +57,7 @@
 
         <div class="compact-stat-card">
             <div class="stat-header">
-                <div class="stat-icon">✨</div>
+                <div class="stat-icon"><i data-feather="zap"></i></div>
                 <h4 class="stat-title">Mining Rewards</h4>
             </div>
             <div class="compact-stat-value">{{ reward_count|default(0)|int|format_number }}</div>
@@ -80,7 +80,7 @@
         </div>
         <div class="search-container">
             <form class="search-input-group" method="get" action="{{ url_for('blockchain_viewer') }}">
-                <div class="search-icon">🔍</div>
+                <div class="search-icon"><i data-feather="search"></i></div>
                 <input type="text" 
                        class="search-input" 
                        id="blockchainSearch" 
@@ -117,7 +117,7 @@
                     </label>
                 </div>
                 <button class="filter-btn" onclick="resetFilters()">
-                    <span class="filter-btn-icon">⟳</span>
+                    <span class="filter-btn-icon"><i data-feather="rotate-ccw"></i></span>
                     <span class="filter-btn-text">Reset</span>
                 </button>
             </div>
@@ -127,15 +127,15 @@
     <!-- Tab Navigation -->
     <div class="tab-navigation">
         <button class="tab-button active" onclick="openTab('blocks')">
-            <span class="tab-icon">⛓️</span>
+            <span class="tab-icon"><i data-feather="link-2"></i></span>
             <span class="tab-text">Blocks</span>
         </button>
         <button class="tab-button" onclick="openTab('activity')">
-            <span class="tab-icon">📈</span>
+            <span class="tab-icon"><i data-feather="activity"></i></span>
             <span class="tab-text">Activity Timeline</span>
         </button>
         <button class="tab-button" onclick="openTab('statistics')">
-            <span class="tab-icon">📊</span>
+            <span class="tab-icon"><i data-feather="bar-chart-2"></i></span>
             <span class="tab-text">Statistics</span>
         </button>
     </div>
@@ -239,17 +239,17 @@
                                     <div class="tx-breakdown">
                                         {% if block.genesis_count > 0 %}
                                         <span class="tx-badge genesis" title="Banknotes">
-                                            💵 {{ block.genesis_count|default(0)|int }}
+                                            <i data-feather="dollar-sign" class="tx-badge-icon"></i> {{ block.genesis_count|default(0)|int }}
                                         </span>
                                         {% endif %}
                                         {% if block.transfer_count > 0 %}
                                         <span class="tx-badge transfer" title="Transfers">
-                                            🔄 {{ block.transfer_count|default(0)|int }}
+                                            <i data-feather="repeat" class="tx-badge-icon"></i> {{ block.transfer_count|default(0)|int }}
                                         </span>
                                         {% endif %}
                                         {% if block.reward_count > 0 %}
                                         <span class="tx-badge reward" title="Rewards">
-                                            ✨ {{ block.reward_count|default(0)|int }}
+                                            <i data-feather="zap" class="tx-badge-icon"></i> {{ block.reward_count|default(0)|int }}
                                         </span>
                                         {% endif %}
                                     </div>
@@ -268,10 +268,10 @@
                             <td colspan="6" class="empty-state">
                                 <div class="empty-content">
                                     {% if search_query or (not filter_genesis) or (not filter_transfers) or filter_rewards %}
-                                        <span class="empty-icon">🔍</span>
+                                        <span class="empty-icon"><i data-feather="search"></i></span>
                                         <span>No matching blocks found</span>
                                     {% else %}
-                                        <span class="empty-icon">⛓️</span>
+                                        <span class="empty-icon"><i data-feather="link-2"></i></span>
                                         <span>No blocks in the blockchain</span>
                                     {% endif %}
                                 </div>
@@ -341,7 +341,7 @@
             <div class="statistics-grid">
                 <div class="stat-card">
                     <div class="stat-card-header">
-                        <div class="stat-card-icon">📈</div>
+                        <div class="stat-card-icon"><i data-feather="activity"></i></div>
                         <h4>Block Production</h4>
                     </div>
                     <div class="stat-card-content">
@@ -362,7 +362,7 @@
 
                 <div class="stat-card">
                     <div class="stat-card-header">
-                        <div class="stat-card-icon">💵</div>
+                        <div class="stat-card-icon"><i data-feather="dollar-sign"></i></div>
                         <h4>Banknote Stats</h4>
                     </div>
                     <div class="stat-card-content">
@@ -383,7 +383,7 @@
 
                 <div class="stat-card">
                     <div class="stat-card-header">
-                        <div class="stat-card-icon">👥</div>
+                        <div class="stat-card-icon"><i data-feather="users"></i></div>
                         <h4>Network Activity</h4>
                     </div>
                     <div class="stat-card-content">
@@ -407,7 +407,7 @@
 
     <!-- Refresh Note -->
     <div class="refresh-note">
-        <span class="note-icon">↻</span>
+        <span class="note-icon"><i data-feather="refresh-ccw"></i></span>
         <span>Auto-updates every 30s · Last update: <span id="lastUpdated">just now</span></span>
         <button onclick="refreshNow()" class="refresh-btn">Update Now</button>
     </div>
@@ -1003,6 +1003,13 @@ window.addEventListener('DOMContentLoaded', function() {
     font-size: 0.75rem;
     font-weight: 500;
     white-space: nowrap;
+}
+
+.tx-badge-icon {
+    width: 12px;
+    height: 12px;
+    margin-right: 0.25rem;
+    vertical-align: -2px;
 }
 
 .tx-badge.genesis {

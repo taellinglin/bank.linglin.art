@@ -1568,6 +1568,7 @@ def generate_backside_svg(
     if merged_eisen.strip():
         try:
             from lunamint.scripting import render_script_to_svg_html
+            from generate import embed_fonts_in_svg_file, resolve_font_dir
             import tempfile
             from pathlib import Path
             import shutil
@@ -1576,6 +1577,7 @@ def generate_backside_svg(
             if not outdir.exists():
                 outdir.mkdir(parents=True, exist_ok=True)
             render_script_to_svg_html(merged_eisen, out_path)
+            embed_fonts_in_svg_file(out_path, resolve_font_dir())
             svg_saved = True
             if out_path.exists():
                 print(f"[+] Saved BACK SVG: {outfile}")

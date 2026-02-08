@@ -473,11 +473,24 @@ class BlockchainDaemon:
         """Update mined indexes with transactions from a new block"""
         transactions.update_mined_indexes(block, self.mined_serials)
     
-    def add_genesis_transaction(self, serial_number: str, denomination: float, issued_to: str) -> bool:
+    def add_genesis_transaction(
+        self,
+        serial_number: str,
+        denomination: float,
+        issued_to: str,
+        bill_type: str | None = None,
+        is_coin: bool = False,
+    ) -> bool:
         """Add a genesis transaction for a banknote"""
         return transactions.add_genesis_transaction(
-            serial_number, denomination, issued_to,
-            self.gtx_genesis, self.mempool, self.add_transaction
+            serial_number,
+            denomination,
+            issued_to,
+            self.gtx_genesis,
+            self.mempool,
+            self.add_transaction,
+            bill_type=bill_type,
+            is_coin=is_coin,
         )
     
     def generate_transaction_hash(self, transaction_data: Dict) -> str:

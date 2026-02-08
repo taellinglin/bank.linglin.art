@@ -72,8 +72,16 @@ def generate_transaction_hash(transaction_data: Dict) -> str:
 # Old function removed to prevent using incorrect (non-exponential) reward amounts
 
 
-def add_genesis_transaction(serial_number: str, denomination: float, issued_to: str,
-                           gtx_genesis, mempool: List[Dict], add_transaction_func) -> bool:
+def add_genesis_transaction(
+    serial_number: str,
+    denomination: float,
+    issued_to: str,
+    gtx_genesis,
+    mempool: List[Dict],
+    add_transaction_func,
+    bill_type: str | None = None,
+    is_coin: bool = False,
+) -> bool:
     """
     Add a genesis transaction for a banknote using GTXGenesis system
     """
@@ -83,13 +91,70 @@ def add_genesis_transaction(serial_number: str, denomination: float, issued_to: 
         logger.info(f"Creating genesis transaction for serial: {serial_number}")
         
         # Use GTXGenesis to create the bill
-        denomination_int = int(denomination)
+        try:
+            denomination_value = float(denomination)
+        except Exception:
+            denomination_value = 1.0
+
+        denomination_int = int(round(denomination_value))
+        if denomination_int < 1:
+            denomination_int = 1
+
+        coin_meta = {}
+        if is_coin:
+            resolved = None
+            for method_name in ("resolve_coin_denomination", "get_coin_denomination", "normalize_coin_denomination"):
+                resolver = getattr(gtx_genesis, method_name, None)
+                if callable(resolver):
+                    try:
+                        resolved = resolver(denomination_value)
+                        break
+                    except Exception:
+                        resolved = None
+                if resolved is not None:
+                    break
+
+            if isinstance(resolved, dict):
+                coin_meta = resolved
+                denomination_int = int(
+                    resolved.get("denomination")
+                    or resolved.get("value")
+                    or resolved.get("denom")
+                    or denomination_int
+                )
+            elif isinstance(resolved, (list, tuple)) and resolved:
+                try:
+                    denomination_int = int(resolved[0])
+                except Exception:
+                    pass
+            elif resolved is not None:
+                try:
+                    denomination_int = int(resolved)
+                except Exception:
+                    pass
+
+            mapping = None
+            for attr in ("coin_denominations", "coin_denomination_map", "coin_map"):
+                if hasattr(gtx_genesis, attr):
+                    mapping = getattr(gtx_genesis, attr)
+                    break
+            if isinstance(mapping, dict):
+                for key, val in mapping.items():
+                    try:
+                        if float(key) == denomination_value:
+                            denomination_int = int(val)
+                            break
+                    except Exception:
+                        continue
         digital_bill = gtx_genesis.create_genesis_bill(
             denomination=denomination_int,
             user_address=issued_to,
             custom_data={
                 "serial_number": serial_number,
-                "issued_to": issued_to
+                "issued_to": issued_to,
+                "is_coin": is_coin,
+                "coin_value": denomination_value,
+                "coin_meta": coin_meta,
             }
         )
         
@@ -101,11 +166,13 @@ def add_genesis_transaction(serial_number: str, denomination: float, issued_to: 
         
         # Create genesis transaction
         bill_serial = getattr(digital_bill, "bill_serial", None) or serial_number
+        tx_denomination = denomination_int if is_coin else denomination_value
+
         genesis_transaction = {
             "type": "GTX_Genesis",
             "serial_number": serial_number,
             "bill_serial": bill_serial,
-            "denomination": denomination,
+            "denomination": tx_denomination,
             "issued_to": issued_to,
             "mining_difficulty": 1,
             "nonce": 0,
@@ -115,7 +182,9 @@ def add_genesis_transaction(serial_number: str, denomination: float, issued_to: 
             "metadata_hash": digital_bill.metadata_hash,
             "front_serial": digital_bill.front_serial,
             "back_serial": digital_bill.back_serial,
-            "bill_type": digital_bill.bill_type
+            "bill_type": bill_type or digital_bill.bill_type,
+            "is_coin": is_coin,
+            "coin_value": denomination_value,
         }
 
         _normalize_gtx_genesis_fields(genesis_transaction)

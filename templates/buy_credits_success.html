@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container" style="max-width: 720px; margin: 32px auto;">
+    <div class="card" style="padding: 20px;">
+        <h2>Purchase Complete</h2>
+        <p>Thank you for your purchase.</p>
+        <ul>
+            <li>Credits: <strong>{{ credits }}</strong></li>
+            <li>Amount: <strong>${{ "%.2f"|format(amount_cents / 100) }} {{ currency }}</strong></li>
+            <li>Session: <strong>{{ session_id }}</strong></li>
+        </ul>
+        <a class="btn btn-primary" href="{{ url_for('profile', username=current_user.username) }}">Back to Profile</a>
+    </div>
+</div>
+{% endblock %}

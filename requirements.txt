@@ -7,6 +7,8 @@ flask
 flask_sqlalchemy
 flask_login
 cairosvg
+stripe
+playwright
 requests
 itsdangerous
 wtforms
